@@ -28,7 +28,9 @@ public:
   Anthrax();
   ~Anthrax();
   int initWindow();
+  void exit();
   void renderFrame();
+  bool windowShouldClose() const { return glfwWindowShouldClose(window_); }
 private:
   void renderFullscreenQuad();
   void initializeShaders();
@@ -40,6 +42,7 @@ private:
   // Settings
   static unsigned int window_width_;
   static unsigned int window_height_;
+  static bool window_size_changed_;
   // Callbacks
   static void framebufferSizeCallback(GLFWwindow* window, int width, int height);
   static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);

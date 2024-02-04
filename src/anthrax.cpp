@@ -16,9 +16,10 @@ namespace Anthrax
 {
 
 // Static member allocation
-GLFWwindow* Anthrax::window_;
-unsigned int Anthrax::window_width_;
-unsigned int Anthrax::window_height_;
+GLFWwindow *Anthrax::window_;
+unsigned int Anthrax::window_width_ = 0;
+unsigned int Anthrax::window_height_ = 0;
+bool Anthrax::window_size_changed_ = false;
 
 
 Anthrax::Anthrax()
@@ -30,7 +31,7 @@ Anthrax::Anthrax()
 
 Anthrax::~Anthrax()
 {
-  delete main_pass_shader_;
+  exit();
 }
 
 
@@ -81,8 +82,19 @@ int Anthrax::initWindow()
 }
 
 
+void Anthrax::exit()
+{
+  delete main_pass_shader_;
+  glfwTerminate();
+}
+
+
 void Anthrax::renderFrame()
 {
+  if (window_size_changed_)
+  {
+    window_size_changed_ = false;
+  }
   glClear(GL_COLOR_BUFFER_BIT);
   glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
@@ -130,32 +142,38 @@ void Anthrax::initializeShaders()
   shader_directory += "/";
 
   main_pass_shader_ = new Shader(Shader::ShaderInputType::FILEPATH, (shader_directory + "main_pass_shaderv.glsl").c_str(), (shader_directory + "main_pass_shaderf.glsl").c_str());
+  return;
 }
 
 // ----------------------------------------------------------------
 // Callbacks
 // ----------------------------------------------------------------
 
-void Anthrax::framebufferSizeCallback(GLFWwindow* window, int width, int height)
+void Anthrax::framebufferSizeCallback(GLFWwindow *window, int width, int height)
 {
   glViewport(0, 0, width, height);
   window_width_ = width;
   window_height_ = height;
+  window_size_changed_ = true;
 }
 
 
-void Anthrax::cursorPosCallback(GLFWwindow* window, double xpos, double ypos)
+void Anthrax::cursorPosCallback(GLFWwindow *window, double xpos, double ypos)
 {
 }
 
 
-void Anthrax::scrollCallback(GLFWwindow* window, double xoffset, double yoffset)
+void Anthrax::scrollCallback(GLFWwindow *window, double xoffset, double yoffset)
 {
 }
 
 
 void Anthrax::keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
+  if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+  {
+    glfwSetWindowShouldClose(window_, GL_TRUE);
+  }
 }
 
 } // namespace Anthrax
