@@ -21,10 +21,12 @@ add_subdirectory(${GLM_DIR})
 set(HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/include/anthrax.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/shader.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/octree.hpp
   )
 
 set(SRC
   ${CMAKE_CURRENT_SOURCE_DIR}/src/anthrax.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/octree.cpp
   )
 
 #set(SHADERS

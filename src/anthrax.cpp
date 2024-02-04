@@ -26,6 +26,7 @@ Anthrax::Anthrax()
 {
   window_width_ = 600;
   window_height_ = 400;
+  world_ = Octree(8);
 }
 
 
@@ -76,7 +77,16 @@ int Anthrax::initWindow()
   glEnable(GL_CULL_FACE);
   glCullFace(GL_BACK);
 
+  // Disable vsync
+  glfwSwapInterval(0);
+
   initializeShaders();
+
+  /*
+  int tmp;
+  glGetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS, &tmp);
+  std::cout << (tmp >> 0) << std::endl;
+  */
 
   return 0;
 }

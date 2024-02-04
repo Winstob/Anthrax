@@ -18,6 +18,7 @@
 #include <iostream>
 
 #include "shader.hpp"
+#include "octree.hpp"
 
 namespace Anthrax
 {
@@ -50,6 +51,8 @@ private:
   static void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);
 
   unsigned int quad_vao_ = 0, quad_vbo_ = 0;
+
+  Octree world_;
 };
 
 } // namespace Anthrax
