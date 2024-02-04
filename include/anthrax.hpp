@@ -35,6 +35,8 @@ public:
 private:
   void renderFullscreenQuad();
   void initializeShaders();
+  void createWorld();
+  void initializeWorldSSBOs();
 
   // Shader passes
   Shader *main_pass_shader_;
@@ -53,6 +55,9 @@ private:
   unsigned int quad_vao_ = 0, quad_vbo_ = 0;
 
   Octree world_;
+  GLuint indirection_pool_ssbo_ = 0, voxel_type_pool_ssbo_ = 0, lod_pool_ssbo_ = 0;
+
+
 };
 
 } // namespace Anthrax

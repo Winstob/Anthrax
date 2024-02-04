@@ -23,15 +23,18 @@ public:
   Octree() : Octree(8) {};
   ~Octree();
   Octree& operator=(const Octree& other);
-private:
+
+
   int num_layers_;
   int num_indices_;
-  size_t indirection_pool_size_ = MB(128); // The size of the indirection pool in bytes
   uint32_t *indirection_pool_; // 0x0000 marks air
                                // Any other marks the index of that child
                                // Index must be multiplied by 8: 8 octants per node
-  uint16_t *voxel_type_pool_; // If an element != to 0x00, it is a leaf (uniform non-air octant)
+  uint32_t *voxel_type_pool_; // If an element != to 0x00, it is a leaf (uniform non-air octant)
   uint32_t *lod_pool_; // Stores color data for every element in the indirection pool
+
+private:
+  size_t indirection_pool_size_ = MB(128); // The size of the indirection pool in bytes
 };
 
 } // namespace Anthrax
