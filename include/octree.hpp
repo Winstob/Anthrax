@@ -34,7 +34,7 @@ public:
   uint32_t *lod_pool_; // Stores color data for every element in the indirection pool
 
 private:
-  size_t indirection_pool_size_ = MB(128); // The size of the indirection pool in bytes
+  size_t indirection_pool_size_ = MB(8); // The size of the indirection pool in bytes
 };
 
 } // namespace Anthrax

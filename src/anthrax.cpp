@@ -83,6 +83,7 @@ int Anthrax::initWindow()
   initializeShaders();
 
   createWorld();
+  main_pass_shader_->use();
   initializeWorldSSBOs();
 
   /*
@@ -99,6 +100,7 @@ void Anthrax::exit()
 {
   delete main_pass_shader_;
   glDeleteBuffers(1, &indirection_pool_ssbo_);
+  glDeleteBuffers(1, &voxel_type_pool_ssbo_);
   glDeleteBuffers(1, &lod_pool_ssbo_);
   glfwTerminate();
 }
@@ -114,6 +116,9 @@ void Anthrax::renderFrame()
   glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
   main_pass_shader_->use();
+  main_pass_shader_->setInt("octree_layers", world_.num_layers_);
+  main_pass_shader_->setVec3("camera_position", glm::vec3(0.0, 0.0, 0.0));//glm::vec3(-50.5, 50.5, 0.0));
+  main_pass_shader_->setFloat("focal_distance", 1.0);
   renderFullscreenQuad();
 
   glfwSwapBuffers(window_);
@@ -170,14 +175,17 @@ void Anthrax::createWorld()
       int k = i*8 + j;
       if (j == 0 || j == 3 || j == 5 || j == 6)
       {
+        //world_.indirection_pool_[k] = 8;
         world_.indirection_pool_[k] = 0x0000;
       }
       else
       {
-        world_.indirection_pool_[k] = k + 1;
+        world_.indirection_pool_[k] = 0x0000;
       }
     }
-    world_.voxel_type_pool_[i] = 1;
+    //if (i > (world_.num_indices_ / 2))
+    if (i > 65)
+      world_.voxel_type_pool_[i] = 1;
   }
   return;
 }
@@ -187,17 +195,17 @@ void Anthrax::initializeWorldSSBOs()
 {
   glGenBuffers(1, &indirection_pool_ssbo_);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, indirection_pool_ssbo_);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, 8 * sizeof(uint32_t) * world_.num_indices_, world_.indirection_pool_, GL_DYNAMIC_STORAGE_BIT);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, 8 * sizeof(uint32_t) * world_.num_indices_, world_.indirection_pool_, GL_DYNAMIC_DRAW);
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, indirection_pool_ssbo_);
 
   glGenBuffers(1, &voxel_type_pool_ssbo_);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, voxel_type_pool_ssbo_);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(uint32_t) * world_.num_indices_, world_.voxel_type_pool_, GL_DYNAMIC_STORAGE_BIT);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(uint32_t) * world_.num_indices_, world_.voxel_type_pool_, GL_DYNAMIC_DRAW);
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, voxel_type_pool_ssbo_);
 
   glGenBuffers(1, &lod_pool_ssbo_);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, lod_pool_ssbo_);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(uint32_t) * world_.num_indices_, world_.lod_pool_, GL_DYNAMIC_STORAGE_BIT);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(uint32_t) * world_.num_indices_, world_.lod_pool_, GL_DYNAMIC_DRAW);
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, lod_pool_ssbo_);
 
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
