@@ -17,6 +17,8 @@ namespace Anthrax
 
 // Static member allocation
 GLFWwindow *Anthrax::window_;
+float Anthrax::mouse_x_;
+float Anthrax::mouse_y_;
 unsigned int Anthrax::window_width_ = 0;
 unsigned int Anthrax::window_height_ = 0;
 bool Anthrax::window_size_changed_ = false;
@@ -112,14 +114,31 @@ void Anthrax::renderFrame()
   {
     window_size_changed_ = false;
   }
+
+  float current_time = static_cast<float>(glfwGetTime());
+  if (previous_frame_time_ != 0.0)
+  {
+    frame_time_difference_ = current_time - previous_frame_time_;
+  }
+  previous_frame_time_ = current_time;
+  mouse_x_difference_ = mouse_x_ - previous_mouse_x_;
+  previous_mouse_x_ = mouse_x_;
+  mouse_y_difference_ = mouse_y_ - previous_mouse_y_;
+  previous_mouse_y_ = mouse_y_;
+  updateCamera();
+
   glClear(GL_COLOR_BUFFER_BIT);
   glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
   main_pass_shader_->use();
   main_pass_shader_->setInt("octree_layers", world_.num_layers_);
-  float m = 64.0;
-  main_pass_shader_->setVec3("camera_position", glm::vec3(m*cos(glfwGetTime()), m*sin(glfwGetTime()), 0.0));
   main_pass_shader_->setFloat("focal_distance", 1.0);
+  main_pass_shader_->setInt("screen_width", window_width_);
+  main_pass_shader_->setInt("screen_height", window_height_);
+  main_pass_shader_->setVec3("camera_position", camera_.position);
+  main_pass_shader_->setVec3("camera_right", camera_.getRightLookDirection());
+  main_pass_shader_->setVec3("camera_up", camera_.getUpLookDirection());
+  main_pass_shader_->setVec3("camera_forward", camera_.getForwardLookDirection());
   renderFullscreenQuad();
 
   glfwSwapBuffers(window_);
@@ -176,7 +195,7 @@ void Anthrax::createWorld()
     for (unsigned int j = 0; j < 8; j++)
     {
       int k = i*8 + j;
-      if (j == 0 || j == 2 || j == 3 || j == 5 || j == 6)
+      if (j == 0 || j == 3 || j == 5 || j == 6)
       {
         world_.indirection_pool_[k] = next_free_index++;
       }
@@ -185,7 +204,7 @@ void Anthrax::createWorld()
         world_.indirection_pool_[k] = 0;
       }
     }
-    if (i > 21844)
+    if (i > 5460)
       world_.voxel_type_pool_[i] = 1;
     else
       world_.voxel_type_pool_[i] = 0;
@@ -215,6 +234,52 @@ void Anthrax::initializeWorldSSBOs()
   return;
 }
 
+
+void Anthrax::updateCamera()
+{
+  // Update rotation
+  float sensitivity = 0.01;
+  glm::quat yaw_quaternion = glm::angleAxis(sensitivity*(-mouse_x_difference_), camera_.getUpDirection());
+  glm::quat pitch_quaternion = glm::angleAxis(sensitivity*(-mouse_y_difference_), camera_.getRightLookDirection());
+  camera_.rotation = glm::normalize(yaw_quaternion * pitch_quaternion * camera_.rotation);
+
+  // Update position
+  glm::vec3 motion_direction = glm::vec3(0.0, 0.0, 0.0);
+  int speed_multiplier = 64;
+  float motion_multiplier = frame_time_difference_ * speed_multiplier;
+
+  if (glfwGetKey(window_, GLFW_KEY_A) == GLFW_PRESS)
+  {
+    motion_direction.x += -1.0;
+  }
+  if (glfwGetKey(window_, GLFW_KEY_D) == GLFW_PRESS)
+  {
+    motion_direction.x += 1.0;
+  }
+  if (glfwGetKey(window_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+  {
+    motion_direction.y += -1.0;
+  }
+  if (glfwGetKey(window_, GLFW_KEY_SPACE) == GLFW_PRESS)
+  {
+    motion_direction.y += 1.0;
+  }
+  if (glfwGetKey(window_, GLFW_KEY_W) == GLFW_PRESS)
+  {
+    motion_direction.z += -1.0;
+  }
+  if (glfwGetKey(window_, GLFW_KEY_S) == GLFW_PRESS)
+  {
+    motion_direction.z += 1.0;
+  }
+
+  glm::normalize(motion_direction);
+  motion_direction *= motion_multiplier;
+  motion_direction = camera_.rotation * motion_direction;
+  camera_.position += motion_direction;
+  return;
+}
+
 // ----------------------------------------------------------------
 // Callbacks
 // ----------------------------------------------------------------
@@ -230,6 +295,8 @@ void Anthrax::framebufferSizeCallback(GLFWwindow *window, int width, int height)
 
 void Anthrax::cursorPosCallback(GLFWwindow *window, double xpos, double ypos)
 {
+  mouse_x_ = static_cast<float>(xpos);
+  mouse_y_ = static_cast<float>(ypos);
 }
 
 

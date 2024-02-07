@@ -17,8 +17,13 @@ layout (std430, binding = 2) buffer lod_pool_ssbo
 };
 
 uniform int octree_layers;
-uniform vec3 camera_position;
 uniform float focal_distance;
+uniform int screen_width;
+uniform int screen_height;
+uniform vec3 camera_position;
+uniform vec3 camera_right;
+uniform vec3 camera_up;
+uniform vec3 camera_forward;
 
 
 struct VoxelLocation
@@ -43,6 +48,7 @@ struct Ray
 const float epsilon = 0.00001;
 
 
+vec3 calculateMainRayDirection();
 VoxelLocation findVoxelLocation(vec3 world_location, bool clamp_left, bool clamp_bottom, bool clamp_back, out bool is_within_world);
 bool rayStep(inout Ray ray);
 
@@ -50,7 +56,7 @@ bool rayStep(inout Ray ray);
 void main()
 {
   Ray ray;
-  ray.ray_dir = normalize(vec3(screen_position, -focal_distance));
+  ray.ray_dir = calculateMainRayDirection();
   bool is_within_world;
   ray.voxel_location = findVoxelLocation(camera_position, ray.ray_dir.x <= 0.0, ray.ray_dir.y <= 0.0, ray.ray_dir.z <= 0.0, is_within_world);
   ray.num_steps = 0;
@@ -67,7 +73,6 @@ void main()
     }
   }
   voxel_type = ray.voxel_location.type;
-  //voxel_type = voxel_type_pool[ray.voxel_location.stack_trace_indices[octree_layers - ray.voxel_location.layer-1]];
 
   //uint voxel_type = indirection_pool[3];
   if (voxel_type == 0)
@@ -80,13 +85,21 @@ void main()
   }
   //FragColor = vec4(ray.voxel_location.sublocation/(float(1<<octree_layers)), 1.0);
   //FragColor = vec4(vec3(float(ray.num_steps)/64.0), 1.0);
-  //FragColor = vec4(vec3(ray.distance_traveled/64.0), 1.0);
+  FragColor = vec4(1.0-vec3(ray.distance_traveled/(1<<(octree_layers+1))), 1.0);
   //FragColor = vec4(ray.voxel_location.center/(1<<octree_layers), 1.0);
   //FragColor = vec4(ray.ray_dir, 1.0);
   //FragColor = vec4(float(ray.voxel_location.layer)/float(octree_layers), 0.0, 0.0, 1.0);
   //FragColor = vec4(0.3, 0.7, 0.5, 1.0);
 }
 
+
+vec3 calculateMainRayDirection()
+{
+  vec3 x = camera_right * screen_position.x;
+  vec3 y = camera_up * screen_position.y * float(screen_height) / float(screen_width);
+  vec3 z = camera_forward * focal_distance;
+  return normalize(x + y + z);
+}
 
 
 VoxelLocation findVoxelLocation(vec3 world_location, bool clamp_left, bool clamp_bottom, bool clamp_back, out bool is_within_world)
@@ -100,8 +113,7 @@ VoxelLocation findVoxelLocation(vec3 world_location, bool clamp_left, bool clamp
   vec3 current_octree_center = vec3(0.0, 0.0, 0.0);
   uint current_octree_width = 1 << (octree_layers); // double everything and halve it at the end
   world_location = world_location * 2.0; // doubling
-  //for (uint i = 0; i < octree_layers-1; i++)
-  for (uint i = 0; i < 1000000000; i++)
+  for (uint i = 0; i < octree_layers-1; i++)
   {
     uint next_octree_width = current_octree_width >> 1;
     vec3 next_octree_center = current_octree_center;

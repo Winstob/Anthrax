@@ -19,6 +19,7 @@
 
 #include "shader.hpp"
 #include "octree.hpp"
+#include "camera.hpp"
 
 namespace Anthrax
 {
@@ -37,11 +38,21 @@ private:
   void initializeShaders();
   void createWorld();
   void initializeWorldSSBOs();
+  void updateCamera();
 
   // Shader passes
   Shader *main_pass_shader_;
 
   static GLFWwindow* window_;
+
+  float previous_frame_time_ = 0.0;
+  float frame_time_difference_ = 0.0;
+  static float mouse_x_;
+  static float mouse_y_;
+  float previous_mouse_x_;
+  float previous_mouse_y_;
+  float mouse_x_difference_;
+  float mouse_y_difference_;
   // Settings
   static unsigned int window_width_;
   static unsigned int window_height_;
@@ -55,8 +66,8 @@ private:
   unsigned int quad_vao_ = 0, quad_vbo_ = 0;
 
   Octree world_;
+  Camera camera_;
   GLuint indirection_pool_ssbo_ = 0, voxel_type_pool_ssbo_ = 0, lod_pool_ssbo_ = 0;
-
 
 };
 

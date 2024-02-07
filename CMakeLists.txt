@@ -22,6 +22,7 @@ set(HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/include/anthrax.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/shader.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/octree.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/camera.hpp
   )
 
 set(SRC
