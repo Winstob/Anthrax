@@ -19,6 +19,7 @@ class Camera
 {
 public:
   Camera() : position(glm::vec3(0.0, 0.0, 0.0)), rotation(glm::quat(0.0, 0.0, 0.0, 0.0)) {}
+  Camera(glm::vec3 in_position) : position(in_position), rotation(glm::quat(0.0, 0.0, 0.0, 0.0)) {}
   glm::vec3 getUpDirection() { return glm::vec3(0.0, 1.0, 0.0); }
   glm::vec3 getUpLookDirection() { return (rotation * glm::vec3(0.0, 1.0, 0.0)); }
   glm::vec3 getRightLookDirection() { return (rotation * glm::vec3(1.0, 0.0, 0.0)); }

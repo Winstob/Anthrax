@@ -28,7 +28,8 @@ Anthrax::Anthrax()
 {
   window_width_ = 600;
   window_height_ = 400;
-  world_ = Octree(8);
+  world_ = Octree(16);
+  camera_ = Camera(glm::vec3(8192.0, 8192.0, 0.0));
 }
 
 
@@ -197,14 +198,15 @@ void Anthrax::createWorld()
       int k = i*8 + j;
       if (j == 0 || j == 3 || j == 5 || j == 6)
       {
-        world_.indirection_pool_[k] = next_free_index++;
+        //world_.indirection_pool_[k] = next_free_index++;
+        world_.indirection_pool_[k] = 1;
       }
       else
       {
         world_.indirection_pool_[k] = 0;
       }
     }
-    if (i > 5460)
+    if (i > 21844)
       world_.voxel_type_pool_[i] = 1;
     else
       world_.voxel_type_pool_[i] = 0;

@@ -45,7 +45,7 @@ struct Ray
   float distance_traveled;
 };
 
-const float epsilon = 0.00001;
+const float epsilon = 0.001;
 
 
 vec3 calculateMainRayDirection();
@@ -83,9 +83,9 @@ void main()
   {
     FragColor = vec4(1.0, 1.0, 1.0, 1.0);
   }
-  //FragColor = vec4(ray.voxel_location.sublocation/(float(1<<octree_layers)), 1.0);
-  //FragColor = vec4(vec3(float(ray.num_steps)/64.0), 1.0);
-  FragColor = vec4(1.0-vec3(ray.distance_traveled/(1<<(octree_layers+1))), 1.0);
+  FragColor = vec4(ray.voxel_location.sublocation, 1.0);
+  //FragColor = vec4(vec3(float(ray.num_steps)/(1<<(octree_layers-1))), 1.0);
+  //FragColor = vec4(1.0-vec3(ray.distance_traveled/(1<<(octree_layers+1))), 1.0);
   //FragColor = vec4(ray.voxel_location.center/(1<<octree_layers), 1.0);
   //FragColor = vec4(ray.ray_dir, 1.0);
   //FragColor = vec4(float(ray.voxel_location.layer)/float(octree_layers), 0.0, 0.0, 1.0);
@@ -113,15 +113,17 @@ VoxelLocation findVoxelLocation(vec3 world_location, bool clamp_left, bool clamp
   vec3 current_octree_center = vec3(0.0, 0.0, 0.0);
   uint current_octree_width = 1 << (octree_layers); // double everything and halve it at the end
   world_location = world_location * 2.0; // doubling
+  bool found_uniform = false;
   for (uint i = 0; i < octree_layers-1; i++)
   {
+    float octree_epsilon = epsilon;// * float(voxel_location.layer);// / float(voxel_location.layer);
     uint next_octree_width = current_octree_width >> 1;
     vec3 next_octree_center = current_octree_center;
     uint next_octant = 0;
 
     if (clamp_bottom)
     {
-      if (current_octree_center.y - epsilon <= world_location.y)
+      if (current_octree_center.y - octree_epsilon <= world_location.y)
       {
         next_octree_center.y += next_octree_width >> 1;
         next_octant += 4;
@@ -133,7 +135,7 @@ VoxelLocation findVoxelLocation(vec3 world_location, bool clamp_left, bool clamp
     }
     else
     {
-      if (current_octree_center.y + epsilon <= world_location.y)
+      if (current_octree_center.y + octree_epsilon <= world_location.y)
       {
         next_octree_center.y += next_octree_width >> 1;
         next_octant += 4;
@@ -146,7 +148,7 @@ VoxelLocation findVoxelLocation(vec3 world_location, bool clamp_left, bool clamp
 
     if (clamp_back)
     {
-      if (current_octree_center.z - epsilon <= world_location.z)
+      if (current_octree_center.z - octree_epsilon <= world_location.z)
       {
         next_octree_center.z += next_octree_width >> 1;
         next_octant += 2;
@@ -158,7 +160,7 @@ VoxelLocation findVoxelLocation(vec3 world_location, bool clamp_left, bool clamp
     }
     else
     {
-      if (current_octree_center.z + epsilon <= world_location.z)
+      if (current_octree_center.z + octree_epsilon <= world_location.z)
       {
         next_octree_center.z += next_octree_width >> 1;
         next_octant += 2;
@@ -171,7 +173,7 @@ VoxelLocation findVoxelLocation(vec3 world_location, bool clamp_left, bool clamp
 
     if (clamp_left)
     {
-      if (current_octree_center.x - epsilon <= world_location.x)
+      if (current_octree_center.x - octree_epsilon <= world_location.x)
       {
         next_octree_center.x += next_octree_width >> 1;
         next_octant += 1;
@@ -183,7 +185,7 @@ VoxelLocation findVoxelLocation(vec3 world_location, bool clamp_left, bool clamp
     }
     else
     {
-      if (current_octree_center.x + epsilon <= world_location.x)
+      if (current_octree_center.x + octree_epsilon <= world_location.x)
       {
         next_octree_center.x += next_octree_width >> 1;
         next_octant += 1;
@@ -193,7 +195,7 @@ VoxelLocation findVoxelLocation(vec3 world_location, bool clamp_left, bool clamp
         next_octree_center.x -= next_octree_width >> 1;
       }
     }
-    current_octree_index = indirection_pool[(current_octree_index*8) + next_octant];
+    current_octree_index = indirection_pool[(current_octree_index<<3) + next_octant];
     voxel_location.stack_trace_octants[octree_layers-voxel_location.layer] = next_octant;
     voxel_location.stack_trace_indices[octree_layers-voxel_location.layer] = current_octree_index;
     //voxel_location.stack_trace_octants[i] = next_octant;
@@ -205,14 +207,20 @@ VoxelLocation findVoxelLocation(vec3 world_location, bool clamp_left, bool clamp
     {
       // This entire octree is air
       voxel_location.type = 0;
+      found_uniform = true;
       break;
     }
     if (voxel_type_pool[current_octree_index] != uint(0))
     {
       // This entire octree is uniform (not air)
       voxel_location.type = 1;
+      found_uniform = true;
       break;
     }
+  }
+  if (!found_uniform)
+  {
+    voxel_location.type = 1;
   }
   voxel_location.center = 0.5 * current_octree_center;
   world_location = 0.5 * world_location;
@@ -220,6 +228,7 @@ VoxelLocation findVoxelLocation(vec3 world_location, bool clamp_left, bool clamp
   is_within_world = true;
 
 
+  /*
   if (abs(voxel_location.sublocation.x) > 1.0 + epsilon || abs(voxel_location.sublocation.y) > 1.0 + epsilon || abs(voxel_location.sublocation.z) > 1.0 + epsilon)
   {
     // This must be outside of the range of the world
@@ -227,6 +236,7 @@ VoxelLocation findVoxelLocation(vec3 world_location, bool clamp_left, bool clamp
     voxel_location.type = 0;
     is_within_world = false;
   }
+  */
   if (voxel_location.sublocation.x < -1.0) voxel_location.sublocation.x = -1.0;
   else if (voxel_location.sublocation.x > 1.0) voxel_location.sublocation.x = 1.0;
   if (voxel_location.sublocation.y < -1.0) voxel_location.sublocation.y = -1.0;
