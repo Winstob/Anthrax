@@ -117,7 +117,8 @@ void Anthrax::renderFrame()
 
   main_pass_shader_->use();
   main_pass_shader_->setInt("octree_layers", world_.num_layers_);
-  main_pass_shader_->setVec3("camera_position", glm::vec3(0.0, 0.0, 0.0));//glm::vec3(-50.5, 50.5, 0.0));
+  float m = 64.0;
+  main_pass_shader_->setVec3("camera_position", glm::vec3(m*cos(glfwGetTime()), m*sin(glfwGetTime()), 0.0));
   main_pass_shader_->setFloat("focal_distance", 1.0);
   renderFullscreenQuad();
 
@@ -133,11 +134,11 @@ void Anthrax::renderFullscreenQuad()
   {
     // Set up fullscreen quad
     float quad_vertices_[] = {
-    // positions  // texture coordinates
-    -1.0, -1.0,   0.0, 0.0,
-    1.0, -1.0,    1.0, 0.0,
-    -1.0, 1.0,    0.0, 1.0,
-    1.0, 1.0,     1.0, 1.0
+      // positions  // texture coordinates
+      -1.0, -1.0,   0.0, 0.0,
+      1.0, -1.0,    1.0, 0.0,
+      -1.0, 1.0,    0.0, 1.0,
+      1.0, 1.0,     1.0, 1.0
     };
     glGenVertexArrays(1, &quad_vao_);
     glGenBuffers(1, &quad_vbo_);
@@ -168,24 +169,26 @@ void Anthrax::initializeShaders()
 
 void Anthrax::createWorld()
 {
+  unsigned int next_free_index = 1;
   for (unsigned int i = 0; i < world_.num_indices_; i++)
   {
+    if (i >= (1 << 30)) break;
     for (unsigned int j = 0; j < 8; j++)
     {
       int k = i*8 + j;
-      if (j == 0 || j == 3 || j == 5 || j == 6)
+      if (j == 0 || j == 2 || j == 3 || j == 5 || j == 6)
       {
-        //world_.indirection_pool_[k] = 8;
-        world_.indirection_pool_[k] = 0x0000;
+        world_.indirection_pool_[k] = next_free_index++;
       }
       else
       {
-        world_.indirection_pool_[k] = 0x0000;
+        world_.indirection_pool_[k] = 0;
       }
     }
-    //if (i > (world_.num_indices_ / 2))
-    if (i > 65)
+    if (i > 21844)
       world_.voxel_type_pool_[i] = 1;
+    else
+      world_.voxel_type_pool_[i] = 0;
   }
   return;
 }
