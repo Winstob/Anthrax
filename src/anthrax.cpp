@@ -30,6 +30,7 @@ Anthrax::Anthrax()
   window_height_ = 400;
   world_ = Octree(16);
   camera_ = Camera(glm::vec3(8192.0, 8192.0, 0.0));
+  //camera_ = Camera(glm::vec3(0.0, 0.0, 0.0));
 }
 
 
@@ -247,7 +248,8 @@ void Anthrax::updateCamera()
 
   // Update position
   glm::vec3 motion_direction = glm::vec3(0.0, 0.0, 0.0);
-  int speed_multiplier = 64;
+  float walking_speed = 1.5; // meters per second
+  float speed_multiplier = walking_speed * 100.0f; // Each voxel is 1cm in width
   float motion_multiplier = frame_time_difference_ * speed_multiplier;
 
   if (glfwGetKey(window_, GLFW_KEY_A) == GLFW_PRESS)
