@@ -50,7 +50,7 @@ struct Ray
   float distance_traveled;
 };
 
-const float epsilon = 0.001;
+const float epsilon = 0.0;
 
 
 vec3 calculateMainRayDirection();
@@ -309,14 +309,14 @@ uint stepToEdge(inout Ray ray)
     // y is the dominating intersection plane
     ray.voxel_location.sublocation += (y_factor * ray.ray_dir);
     ray.distance_traveled += y_factor * float(1<<ray.voxel_location.layer);
-    neighbor_direction = (sign(ray.ray_dir.x) + 1.0) / 2.0 + 2.0;
+    neighbor_direction = (sign(ray.ray_dir.y) + 1.0) / 2.0 + 2.0;
   }
   else
   {
     // z is the dominating intersection plane
     ray.voxel_location.sublocation += (z_factor * ray.ray_dir);
     ray.distance_traveled += z_factor * float(1<<ray.voxel_location.layer);
-    neighbor_direction = (sign(ray.ray_dir.x) + 1.0) / 2.0 + 4.0;
+    neighbor_direction = (sign(ray.ray_dir.z) + 1.0) / 2.0 + 4.0;
   }
   ray.num_steps++;
 
@@ -415,7 +415,7 @@ uint[64] createTargetVoxelTraceSingleAxis(float position, float radius)
 }
 
 
-void jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
+bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
 {
   // neighbor_octant values:
   // 0 = left (-x)
@@ -425,188 +425,278 @@ void jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
   // 4 = back (-z)
   // 5 = front(+z)
 
-  vec3 world_location = voxel_location.sublocation * float(1 << (voxel_location.layer - 1)) / 2.0 + voxel_location.center;
   uint old_layer = voxel_location.layer;
+  vec3 old_center = voxel_location.center;
+  vec3 old_sublocation = voxel_location.sublocation;
+
+  /*
+  vec3 world_location = voxel_location.sublocation * float(1 << (voxel_location.layer - 1)) / 2.0 + voxel_location.center;
+  vec3 world_position = old_sublocation * float(1 << (old_layer - 1)) / 2.0 + old_center;
+  bool is_within_world;
+  if (neighbor == 0)
+    voxel_location = findVoxelLocation(world_position, false, true, true, is_within_world);
+  else if (neighbor == 1)
+    voxel_location = findVoxelLocation(world_position, true, true, true, is_within_world);
+  else if (neighbor == 2)
+    voxel_location = findVoxelLocation(world_position, true, false, true, is_within_world);
+  else if (neighbor == 3)
+    voxel_location = findVoxelLocation(world_position, true, true, true, is_within_world);
+  else if (neighbor == 4)
+    voxel_location = findVoxelLocation(world_position, true, true, false, is_within_world);
+  else if (neighbor == 5)
+    voxel_location = findVoxelLocation(world_position, true, true, true, is_within_world);
+  return;
+  */
 
   // First, find the path (stack_trace_octants) to the neighboring voxel (this may be incomplete or overcomplete)
   uint target_path[64] = voxel_location.stack_trace_octants;
-  uint i;
+  // format: sign * mod(target_path[i], mod_value) < comp_value
+  // 0 -> 1 - mod(target_path[i], 2) < 1
+  // 1 -> 0 + mod(target_path[i], 2) < 1
+  // 2 -> 8 - mod(target_path[i], 8) < 4
+  // 3 -> 0 + mod(target_path[i], 8) < 4
+  // 4 -> 0 + mod(target_path[i], 4) < 2
+  // 5 -> 4 - mod(target_path[i], 4) < 2
+  // sign
+  // 0 -> -1
+  // 1 -> 1
+  // 2 -> -1
+  // 3 -> 1
+  // 4 -> 1
+  // 5 -> -1
+  // comp_value
+  // 0 -> 0
+  // 1 -> 1
+  // 2 -> -4
+  // 3 -> 4
+  // 4 -> 2
+  // 5 -> -2
   if (neighbor == 0)
   {
     // Find the last odd number, subtract 1 from it, then add 1 to all following numbers
-    for (i = octree_layers-voxel_location.layer-1; i >= 0; i--)
+    uint i;
+    bool found = false;
+    for (i = voxel_location.layer; i < octree_layers; i++)
     {
-      if (mod(target_path[i], 2) == 1)
+      if (mod(target_path[octree_layers-i-1], 2) == 1)
       {
-        target_path[i]--;
+        target_path[octree_layers-i-1]--;
+        found = true;
+        break;
       }
     }
-    i++;
-    for (; i <= octree_layers-voxel_location.layer-1; i++)
+    if (!found)
     {
-      target_path[i]++;
+      return false;
+    }
+    i--;
+    for (; i >= voxel_location.layer; i--)
+    {
+      target_path[octree_layers-i-1]++;
     }
 
     uint next_y_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.y, 1.0);
     uint next_z_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.z, 1.0);
-    for (uint j = i; j < octree_layers-1; j++)
+    for (uint j = 0; i >= 1; i--, j++)
     {
-      uint k = j - i;
-      target_path[j] = 1; // account for x
-      target_path[j] += 4 * next_y_trace[k];
-      target_path[j] += 2 * (1-next_z_trace[k]);
+      target_path[octree_layers-i-1] = 1; // account for x
+      target_path[octree_layers-i-1] += 4 * next_y_trace[j];
+      target_path[octree_layers-i-1] += 2 * (1-next_z_trace[j]);
     }
   }
-  if (neighbor == 1)
+  else if (neighbor == 1)
   {
     // Find the last even number, add 1 to it, then subtract 1 from all following numbers
-    for (i = octree_layers-voxel_location.layer-1; i >= 0; i--)
+    uint i;
+    bool found = false;
+    for (i = voxel_location.layer; i < octree_layers; i++)
     {
-      if (mod(target_path[i], 2) == 0)
+      if (mod(target_path[octree_layers-i-1], 2) == 0)
       {
-        target_path[i]++;
+        target_path[octree_layers-i-1]++;
+        found = true;
+        break;
       }
     }
-    i++;
-    for (; i <= octree_layers-voxel_location.layer-1; i++)
+    if (!found)
     {
-      target_path[i]--;
+      return false;
+    }
+    i--;
+    for (; i >= voxel_location.layer; i--)
+    {
+      target_path[octree_layers-i-1]--;
     }
 
     uint next_y_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.y, 1.0);
     uint next_z_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.z, 1.0);
-    for (uint j = i; j < octree_layers-1; j++)
+    for (uint j = 0; i >= 1; i--, j++)
     {
-      uint k = j - i;
-      target_path[j] = 0; // account for x
-      target_path[j] += 4 * next_y_trace[k];
-      target_path[j] += 2 * (1-next_z_trace[k]);
+      target_path[octree_layers-i-1] = 0; // account for x
+      target_path[octree_layers-i-1] += 4 * next_y_trace[j];
+      target_path[octree_layers-i-1] += 2 * (1-next_z_trace[j]);
     }
-
   }
   if (neighbor == 2)
   {
     // Find the last number i with i >= 4, subtract 4 from it, then add 4 to all following numbers
-    for (i = octree_layers-voxel_location.layer-1; i >= 0; i--)
+    uint i;
+    bool found = false;
+    for (i = voxel_location.layer; i < octree_layers; i++)
     {
-      if (target_path[i] >= 4)
+      if (target_path[octree_layers-i-1] >= 4)
       {
-        target_path[i] -= 4;
+        target_path[octree_layers-i-1] -= 4;
+        found = true;
+        break;
       }
     }
-    i++;
-    for (; i <= octree_layers-voxel_location.layer-1; i++)
+    if (!found)
     {
-      target_path[i] += 4;
+      return false;
+    }
+    i--;
+    for (; i >= voxel_location.layer; i--)
+    {
+      target_path[octree_layers-i-1] += 4;
     }
 
     uint next_x_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.x, 1.0);
     uint next_z_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.z, 1.0);
-    for (uint j = i; j < octree_layers-1; j++)
+    for (uint j = 0; i >= 1; i--, j++)
     {
-      uint k = j - i;
-      target_path[j] = 4; // account for y
-      target_path[j] += next_x_trace[k];
-      target_path[j] += 2 * (1-next_z_trace[k]);
+      target_path[octree_layers-i-1] = 4; // account for y
+      target_path[octree_layers-i-1] += next_x_trace[j];
+      target_path[octree_layers-i-1] += 2 * (1-next_z_trace[j]);
     }
-
   }
   if (neighbor == 3)
   {
     // Find the last number i with i < 4, add 4 to it, then subtract 4 from all following numbers
-    for (i = octree_layers-voxel_location.layer-1; i >= 0; i--)
+    uint i;
+    bool found = false;
+    for (i = voxel_location.layer; i < octree_layers; i++)
     {
-      if (target_path[i] < 4)
+      if (target_path[octree_layers-i-1] < 4)
       {
-        target_path[i] += 4;
+        target_path[octree_layers-i-1] += 4;
+        found = true;
+        break;
       }
     }
-    i++;
-    for (; i <= octree_layers-voxel_location.layer-1; i++)
+    if (!found)
     {
-      target_path[i] -= 4;
+      return false;
+    }
+    i--;
+    for (; i >= voxel_location.layer; i--)
+    {
+      target_path[octree_layers-i-1] -= 4;
     }
 
     uint next_x_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.x, 1.0);
     uint next_z_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.z, 1.0);
-    for (uint j = i; j < octree_layers-1; j++)
+    for (uint j = 0; i >= 1; i--, j++)
     {
-      uint k = j - i;
-      target_path[j] = 0; // account for x
-      target_path[j] += next_x_trace[k];
-      target_path[j] += 2 * (1-next_z_trace[k]);
+      target_path[octree_layers-i-1] = 0; // account for y
+      target_path[octree_layers-i-1] += next_x_trace[j];
+      target_path[octree_layers-i-1] += 2 * (1-next_z_trace[j]);
     }
-
   }
   if (neighbor == 4)
   {
     // Find the last number i with (i%4) < 2, add 2 to it, then subtract 2 from all following numbers
-    for (i = octree_layers-voxel_location.layer-1; i >= 0; i--)
+    uint i;
+    bool found = false;
+    for (i = voxel_location.layer; i < octree_layers; i++)
     {
-      if (mod(target_path[i], 4) < 2)
+      if (mod(target_path[octree_layers-i-1], 4) < 2)
       {
-        target_path[i] += 2;
+        target_path[octree_layers-i-1] += 2;
+        found = true;
+        break;
       }
     }
-    i++;
-    for (; i <= octree_layers-voxel_location.layer-1; i++)
+    if (!found)
     {
-      target_path[i] -= 2;
+      return false;
+    }
+    i--;
+    for (; i >= voxel_location.layer; i--)
+    {
+      target_path[octree_layers-i-1] -= 2;
     }
 
     uint next_x_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.x, 1.0);
     uint next_y_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.y, 1.0);
-    for (uint j = i; j < octree_layers-1; j++)
+    for (uint j = 0; i >= 1; i--, j++)
     {
-      uint k = j - i;
-      target_path[j] = 0; // account for z
-      target_path[j] += next_x_trace[k];
-      target_path[j] += 4 * next_y_trace[k];
+      target_path[octree_layers-i-1] = 0; // account for z
+      target_path[octree_layers-i-1] += next_x_trace[j];
+      target_path[octree_layers-i-1] += 4 * next_y_trace[j];
     }
-
   }
   if (neighbor == 5)
   {
     // Find the last number i with (i%4) >= 2, subtract 2 from it, then add 2 to all following numbers
-    for (i = octree_layers-voxel_location.layer-1; i >= 0; i--)
+    uint i;
+    bool found = false;
+    for (i = voxel_location.layer; i < octree_layers; i++)
     {
-      if (mod(target_path[i], 4) >= 2)
+      if (mod(target_path[octree_layers-i-1], 4) >= 2)
       {
-        target_path[i] -= 2;
+        target_path[octree_layers-i-1] -= 2;
+        found = true;
+        break;
       }
     }
-    i++;
-    for (; i <= octree_layers-voxel_location.layer-1; i++)
+    if (!found)
     {
-      target_path[i] += 2;
+      return false;
+    }
+    i--;
+    for (; i >= voxel_location.layer; i--)
+    {
+      target_path[octree_layers-i-1] += 2;
     }
 
     uint next_x_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.x, 1.0);
     uint next_y_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.y, 1.0);
-    for (uint j = i; j < octree_layers-1; j++)
+    for (uint j = 0; i >= 1; i--, j++)
     {
-      uint k = j - i;
-      target_path[j] = 2; // account for x
-      target_path[j] += next_x_trace[k];
-      target_path[j] += 4 * next_y_trace[k];
+      target_path[octree_layers-i-1] = 2; // account for z
+      target_path[octree_layers-i-1] += next_x_trace[j];
+      target_path[octree_layers-i-1] += 4 * next_y_trace[j];
     }
-
   }
 
 
   voxel_location.stack_trace_octants = target_path;
-  voxel_location.layer - octree_layers;
+  voxel_location.layer = octree_layers;
+  voxel_location.center = vec3(0.0, 0.0, 0.0);
   float radius = float(1 << (octree_layers-1)) / 2;
   uint current_octree_index = 0;
   bool found_uniform = false;
-  bool is_within_world = true;
   for (uint i = 0; i < octree_layers-1; i++)
   {
     radius /= 2;
-    voxel_location.center = vec3(0.0, 0.0, 0.0);
+    float x_i = 0.0;
+      if (mod(target_path[i], 2) == 1.0)
+        x_i = 1.0;
+    float y_i = 0.0;
+      if (target_path[i] >= 4.0)
+        y_i = 1.0;
+    float z_i = 1.0;
+      if (mod(target_path[i], 4) >= 2.0)
+        z_i = 0.0;
+    voxel_location.center.x += x_i * radius * 2 - radius;
+    voxel_location.center.y += y_i * radius * 2 - radius;
+    voxel_location.center.z += z_i * radius * 2 - radius;
+    /*
     voxel_location.center.x += mod(target_path[i], 2) * radius * 2 - radius;
     voxel_location.center.y += mod((target_path[i]+1)/4, 2) * radius * 2 - radius;
     voxel_location.center.z += (1-mod((target_path[i]+1)/2, 2)) * radius * 2 - radius;
+    */
 
     current_octree_index = indirection_pool[(current_octree_index<<3) + voxel_location.stack_trace_octants[i]];
     voxel_location.stack_trace_indices[i] = current_octree_index;
@@ -631,20 +721,67 @@ void jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
   {
     voxel_location.type = 1;
   }
-  is_within_world = true;
 
   // Calculate new sublocation
   // Start at the current sublocation
+  // Flip the sign of the axis we've jumped across and snap to -1.0 or +1.0
+  if (neighbor <= 1)
+  {
+    voxel_location.sublocation.x = -sign(voxel_location.sublocation.x);
+  }
+  else if (neighbor <= 3)
+  {
+    voxel_location.sublocation.y = -sign(voxel_location.sublocation.y);
+  }
+  else
+  {
+    voxel_location.sublocation.z = -sign(voxel_location.sublocation.z);
+  }
+
   if (voxel_location.layer < old_layer)
   {
     // Recurse further down the octree
+    for (uint i = old_layer; i > voxel_location.layer; i--)
+    {
+      float x_i = 0.0;
+      if (mod(voxel_location.stack_trace_octants[octree_layers-i], 2) == 1.0)
+        x_i = 1.0;
+      float y_i = 0.0;
+      if (voxel_location.stack_trace_octants[octree_layers-i] >= 4.0)
+        y_i = 1.0;
+      float z_i = 1.0;
+      if (mod(voxel_location.stack_trace_octants[octree_layers-i], 4) >= 2.0)
+        z_i = 0.0;
+      voxel_location.sublocation.x = 2.0*voxel_location.sublocation.x + 1.0 - 2.0*x_i;
+      voxel_location.sublocation.y = 2.0*voxel_location.sublocation.y + 1.0 - 2.0*y_i;
+      voxel_location.sublocation.z = 2.0*voxel_location.sublocation.z + 1.0 - 2.0*z_i;
+    }
   }
   else if (voxel_location.layer > old_layer)
   {
     // Recurse up the octree
+    for (uint i = old_layer; i < voxel_location.layer; i++)
+    {
+      float x_i = 0.0;
+      if (mod(voxel_location.stack_trace_octants[octree_layers-i-1], 2) == 1.0)
+        x_i = 1.0;
+      float y_i = 0.0;
+      if (voxel_location.stack_trace_octants[octree_layers-i-1] >= 4.0)
+        y_i = 1.0;
+      float z_i = 1.0;
+      if (mod(voxel_location.stack_trace_octants[octree_layers-i-1], 4) >= 2.0)
+        z_i = 0.0;
+      voxel_location.sublocation.x = 0.5 * (voxel_location.sublocation.x - 1.0) + x_i;
+      voxel_location.sublocation.y = 0.5 * (voxel_location.sublocation.y - 1.0) + y_i;
+      voxel_location.sublocation.z = 0.5 * (voxel_location.sublocation.z - 1.0) + z_i;
+    }
+ 
   }
-  // Temporary solution (not a solution at all)
-  voxel_location.sublocation = (world_location - voxel_location.center) * 2.0 / (1 << (voxel_location.layer - 1));
+  // Temporary sublocation finder (doesn't really work)
+  /*
+  vec3 world_position = old_sublocation * float(1 << (old_layer - 1)) / 2.0 + old_center;
+  voxel_location = findVoxelLocation(world_position, true, true, true, is_within_world);
+  */
 
   /*
   if (abs(voxel_location.sublocation.x) > 1.0 + epsilon || abs(voxel_location.sublocation.y) > 1.0 + epsilon || abs(voxel_location.sublocation.z) > 1.0 + epsilon)
@@ -664,7 +801,7 @@ void jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
 
 
 
-  return;
+  return true;
 }
 
 
@@ -674,11 +811,17 @@ bool newRayStep(inout Ray ray)
   uint neighbor = stepToEdge(ray);
 
   // Next, jump to the neighboring voxel
-  //jumpToNeighbor(ray.voxel_location, neighbor);
+  bool in_bounds = jumpToNeighbor(ray.voxel_location, neighbor);
+  if (!in_bounds)
+  {
+    ray.voxel_location.type = 1;
+  }
 
+  /*
   vec3 world_position = ray.voxel_location.sublocation * float(1 << (ray.voxel_location.layer - 1)) / 2.0 + ray.voxel_location.center;
   bool is_within_world;
   ray.voxel_location = findVoxelLocation(world_position, ray.ray_dir.x > 0.0, ray.ray_dir.y > 0.0, ray.ray_dir.z > 0.0, is_within_world);
+  */
 
   // Do final checks to return appropriate value
   // return true if the ray has hit a solid block, false otherwise
