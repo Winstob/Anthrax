@@ -6,6 +6,8 @@
 #version 460 core
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
 
+#define MAX_OCTREE_LAYERS 64
+
 in vec2 screen_position;
 out vec4 FragColor;
 
@@ -34,8 +36,8 @@ uniform vec3 camera_forward;
 
 struct VoxelLocation
 {
-  uint stack_trace_octants[64];
-  uint stack_trace_indices[64];
+  uint stack_trace_octants[MAX_OCTREE_LAYERS];
+  uint stack_trace_indices[MAX_OCTREE_LAYERS];
   uint layer;
   vec3 center;
   vec3 sublocation; // Allows for a point within the voxel - mainly used for casting rays
@@ -57,7 +59,8 @@ const float epsilon = 0.0;
 vec3 calculateMainRayDirection();
 uint stepToEdge(inout Ray ray);
 VoxelLocation findVoxelLocation(vec3 world_location);
-uint[64] createTargetVoxelTraceSingleAxis(float position, float radius);
+uint[MAX_OCTREE_LAYERS] createTargetVoxelTraceSingleAxis(float position, float radius);
+uint createTargetVoxelTraceSingleAxisStep(inout float position, float radius);
 bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor);
 bool rayStep(inout Ray ray);
 
@@ -74,7 +77,7 @@ void main()
   uint voxel_type;
   bool reached_max_steps = true;
   //bool reached_max_steps = false;
-  for (uint i = 0; i < 64; i++)
+  for (uint i = 0; i < MAX_OCTREE_LAYERS; i++)
   {
     if (rayStep(ray))
     {
@@ -99,6 +102,13 @@ void main()
   //FragColor = vec4(ray.ray_dir, 1.0);
   //FragColor = vec4(float(ray.voxel_location.layer)/float(octree_layers), 0.0, 0.0, 1.0);
   //FragColor = vec4(0.3, 0.7, 0.5, 1.0);
+
+  // cel shading
+  float eps = 1/ray.voxel_location.layer * 0.05;
+  if ((abs(ray.voxel_location.sublocation.x) > 1.0-eps && (abs(ray.voxel_location.sublocation.y) > 1.0-eps || abs(ray.voxel_location.sublocation.z) > 1.0-eps)) || (abs(ray.voxel_location.sublocation.y) > 1.0-eps && abs(ray.voxel_location.sublocation.z) > 1.0-eps))
+  {
+    FragColor = vec4(vec3(0.0), 1.0);
+  }
 }
 
 
@@ -161,19 +171,25 @@ VoxelLocation findVoxelLocation(vec3 world_location)
   uint current_octree_index = 0;
   bool found_uniform = false;
   float radius = float(1 << (octree_layers-1)) / 2;
-  uint x_target_trace[64] = createTargetVoxelTraceSingleAxis(world_location.x, radius);
-  uint y_target_trace[64] = createTargetVoxelTraceSingleAxis(world_location.y, radius);
-  uint z_target_trace[64] = createTargetVoxelTraceSingleAxis(world_location.z, radius);
+  /*
+  uint x_target_trace[MAX_OCTREE_LAYERS] = createTargetVoxelTraceSingleAxis(world_location.x, radius);
+  uint y_target_trace[MAX_OCTREE_LAYERS] = createTargetVoxelTraceSingleAxis(world_location.y, radius);
+  uint z_target_trace[MAX_OCTREE_LAYERS] = createTargetVoxelTraceSingleAxis(world_location.z, radius);
+  */
+  vec3 world_location_copy = world_location;
   for (uint i = 0; i < octree_layers-1; i++)
   {
+    uint x_target_trace = createTargetVoxelTraceSingleAxisStep(world_location_copy.x, radius);
+    uint y_target_trace = createTargetVoxelTraceSingleAxisStep(world_location_copy.y, radius);
+    uint z_target_trace = createTargetVoxelTraceSingleAxisStep(world_location_copy.z, radius);
     radius /= 2;
     voxel_location.stack_trace_octants[i] = 0;
-    voxel_location.stack_trace_octants[i] += x_target_trace[i];
-    voxel_location.stack_trace_octants[i] += 4 * y_target_trace[i];
-    voxel_location.stack_trace_octants[i] += 2*(1-z_target_trace[i]);
-    voxel_location.center.x += x_target_trace[i] * radius * 2 - radius;
-    voxel_location.center.y += y_target_trace[i] * radius * 2 - radius;
-    voxel_location.center.z += z_target_trace[i] * radius * 2 - radius;
+    voxel_location.stack_trace_octants[i] += x_target_trace;
+    voxel_location.stack_trace_octants[i] += 4 * y_target_trace;
+    voxel_location.stack_trace_octants[i] += 2*(1-z_target_trace);
+    voxel_location.center.x += x_target_trace * radius * 2 - radius;
+    voxel_location.center.y += y_target_trace * radius * 2 - radius;
+    voxel_location.center.z += z_target_trace * radius * 2 - radius;
 
     current_octree_index = indirection_pool[(current_octree_index<<3) + voxel_location.stack_trace_octants[i]];
     voxel_location.stack_trace_indices[i] = current_octree_index;
@@ -207,9 +223,10 @@ VoxelLocation findVoxelLocation(vec3 world_location)
   return voxel_location;
 }
 
-uint[64] createTargetVoxelTraceSingleAxis(float position, float radius)
+
+uint[MAX_OCTREE_LAYERS] createTargetVoxelTraceSingleAxis(float position, float radius)
 {
-  uint trace[64];
+  uint trace[MAX_OCTREE_LAYERS];
   float center = 0.0;
   for (int i = 0; i < octree_layers-1; i++)
   {
@@ -226,6 +243,21 @@ uint[64] createTargetVoxelTraceSingleAxis(float position, float radius)
     }
   }
   return trace;
+}
+
+uint createTargetVoxelTraceSingleAxisStep(inout float position, float radius)
+{
+  radius *= 0.5;
+  if (position > 0.0)
+  {
+    position -= radius;
+    return 1;
+  }
+  else
+  {
+    position += radius;
+    return 0;
+  }
 }
 
 
@@ -247,7 +279,7 @@ bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
   vec3 old_sublocation = voxel_location.sublocation;
 
   // First, find the path (stack_trace_octants) to the neighboring voxel (this may be incomplete or overcomplete)
-  uint target_path[64] = voxel_location.stack_trace_octants;
+  uint target_path[MAX_OCTREE_LAYERS] = voxel_location.stack_trace_octants;
   // format: sign * mod(target_path[i], mod_value) < comp_value
   // 0 -> 1 - mod(target_path[i], 2) < 1
   // 1 -> 0 + mod(target_path[i], 2) < 1
@@ -291,13 +323,16 @@ bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
     }
     i = voxel_location.layer-1;
 
-    uint next_y_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.y, 1.0);
-    uint next_z_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.z, 1.0);
+    vec3 voxel_sublocation_copy = voxel_location.sublocation;
+    float radius = 1.0;
     for (uint j = 0; i >= 1; i--, j++)
     {
+      uint next_y_trace = createTargetVoxelTraceSingleAxisStep(voxel_sublocation_copy.y, radius);
+      uint next_z_trace = createTargetVoxelTraceSingleAxisStep(voxel_sublocation_copy.z, radius);
+      radius *= 0.5;
       target_path[octree_layers-i-1] = 1; // account for x
-      target_path[octree_layers-i-1] += 4 * next_y_trace[j];
-      target_path[octree_layers-i-1] += 2 * (1-next_z_trace[j]);
+      target_path[octree_layers-i-1] += 4 * next_y_trace;
+      target_path[octree_layers-i-1] += 2 * (1-next_z_trace);
     }
   }
   else if (neighbor == 1)
@@ -322,13 +357,16 @@ bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
     }
     i = voxel_location.layer-1;
 
-    uint next_y_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.y, 1.0);
-    uint next_z_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.z, 1.0);
+    vec3 voxel_sublocation_copy = voxel_location.sublocation;
+    float radius = 1.0;
     for (uint j = 0; i >= 1; i--, j++)
     {
+      uint next_y_trace = createTargetVoxelTraceSingleAxisStep(voxel_sublocation_copy.y, radius);
+      uint next_z_trace = createTargetVoxelTraceSingleAxisStep(voxel_sublocation_copy.z, radius);
+      radius *= 0.5;
       target_path[octree_layers-i-1] = 0; // account for x
-      target_path[octree_layers-i-1] += 4 * next_y_trace[j];
-      target_path[octree_layers-i-1] += 2 * (1-next_z_trace[j]);
+      target_path[octree_layers-i-1] += 4 * next_y_trace;
+      target_path[octree_layers-i-1] += 2 * (1-next_z_trace);
     }
   }
   else if (neighbor == 2)
@@ -353,13 +391,16 @@ bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
     }
     i = voxel_location.layer-1;
 
-    uint next_x_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.x, 1.0);
-    uint next_z_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.z, 1.0);
+    vec3 voxel_sublocation_copy = voxel_location.sublocation;
+    float radius = 1.0;
     for (uint j = 0; i >= 1; i--, j++)
     {
+      uint next_x_trace = createTargetVoxelTraceSingleAxisStep(voxel_sublocation_copy.x, radius);
+      uint next_z_trace = createTargetVoxelTraceSingleAxisStep(voxel_sublocation_copy.z, radius);
+      radius *= 0.5;
       target_path[octree_layers-i-1] = 4; // account for y
-      target_path[octree_layers-i-1] += next_x_trace[j];
-      target_path[octree_layers-i-1] += 2 * (1-next_z_trace[j]);
+      target_path[octree_layers-i-1] += next_x_trace;
+      target_path[octree_layers-i-1] += 2 * (1-next_z_trace);
     }
   }
   else if (neighbor == 3)
@@ -384,13 +425,16 @@ bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
     }
     i = voxel_location.layer-1;
 
-    uint next_x_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.x, 1.0);
-    uint next_z_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.z, 1.0);
+    vec3 voxel_sublocation_copy = voxel_location.sublocation;
+    float radius = 1.0;
     for (uint j = 0; i >= 1; i--, j++)
     {
+      uint next_x_trace = createTargetVoxelTraceSingleAxisStep(voxel_sublocation_copy.x, radius);
+      uint next_z_trace = createTargetVoxelTraceSingleAxisStep(voxel_sublocation_copy.z, radius);
+      radius *= 0.5;
       target_path[octree_layers-i-1] = 0; // account for y
-      target_path[octree_layers-i-1] += next_x_trace[j];
-      target_path[octree_layers-i-1] += 2 * (1-next_z_trace[j]);
+      target_path[octree_layers-i-1] += next_x_trace;
+      target_path[octree_layers-i-1] += 2 * (1-next_z_trace);
     }
   }
   else if (neighbor == 4)
@@ -415,13 +459,16 @@ bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
     }
     i = voxel_location.layer-1;
 
-    uint next_x_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.x, 1.0);
-    uint next_y_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.y, 1.0);
+    vec3 voxel_sublocation_copy = voxel_location.sublocation;
+    float radius = 1.0;
     for (uint j = 0; i >= 1; i--, j++)
     {
+      uint next_x_trace = createTargetVoxelTraceSingleAxisStep(voxel_sublocation_copy.x, radius);
+      uint next_y_trace = createTargetVoxelTraceSingleAxisStep(voxel_sublocation_copy.y, radius);
+      radius *= 0.5;
       target_path[octree_layers-i-1] = 0; // account for z
-      target_path[octree_layers-i-1] += next_x_trace[j];
-      target_path[octree_layers-i-1] += 4 * next_y_trace[j];
+      target_path[octree_layers-i-1] += next_x_trace;
+      target_path[octree_layers-i-1] += 4 * next_y_trace;
     }
   }
   else if (neighbor == 5)
@@ -446,13 +493,16 @@ bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
     }
     i = voxel_location.layer-1;
 
-    uint next_x_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.x, 1.0);
-    uint next_y_trace[64] = createTargetVoxelTraceSingleAxis(voxel_location.sublocation.y, 1.0);
+    vec3 voxel_sublocation_copy = voxel_location.sublocation;
+    float radius = 1.0;
     for (uint j = 0; i >= 1; i--, j++)
     {
+      uint next_x_trace = createTargetVoxelTraceSingleAxisStep(voxel_sublocation_copy.x, radius);
+      uint next_y_trace = createTargetVoxelTraceSingleAxisStep(voxel_sublocation_copy.y, radius);
+      radius *= 0.5;
       target_path[octree_layers-i-1] = 2; // account for z
-      target_path[octree_layers-i-1] += next_x_trace[j];
-      target_path[octree_layers-i-1] += 4 * next_y_trace[j];
+      target_path[octree_layers-i-1] += next_x_trace;
+      target_path[octree_layers-i-1] += 4 * next_y_trace;
     }
   }
 
@@ -524,18 +574,12 @@ bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
     // Recurse further down the octree
     for (uint i = old_layer; i > voxel_location.layer; i--)
     {
-      float x_i = 0.0;
-      if (mod(voxel_location.stack_trace_octants[octree_layers-i], 2) == 1.0)
-        x_i = 1.0;
-      float y_i = 0.0;
-      if (voxel_location.stack_trace_octants[octree_layers-i] >= 4.0)
-        y_i = 1.0;
-      float z_i = 1.0;
-      if (mod(voxel_location.stack_trace_octants[octree_layers-i], 4) >= 2.0)
-        z_i = 0.0;
-      voxel_location.sublocation.x = 2.0*voxel_location.sublocation.x + 1.0 - 2.0*x_i;
-      voxel_location.sublocation.y = 2.0*voxel_location.sublocation.y + 1.0 - 2.0*y_i;
-      voxel_location.sublocation.z = 2.0*voxel_location.sublocation.z + 1.0 - 2.0*z_i;
+      vec3 modifier;
+      modifier.x = float((voxel_location.stack_trace_octants[octree_layers-i] % 2));
+      modifier.y = float((voxel_location.stack_trace_octants[octree_layers-i] % 8) / 4);
+      modifier.z = float(1 - ((voxel_location.stack_trace_octants[octree_layers-i] % 4) / 2));
+
+      voxel_location.sublocation = 2.0*voxel_location.sublocation + 1.0 - 2.0*modifier;
     }
   }
   else if (voxel_location.layer > old_layer)
@@ -543,20 +587,13 @@ bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
     // Recurse up the octree
     for (uint i = old_layer; i < voxel_location.layer; i++)
     {
-      float x_i = 0.0;
-      if (mod(voxel_location.stack_trace_octants[octree_layers-i-1], 2) == 1.0)
-        x_i = 1.0;
-      float y_i = 0.0;
-      if (voxel_location.stack_trace_octants[octree_layers-i-1] >= 4.0)
-        y_i = 1.0;
-      float z_i = 1.0;
-      if (mod(voxel_location.stack_trace_octants[octree_layers-i-1], 4) >= 2.0)
-        z_i = 0.0;
-      voxel_location.sublocation.x = 0.5 * (voxel_location.sublocation.x - 1.0) + x_i;
-      voxel_location.sublocation.y = 0.5 * (voxel_location.sublocation.y - 1.0) + y_i;
-      voxel_location.sublocation.z = 0.5 * (voxel_location.sublocation.z - 1.0) + z_i;
+      vec3 modifier;
+      modifier.x = float((voxel_location.stack_trace_octants[octree_layers-i-1] % 2));
+      modifier.y = float((voxel_location.stack_trace_octants[octree_layers-i-1] % 8) / 4);
+      modifier.z = float(1 - ((voxel_location.stack_trace_octants[octree_layers-i-1] % 4) / 2));
+
+      voxel_location.sublocation = 0.5 * (voxel_location.sublocation - 1.0) + modifier;
     }
- 
   }
   return true;
 }
