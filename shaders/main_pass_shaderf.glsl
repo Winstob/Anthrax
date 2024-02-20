@@ -21,7 +21,7 @@ layout (std430, binding = 1) buffer voxel_type_pool_ssbo
 };
 layout (std430, binding = 2) buffer lod_pool_ssbo
 {
-  readonly uint lod_pool[];
+  readonly uint lod_pool[]; // Stored as a compressed vector of 4 8-bit unsigned integers
 };
 
 uniform int octree_layers;
@@ -61,8 +61,10 @@ uint stepToEdge(inout Ray ray);
 VoxelLocation findVoxelLocation(vec3 world_location);
 uint[MAX_OCTREE_LAYERS] createTargetVoxelTraceSingleAxis(float position, float radius);
 uint createTargetVoxelTraceSingleAxisStep(inout float position, float radius);
-bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor);
+//bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor);
+bool jumpToNeighbor(inout Ray ray, uint neighbor);
 bool rayStep(inout Ray ray);
+uint computeLOD(float dist);
 
 
 void main()
@@ -95,7 +97,7 @@ void main()
   {
     FragColor = vec4(1.0, 1.0, 1.0, 1.0);
   }
-  FragColor = vec4(ray.voxel_location.sublocation, 1.0);
+  //FragColor = vec4(ray.voxel_location.sublocation, 1.0);
   //FragColor = vec4(vec3(float(ray.num_steps)/(1<<(octree_layers-1))), 1.0);
   //FragColor = vec4(1.0-vec3(ray.distance_traveled/(1<<(octree_layers+1))), 1.0);
   //FragColor = vec4(ray.voxel_location.center/(1<<octree_layers), 1.0);
@@ -104,11 +106,13 @@ void main()
   //FragColor = vec4(0.3, 0.7, 0.5, 1.0);
 
   // cel shading
+  /*
   float eps = 1/ray.voxel_location.layer * 0.05;
   if ((abs(ray.voxel_location.sublocation.x) > 1.0-eps && (abs(ray.voxel_location.sublocation.y) > 1.0-eps || abs(ray.voxel_location.sublocation.z) > 1.0-eps)) || (abs(ray.voxel_location.sublocation.y) > 1.0-eps && abs(ray.voxel_location.sublocation.z) > 1.0-eps))
   {
     FragColor = vec4(vec3(0.0), 1.0);
   }
+  */
 }
 
 
@@ -261,8 +265,10 @@ uint createTargetVoxelTraceSingleAxisStep(inout float position, float radius)
 }
 
 
-bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
+//bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
+bool jumpToNeighbor(inout Ray ray, uint neighbor)
 {
+  VoxelLocation voxel_location = ray.voxel_location;
   // Jump to the specified neighbor without changing the world position
   // It's done this way in an effor to minimize floating point errors
 
@@ -513,6 +519,7 @@ bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
   float radius = float(1 << (octree_layers-1)) / 2;
   uint current_octree_index = 0;
   bool found_uniform = false;
+  uint lod_layer = computeLOD(ray.distance_traveled);
   for (uint i = 0; i < octree_layers-1; i++)
   {
     radius /= 2;
@@ -544,6 +551,12 @@ bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
       // This entire octree is uniform (not air)
       voxel_location.type = 1;
       found_uniform = true;
+      break;
+    }
+    if (voxel_location.layer <= lod_layer)
+    {
+      // This octree is far enough away that we can use the current octree for LOD
+      voxel_location.type = 1;
       break;
     }
   }
@@ -595,6 +608,7 @@ bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor)
       voxel_location.sublocation = 0.5 * (voxel_location.sublocation - 1.0) + modifier;
     }
   }
+  ray.voxel_location = voxel_location;
   return true;
 }
 
@@ -605,7 +619,7 @@ bool rayStep(inout Ray ray)
   uint neighbor = stepToEdge(ray);
 
   // Next, jump to the neighboring voxel
-  bool in_bounds = jumpToNeighbor(ray.voxel_location, neighbor);
+  bool in_bounds = jumpToNeighbor(ray, neighbor);
   if (!in_bounds)
   {
     ray.voxel_location.type = 0;
@@ -620,4 +634,14 @@ bool rayStep(inout Ray ray)
     return false;
   }
   return true;
+}
+
+
+uint computeLOD(float dist)
+{
+  // Compute the lowest reasonable octree layer to use based on the given distance
+  uint num_pixels = max(screen_width, screen_height);
+  uint num_visible_pixels = uint(dist / focal_distance);
+  return uint(log2(num_visible_pixels / num_pixels));
+  //return uint(dist / 1000) + 1;
 }

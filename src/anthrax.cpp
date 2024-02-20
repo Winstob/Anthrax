@@ -212,6 +212,7 @@ void Anthrax::createWorld()
       world_.voxel_type_pool_[i] = 1;
     else
       world_.voxel_type_pool_[i] = 0;
+    world_.lod_pool_[i] = 0x000000FF; // White, opaque
   }
   return;
 }
