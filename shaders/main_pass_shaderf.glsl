@@ -79,7 +79,7 @@ void main()
   uint voxel_type;
   bool reached_max_steps = true;
   //bool reached_max_steps = false;
-  for (uint i = 0; i < MAX_OCTREE_LAYERS; i++)
+  for (uint i = 0; i < pow(2, octree_layers); i++)
   {
     if (rayStep(ray))
     {
@@ -96,10 +96,11 @@ void main()
   else
   {
     FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+    //FragColor = vec4(ray.voxel_location.sublocation, 1.0);
+    //FragColor = vec4(1.0-vec3(ray.distance_traveled/(1<<(octree_layers+1))), 1.0);
   }
-  //FragColor = vec4(ray.voxel_location.sublocation, 1.0);
+  FragColor = vec4(ray.voxel_location.sublocation, 1.0);
   //FragColor = vec4(vec3(float(ray.num_steps)/(1<<(octree_layers-1))), 1.0);
-  //FragColor = vec4(1.0-vec3(ray.distance_traveled/(1<<(octree_layers+1))), 1.0);
   //FragColor = vec4(ray.voxel_location.center/(1<<octree_layers), 1.0);
   //FragColor = vec4(ray.ray_dir, 1.0);
   //FragColor = vec4(float(ray.voxel_location.layer)/float(octree_layers), 0.0, 0.0, 1.0);

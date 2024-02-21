@@ -3,6 +3,7 @@ project(anthrax)
 set(PROJECT_NAME anthrax)
 
 add_compile_definitions(SHADER_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/shaders)
+#add_compile_definitions(SHADER_DIRECTORY=shaders)
 
 set(GLFW_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/glfw)
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
