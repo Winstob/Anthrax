@@ -1,3 +1,8 @@
+/* ---------------------------------------------------------------- *\
+ * main_pass_shaderf.glsl
+ * Author: Gavin Ralston
+ * Date Created: 2024-02-03
+\* ---------------------------------------------------------------- */
 #version 460 core
 layout (location = 0) in vec2 position;
 layout (location = 1) in vec2 tex_coords;
