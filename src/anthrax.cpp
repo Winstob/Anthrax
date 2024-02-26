@@ -26,8 +26,8 @@ bool Anthrax::window_size_changed_ = false;
 
 Anthrax::Anthrax()
 {
-  window_width_ = 600;
-  window_height_ = 400;
+  window_width_ = 1920;
+  window_height_ = 1080;
   int world_size = 24;
   world_ = Octree(world_size);
   camera_ = Camera(glm::vec3(pow(2, world_size-3), pow(2, world_size-3), 0.0));
