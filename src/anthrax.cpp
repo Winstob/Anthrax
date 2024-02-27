@@ -150,11 +150,11 @@ void Anthrax::renderFrame()
   previous_mouse_y_ = mouse_y_;
   updateCamera();
 
-  glClear(GL_COLOR_BUFFER_BIT);
   glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
   // Main pass
   glBindFramebuffer(GL_FRAMEBUFFER, main_pass_framebuffer_);
+  glClear(GL_COLOR_BUFFER_BIT);
   main_pass_shader_->use();
   main_pass_shader_->setInt("octree_layers", world_.num_layers_);
   main_pass_shader_->setFloat("focal_distance", 1.0);
@@ -168,11 +168,18 @@ void Anthrax::renderFrame()
 
   // Text pass
   glBindFramebuffer(GL_FRAMEBUFFER, text_pass_framebuffer_);
+  glClear(GL_COLOR_BUFFER_BIT);
   text_pass_shader_->use();
-  renderText("Hi Bros", 25.0, static_cast<float>(window_height_)-45.0, 0.5, glm::vec3(1.0, 1.0, 1.0));
+  //renderText("Hi Bros", 25.0, static_cast<float>(window_height_)-45.0, 0.5, glm::vec3(1.0, 1.0, 1.0));
+  for (unsigned int i = 0; i < texts_.size(); i++)
+  {
+    if (texts_.exists(i))
+      renderText(texts_[i]);
+  }
 
   // Screen pass
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  glClear(GL_COLOR_BUFFER_BIT);
   screen_pass_shader_->use();
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, main_pass_texture_);
@@ -514,6 +521,18 @@ void Anthrax::renderText(std::string text, float x, float y, float scale, glm::v
   glBindTexture(GL_TEXTURE_2D, 0);
 
   return;
+}
+
+
+unsigned int Anthrax::addText(std::string text, float x, float y, float scale, glm::vec3 color)
+{
+  return texts_.add(Text(text, x, y, scale, color));
+}
+
+
+int Anthrax::removeText(unsigned int id)
+{
+  return texts_.remove(id);
 }
 
 

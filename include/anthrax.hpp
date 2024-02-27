@@ -24,6 +24,8 @@
 #include "octree.hpp"
 #include "camera.hpp"
 #include "character.hpp"
+#include "idmap.hpp"
+#include "text.hpp"
 
 namespace Anthrax
 {
@@ -37,6 +39,10 @@ public:
   void exit();
   void renderFrame();
   bool windowShouldClose() const { return glfwWindowShouldClose(window_); }
+
+  unsigned int addText(std::string text, float x, float y, float scale, glm::vec3 color);
+  unsigned int addText(std::string text, float x, float y, float scale, float colorx, float colory, float colorz) { return addText(text, x, y, scale, glm::vec3(colorx, colory, colorz)); }
+  int removeText(unsigned int id);
 private:
   void renderFullscreenQuad();
   void initializeShaders();
@@ -47,6 +53,7 @@ private:
   void mainFramebufferSetup();
   void textFramebufferSetup();
   void renderText(std::string text, float x, float y, float scale, glm::vec3 color);
+  void renderText(Text text) { renderText(text.text, text.x, text.y, text.scale, text.color); }
 
   // Shader passes
   Shader *main_pass_shader_;
@@ -84,6 +91,7 @@ private:
   GLuint text_pass_framebuffer_ = 0, text_pass_texture_ = 0;
 
   std::map<GLchar, Character> character_map_;
+  IDMap<Text> texts_;
 
 };
 

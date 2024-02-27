@@ -28,6 +28,8 @@ set(HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/include/octree.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/camera.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/character.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/idmap.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/text.hpp
   )
 
 set(SRC
