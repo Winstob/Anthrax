@@ -15,15 +15,19 @@ set(GLAD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/glad)
 
 set(GLM_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/glm)
 
+set(FREETYPE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/freetype)
+
 add_subdirectory(${GLFW_DIR})
 add_subdirectory(${GLAD_DIR})
 add_subdirectory(${GLM_DIR})
+add_subdirectory(${FREETYPE_DIR})
 
 set(HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/include/anthrax.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/shader.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/octree.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/camera.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/character.hpp
   )
 
 set(SRC
@@ -44,6 +48,7 @@ target_link_libraries(${PROJECT_NAME}
   glfw
   glad
   glm
+  freetype
   )
 
 target_include_directories(${PROJECT_NAME}
