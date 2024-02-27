@@ -168,18 +168,18 @@ void Anthrax::renderFrame()
 
   // Text pass
   glBindFramebuffer(GL_FRAMEBUFFER, text_pass_framebuffer_);
-  //glBindFramebuffer(GL_FRAMEBUFFER, 0);
   text_pass_shader_->use();
-  renderText("Hi Bros", 25.0, static_cast<float>(window_height_)-45.0, 2.0, glm::vec3(1.0, 1.0, 1.0));
-  //renderFullscreenQuad();
+  renderText("Hi Bros", 25.0, static_cast<float>(window_height_)-45.0, 0.5, glm::vec3(1.0, 1.0, 1.0));
 
   // Screen pass
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   screen_pass_shader_->use();
   glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, main_pass_texture_);
+  renderFullscreenQuad();
+  glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, text_pass_texture_);
   renderFullscreenQuad();
-
 
 
   glfwSwapBuffers(window_);
@@ -377,7 +377,7 @@ void Anthrax::textTexturesSetup()
     std::cout << "ERROR::FREETYPE: Failed to load font" << std::endl;
     return;
   }
-  FT_Set_Pixel_Sizes(face, 0, 16);
+  FT_Set_Pixel_Sizes(face, 0, 64);
   glPixelStoref(GL_UNPACK_ALIGNMENT, 1);
 
   for (unsigned char c = 0; c < 128; c++)

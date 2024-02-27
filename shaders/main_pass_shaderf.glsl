@@ -84,7 +84,8 @@ void main()
   //bool reached_max_steps = false;
   for (uint i = 0; i < pow(2, octree_layers); i++)
   {
-    if (rayStep(ray) || ray.distance_traveled >= render_distance)
+    //if (rayStep(ray) || ray.distance_traveled >= render_distance)
+    if (rayStep(ray))
     {
       break;
     }
