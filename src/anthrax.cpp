@@ -8,6 +8,11 @@
 #ifndef WINDOW_NAME
 #define WINDOW_NAME Anthrax
 #endif
+
+#ifndef FONT_DIRECTORY
+#define FONT_DIRECTORY fonts
+#endif
+
 #define xstr(s) str(s)
 #define str(s) #s
 
@@ -26,8 +31,8 @@ bool Anthrax::window_size_changed_ = false;
 
 Anthrax::Anthrax()
 {
-  window_width_ = 1920;
-  window_height_ = 1080;
+  window_width_ = 800;
+  window_height_ = 600;
   int world_size = 24;
   world_ = Octree(world_size);
   camera_ = Camera(glm::vec3(pow(2, world_size-3), pow(2, world_size-3), 0.0));
@@ -79,13 +84,21 @@ int Anthrax::initWindow()
   }
 
   // Face culling
+  /*
   glEnable(GL_CULL_FACE);
   glCullFace(GL_BACK);
+  */
+
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   // Disable vsync
   glfwSwapInterval(0);
 
   initializeShaders();
+  textTexturesSetup();
+  mainFramebufferSetup();
+  textFramebufferSetup();
 
   createWorld();
   main_pass_shader_->use();
@@ -104,6 +117,11 @@ int Anthrax::initWindow()
 void Anthrax::exit()
 {
   delete main_pass_shader_;
+  delete text_pass_shader_;
+  delete screen_pass_shader_;
+  glDeleteFramebuffers(1, &main_pass_framebuffer_);
+  glDeleteTextures(1, &main_pass_texture_);
+  glDeleteFramebuffers(1, &text_pass_framebuffer_);
   glDeleteBuffers(1, &indirection_pool_ssbo_);
   glDeleteBuffers(1, &voxel_type_pool_ssbo_);
   glDeleteBuffers(1, &lod_pool_ssbo_);
@@ -116,6 +134,8 @@ void Anthrax::renderFrame()
   if (window_size_changed_)
   {
     window_size_changed_ = false;
+    mainFramebufferSetup();
+    textFramebufferSetup();
   }
 
   float current_time = static_cast<float>(glfwGetTime());
@@ -130,9 +150,11 @@ void Anthrax::renderFrame()
   previous_mouse_y_ = mouse_y_;
   updateCamera();
 
-  glClear(GL_COLOR_BUFFER_BIT);
   glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
+  // Main pass
+  glBindFramebuffer(GL_FRAMEBUFFER, main_pass_framebuffer_);
+  glClear(GL_COLOR_BUFFER_BIT);
   main_pass_shader_->use();
   main_pass_shader_->setInt("octree_layers", world_.num_layers_);
   main_pass_shader_->setFloat("focal_distance", 1.0);
@@ -143,6 +165,29 @@ void Anthrax::renderFrame()
   main_pass_shader_->setVec3("camera_up", camera_.getUpLookDirection());
   main_pass_shader_->setVec3("camera_forward", camera_.getForwardLookDirection());
   renderFullscreenQuad();
+
+  // Text pass
+  glBindFramebuffer(GL_FRAMEBUFFER, text_pass_framebuffer_);
+  glClear(GL_COLOR_BUFFER_BIT);
+  text_pass_shader_->use();
+  //renderText("Hi Bros", 25.0, static_cast<float>(window_height_)-45.0, 0.5, glm::vec3(1.0, 1.0, 1.0));
+  for (unsigned int i = 0; i < texts_.size(); i++)
+  {
+    if (texts_.exists(i))
+      renderText(texts_[i]);
+  }
+
+  // Screen pass
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  glClear(GL_COLOR_BUFFER_BIT);
+  screen_pass_shader_->use();
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, main_pass_texture_);
+  renderFullscreenQuad();
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, text_pass_texture_);
+  renderFullscreenQuad();
+
 
   glfwSwapBuffers(window_);
   glfwPollEvents();
@@ -185,6 +230,11 @@ void Anthrax::initializeShaders()
   shader_directory += "/";
 
   main_pass_shader_ = new Shader(Shader::ShaderInputType::FILEPATH, (shader_directory + "main_pass_shaderv.glsl").c_str(), (shader_directory + "main_pass_shaderf.glsl").c_str());
+
+  text_pass_shader_ = new Shader(Shader::ShaderInputType::FILEPATH, (shader_directory + "text_pass_shaderv.glsl").c_str(), (shader_directory + "text_pass_shaderf.glsl").c_str());
+
+  screen_pass_shader_ = new Shader(Shader::ShaderInputType::FILEPATH, (shader_directory + "screen_pass_shaderv.glsl").c_str(), (shader_directory + "screen_pass_shaderf.glsl").c_str());
+
   return;
 }
 
@@ -285,6 +335,206 @@ void Anthrax::updateCamera()
   camera_.position += motion_direction;
   return;
 }
+
+
+void Anthrax::mainFramebufferSetup()
+{
+  if (main_pass_framebuffer_ == 0)
+  {
+    glGenFramebuffers(1, &main_pass_framebuffer_);
+  }
+  glBindFramebuffer(GL_FRAMEBUFFER, main_pass_framebuffer_);
+
+  if (main_pass_texture_ == 0)
+  {
+    glGenTextures(1, &main_pass_texture_);
+  }
+
+  glBindTexture(GL_TEXTURE_2D, main_pass_texture_);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, window_width_, window_height_, 0, GL_RGBA, GL_FLOAT, NULL);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, main_pass_texture_, 0);
+
+  unsigned int attachment = GL_COLOR_ATTACHMENT0;
+  glDrawBuffers(1, &attachment);
+
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    std::cout << "Framebuffer not complete!" << std::endl;
+
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  return;
+}
+
+
+void Anthrax::textTexturesSetup()
+{
+  FT_Library ft;
+  if (FT_Init_FreeType(&ft))
+  {
+    std::cout << "ERROR::FREETYPE: Could not init FreeType library" << std::endl;
+    return;
+  }
+  FT_Face face;
+  std::string font_directory = xstr(FONT_DIRECTORY);
+  //if (FT_New_Face(ft, (font_directory + "/Ubuntu-BI.ttf").c_str(), 0, &face))
+  //if (FT_New_Face(ft, (font_directory + "/tmp.ttf").c_str(), 0, &face))
+  if (FT_New_Face(ft, "fonts/UbuntuMono-R.ttf", 0, &face))
+  {
+    std::cout << "ERROR::FREETYPE: Failed to load font" << std::endl;
+    return;
+  }
+  FT_Set_Pixel_Sizes(face, 0, 64);
+  glPixelStoref(GL_UNPACK_ALIGNMENT, 1);
+
+  for (unsigned char c = 0; c < 128; c++)
+  {
+    // Load character glyph
+    if (FT_Load_Char(face, c, FT_LOAD_RENDER))
+    {
+      std::cout << "ERROR::FREETYPE: Failed to load glyph" << std::endl;
+      continue;
+    }
+    // Generate texture
+    unsigned int texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_RED,
+        face->glyph->bitmap.width,
+        face->glyph->bitmap.rows,
+        0,
+        GL_RED,
+        GL_UNSIGNED_BYTE,
+        face->glyph->bitmap.buffer
+        );
+    // Set texture options
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    // Store character info
+    Character character = Character(
+      texture,
+      glm::ivec2(face->glyph->bitmap.width, face->glyph->bitmap.rows),
+      glm::ivec2(face->glyph->bitmap_left, face->glyph->bitmap_top),
+      static_cast<unsigned int>(face->glyph->advance.x)
+      );
+    character_map_.insert(std::pair<GLchar, Character>(c, character));
+  }
+  glBindTexture(GL_TEXTURE_2D, 0);
+  FT_Done_Face(face);
+  FT_Done_FreeType(ft);
+
+  if (text_vao_ == 0)
+  {
+    glGenVertexArrays(1, &text_vao_);
+    glGenBuffers(1, &text_vbo_);
+    glBindVertexArray(text_vao_);
+    glBindBuffer(GL_ARRAY_BUFFER, text_vbo_);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float)*6*4, NULL, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 4*sizeof(float), 0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+  }
+
+  return;
+}
+
+void Anthrax::textFramebufferSetup()
+{
+
+  if (text_pass_framebuffer_ == 0)
+  {
+    glGenFramebuffers(1, &text_pass_framebuffer_);
+  }
+  glBindFramebuffer(GL_FRAMEBUFFER, text_pass_framebuffer_);
+
+  if (text_pass_texture_ == 0)
+  {
+    glGenTextures(1, &text_pass_texture_);
+  }
+
+  glBindTexture(GL_TEXTURE_2D, text_pass_texture_);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, window_width_, window_height_, 0, GL_RGBA, GL_FLOAT, NULL);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, text_pass_texture_, 0);
+
+  unsigned int attachment = GL_COLOR_ATTACHMENT0;
+  glDrawBuffers(1, &attachment);
+
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    std::cout << "Framebuffer not complete!" << std::endl;
+
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  return;
+}
+
+
+void Anthrax::renderText(std::string text, float x, float y, float scale, glm::vec3 color)
+{
+  text_pass_shader_->use();
+  text_pass_shader_->setVec3("color", color);
+  glm::mat4 projection = glm::ortho(0.0f, static_cast<float>(window_width_), 0.0f, static_cast<float>(window_height_));
+  text_pass_shader_->setMat4("projection", projection);
+  glActiveTexture(GL_TEXTURE0);
+  glBindVertexArray(text_vao_);
+
+  // Iterate through all characters
+  std::string::const_iterator c;
+  for (c = text.begin(); c != text.end(); c++) 
+  {
+    Character ch = character_map_[*c];
+
+    float xpos = x + ch.Bearing.x * scale;
+    float ypos = y - (ch.Size.y - ch.Bearing.y) * scale;
+
+    float w = ch.Size.x * scale;
+    float h = ch.Size.y * scale;
+    // Update VBO for each character
+    float vertices[6][4] = {
+        { xpos,     ypos + h,   0.0f, 0.0f },            
+        { xpos,     ypos,       0.0f, 1.0f },
+        { xpos + w, ypos,       1.0f, 1.0f },
+
+        { xpos,     ypos + h,   0.0f, 0.0f },
+        { xpos + w, ypos,       1.0f, 1.0f },
+        { xpos + w, ypos + h,   1.0f, 0.0f }           
+    };
+    // Render glyph texture over quad
+    glBindTexture(GL_TEXTURE_2D, ch.TextureID);
+    // Update content of VBO memory
+    glBindBuffer(GL_ARRAY_BUFFER, text_vbo_);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices); // be sure to use glBufferSubData and not glBufferData
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    // Render quad
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    // Now advance cursors for next glyph (note that advance is number of 1/64 pixels)
+    x += (ch.Advance >> 6) * scale; // bitshift by 6 to get value in pixels (2^6 = 64 (divide amount of 1/64th pixels by 64 to get amount of pixels))
+  }
+  glBindVertexArray(0);
+  glBindTexture(GL_TEXTURE_2D, 0);
+
+  return;
+}
+
+
+unsigned int Anthrax::addText(std::string text, float x, float y, float scale, glm::vec3 color)
+{
+  return texts_.add(Text(text, x, y, scale, color));
+}
+
+
+int Anthrax::removeText(unsigned int id)
+{
+  return texts_.remove(id);
+}
+
 
 // ----------------------------------------------------------------
 // Callbacks

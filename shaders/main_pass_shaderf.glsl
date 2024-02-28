@@ -3,14 +3,15 @@
  * Author: Gavin Ralston
  * Date Created: 2024-02-03
 \* ---------------------------------------------------------------- */
-#version 430 core
-//#version 460 core
+#version 460 core
 //#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
 
 #define MAX_OCTREE_LAYERS 64
 
 in vec2 screen_position;
-out vec4 FragColor;
+//out vec4 FragColor;
+layout (location = 0) out vec4 FragColor;
+
 
 layout (std430, binding = 0) buffer indirection_pool_ssbo
 {
@@ -55,6 +56,8 @@ struct Ray
 };
 
 const float epsilon = 0.0;
+const float render_distance = 100.0 * 1000 * 10;
+//const float render_distance = 1024.0;
 
 
 vec3 calculateMainRayDirection();
@@ -81,6 +84,7 @@ void main()
   //bool reached_max_steps = false;
   for (uint i = 0; i < pow(2, octree_layers); i++)
   {
+    //if (rayStep(ray) || ray.distance_traveled >= render_distance)
     if (rayStep(ray))
     {
       break;
@@ -114,6 +118,7 @@ void main()
     FragColor = vec4(vec3(0.0), 1.0);
   }
   */
+  //FragColor = FragColor * max((1-ray.distance_traveled/render_distance), 0.0); // Fog
 }
 
 
