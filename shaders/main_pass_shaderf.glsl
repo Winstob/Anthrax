@@ -57,20 +57,18 @@ struct Ray
 const float epsilon = 0.0;
 const float render_distance = 100.0 * 1000 * 10;
 //const float render_distance = 1024.0;
+const uint lod_multiplier = 4;
 
 
 vec3 calculateMainRayDirection();
 uint stepToEdge(inout Ray ray);
 VoxelLocation findVoxelLocation(vec3 world_location);
 uint createTargetVoxelTraceSingleAxisStep(inout float position, float radius);
-//bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor);
 bool jumpToNeighbor(inout Ray ray, uint neighbor);
 bool rayStep(inout Ray ray);
 uint computeLOD(float dist);
-uint getStackTraceOctant(in VoxelLocation voxel_location, in uint index);
-uint getStackTraceIndex(in VoxelLocation voxel_location, in uint index);
-void setStackTraceOctant(inout VoxelLocation voxel_location, in uint index, in uint value);
-void setStackTraceIndex(inout VoxelLocation voxel_location, in uint index, in uint value);
+uint getStackTraceOctant(in uint array[MAX_OCTREE_LAYERS/10+1], in uint index);
+void setStackTraceOctant(inout uint array[MAX_OCTREE_LAYERS/10+1], in uint index, in uint value);
 
 
 void main()
@@ -201,14 +199,14 @@ VoxelLocation findVoxelLocation(vec3 world_location)
     setStackTraceOctant(voxel_location, i, getStackTraceOctant(voxel_location, i)+4*y_target_trace);
     setStackTraceOctant(voxel_location, i, getStackTraceOctant(voxel_location, i)+2*(1-z_target_trace));
     */
-    setStackTraceOctant(voxel_location, i, x_target_trace + 4*y_target_trace + 2*(1-z_target_trace));
+    setStackTraceOctant(voxel_location.stack_trace_octants, i, x_target_trace + 4*y_target_trace + 2*(1-z_target_trace));
 
     voxel_location.center.x += x_target_trace * radius * 2 - radius;
     voxel_location.center.y += y_target_trace * radius * 2 - radius;
     voxel_location.center.z += z_target_trace * radius * 2 - radius;
 
     //current_octree_index = indirection_pool[(current_octree_index<<3) + voxel_location.stack_trace_octants[i]];
-    current_octree_index = indirection_pool[(current_octree_index<<3) + getStackTraceOctant(voxel_location, i)];
+    current_octree_index = indirection_pool[(current_octree_index<<3) + getStackTraceOctant(voxel_location.stack_trace_octants, i)];
 
     voxel_location.stack_trace_indices[i] = current_octree_index;
     //setStackTraceIndex(voxel_location, i, current_octree_index);
@@ -270,7 +268,7 @@ bool jumpToNeighbor(inout Ray ray, uint neighbor)
   // NOTE: This does not correctly compute the center of the new voxel location.
   //
   // Jump to the specified neighbor without changing the world position
-  // It's done this way in an effor to minimize floating point errors
+  // It's done this way in an effort to minimize floating point errors
 
   // neighbor_octant values:
   // 0 = left (-x)
@@ -383,17 +381,17 @@ bool jumpToNeighbor(inout Ray ray, uint neighbor)
   for (i = ray.voxel_location.layer; i < octree_layers; i++)
   {
     //if (sign0 * mod(ray.voxel_location.stack_trace_octants[octree_layers-i-1], mod_value) < comp_value)
-    if (sign0 * mod(getStackTraceOctant(ray.voxel_location, octree_layers-i-1), mod_value) < comp_value)
+    if (sign0 * mod(getStackTraceOctant(ray.voxel_location.stack_trace_octants, octree_layers-i-1), mod_value) < comp_value)
     {
       //ray.voxel_location.stack_trace_octants[octree_layers-i-1] += add_value;
-      setStackTraceOctant(ray.voxel_location, octree_layers-i-1, getStackTraceOctant(ray.voxel_location, octree_layers-i-1)+add_value);
+      setStackTraceOctant(ray.voxel_location.stack_trace_octants, octree_layers-i-1, getStackTraceOctant(ray.voxel_location.stack_trace_octants, octree_layers-i-1)+add_value);
       found = true;
       break;
     }
     else
       last_unchanged_layer++;
       //ray.voxel_location.stack_trace_octants[octree_layers-i-1] -= add_value;
-      setStackTraceOctant(ray.voxel_location, octree_layers-i-1, getStackTraceOctant(ray.voxel_location, octree_layers-i-1)-add_value);
+      setStackTraceOctant(ray.voxel_location.stack_trace_octants, octree_layers-i-1, getStackTraceOctant(ray.voxel_location.stack_trace_octants, octree_layers-i-1)-add_value);
   }
   if (!found)
   {
@@ -420,7 +418,7 @@ bool jumpToNeighbor(inout Ray ray, uint neighbor)
     setStackTraceOctant(ray.voxel_location, octree_layers-i-1, getStackTraceOctant(ray.voxel_location, octree_layers-i-1)+next_y_trace*multiplier.y+constant.y);
     setStackTraceOctant(ray.voxel_location, octree_layers-i-1, getStackTraceOctant(ray.voxel_location, octree_layers-i-1)+next_z_trace*multiplier.z+constant.z);
     */
-    setStackTraceOctant(ray.voxel_location, octree_layers-i-1, uint(dot(uvec3(next_x_trace, next_y_trace, next_z_trace)*multiplier + constant, uvec3(1))));
+    setStackTraceOctant(ray.voxel_location.stack_trace_octants, octree_layers-i-1, uint(dot(uvec3(next_x_trace, next_y_trace, next_z_trace)*multiplier + constant, uvec3(1))));
 
     /*
     ray.voxel_location.center.x += next_x_trace*multiplier.x*radius*2 - radius;
@@ -454,7 +452,7 @@ bool jumpToNeighbor(inout Ray ray, uint neighbor)
     */
 
     //current_octree_index = indirection_pool[(current_octree_index<<3) + ray.voxel_location.stack_trace_octants[i]];
-    current_octree_index = indirection_pool[(current_octree_index<<3) + getStackTraceOctant(ray.voxel_location, i)];
+    current_octree_index = indirection_pool[(current_octree_index<<3) + getStackTraceOctant(ray.voxel_location.stack_trace_octants, i)];
 
     ray.voxel_location.stack_trace_indices[i] = current_octree_index;
     //setStackTraceIndex(ray.voxel_location, i, current_octree_index);
@@ -514,9 +512,9 @@ bool jumpToNeighbor(inout Ray ray, uint neighbor)
       modifier.y = float((ray.voxel_location.stack_trace_octants[octree_layers-i] % 8) / 4);
       modifier.z = float(1 - ((ray.voxel_location.stack_trace_octants[octree_layers-i] % 4) / 2));
       */
-      modifier.x = float((getStackTraceOctant(ray.voxel_location, octree_layers-i) % 2));
-      modifier.y = float((getStackTraceOctant(ray.voxel_location, octree_layers-i) % 8) / 4);
-      modifier.z = float(1 - ((getStackTraceOctant(ray.voxel_location, octree_layers-i) % 4) / 2));
+      modifier.x = float((getStackTraceOctant(ray.voxel_location.stack_trace_octants, octree_layers-i) % 2));
+      modifier.y = float((getStackTraceOctant(ray.voxel_location.stack_trace_octants, octree_layers-i) % 8) / 4);
+      modifier.z = float(1 - ((getStackTraceOctant(ray.voxel_location.stack_trace_octants, octree_layers-i) % 4) / 2));
 
       ray.voxel_location.sublocation = 2.0*ray.voxel_location.sublocation + 1.0 - 2.0*modifier;
     }
@@ -532,9 +530,9 @@ bool jumpToNeighbor(inout Ray ray, uint neighbor)
       modifier.y = float((ray.voxel_location.stack_trace_octants[octree_layers-i-1] % 8) / 4);
       modifier.z = float(1 - ((ray.voxel_location.stack_trace_octants[octree_layers-i-1] % 4) / 2));
       */
-      modifier.x = float((getStackTraceOctant(ray.voxel_location, octree_layers-i-1) % 2));
-      modifier.y = float((getStackTraceOctant(ray.voxel_location, octree_layers-i-1) % 8) / 4);
-      modifier.z = float(1 - ((getStackTraceOctant(ray.voxel_location, octree_layers-i-1) % 4) / 2));
+      modifier.x = float((getStackTraceOctant(ray.voxel_location.stack_trace_octants, octree_layers-i-1) % 2));
+      modifier.y = float((getStackTraceOctant(ray.voxel_location.stack_trace_octants, octree_layers-i-1) % 8) / 4);
+      modifier.z = float(1 - ((getStackTraceOctant(ray.voxel_location.stack_trace_octants, octree_layers-i-1) % 4) / 2));
 
       ray.voxel_location.sublocation = 0.5 * (ray.voxel_location.sublocation - 1.0) + modifier;
     }
@@ -570,50 +568,26 @@ bool rayStep(inout Ray ray)
 uint computeLOD(float dist)
 {
   // Compute the lowest reasonable octree layer to use based on the given distance
-  uint num_pixels = max(screen_width, screen_height);
+  uint num_pixels = max(screen_width, screen_height)/lod_multiplier;
   uint num_visible_pixels = uint(dist / focal_distance);
   return uint(log2(num_visible_pixels / num_pixels));
-  //return uint(dist / 1000) + 1;
 }
 
 
-uint getStackTraceOctant(in VoxelLocation voxel_location, in uint index)
+uint getStackTraceOctant(in uint array[MAX_OCTREE_LAYERS/10+1], in uint index)
 {
   // Each element is 3 bits - 10 elements can fit in a single uint
   uint array_index = index / 10;
   index -= array_index*10;
-  return (voxel_location.stack_trace_octants[array_index] >> (3*index)) & uint(0x0007);
+  return (array[array_index] >> (3*index)) & uint(0x0007);
 }
 
 
-uint getStackTraceIndex(in VoxelLocation voxel_location, in uint index)
-{
-  // Each element is 1 bit - 32 elements can fit in a single uint
-  uint array_index = index / 32;
-  index -= array_index*32;
-  return (voxel_location.stack_trace_indices[array_index] >> index) & uint(0x0001);
-}
-
-
-void setStackTraceOctant(inout VoxelLocation voxel_location, in uint index, in uint value)
+void setStackTraceOctant(inout uint array[MAX_OCTREE_LAYERS/10+1], in uint index, in uint value)
 {
   uint array_index = index / 10;
   index -= array_index*10;
-  voxel_location.stack_trace_octants[array_index] &= uint(~(0x0007 << (3*index)));
-  voxel_location.stack_trace_octants[array_index] |= ((value & 0x0007) << (3*index));
+  array[array_index] &= uint(~(0x0007 << (3*index)));
+  array[array_index] |= ((value & 0x0007) << (3*index));
   return;
-}
-
-
-void setStackTraceIndex(inout VoxelLocation voxel_location, in uint index, in uint value)
-{
-  uint array_index = index / 32;
-  index -= array_index*32;
-  voxel_location.stack_trace_indices[array_index] &= uint(~(0x0001 << index));
-  voxel_location.stack_trace_indices[array_index] |= uint((value & 0x0001) << index);
-  return;
-}
-
-void tmp(in uint tmp1[MAX_OCTREE_LAYERS/10+1])
-{
 }
