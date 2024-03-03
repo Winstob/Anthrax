@@ -33,10 +33,10 @@ Anthrax::Anthrax()
 {
   window_width_ = 800;
   window_height_ = 600;
-  int world_size = 24;
+  int world_size = 8;
   world_ = Octree(world_size);
-  camera_ = Camera(glm::vec3(pow(2, world_size-3), pow(2, world_size-3), 0.0));
-  //camera_ = Camera(glm::vec3(0.0, 0.0, 0.0));
+  //camera_ = Camera(glm::vec3(pow(2, world_size-3), pow(2, world_size-3), 0.0));
+  camera_ = Camera(glm::vec3(0.0, 0.0, 0.0));
 }
 
 
@@ -160,11 +160,30 @@ void Anthrax::renderFrame()
   main_pass_shader_->setFloat("focal_distance", 1.0);
   main_pass_shader_->setInt("screen_width", window_width_);
   main_pass_shader_->setInt("screen_height", window_height_);
-  main_pass_shader_->setVec3("camera_position", camera_.position);
+  glm::ivec3 camera_voxel_position = glm::ivec3(round(camera_.position.x), round(camera_.position.y), round(camera_.position.z));
+  glm::vec3 camera_sublocation = glm::vec3(camera_.position.x-camera_voxel_position.x, camera_.position.y-camera_voxel_position.y, camera_.position.z-camera_voxel_position.z);
+  //std::cout << camera_.position.x << " " << camera_.position.y << " " << camera_.position.z << std::endl;
+  //std::cout << camera_voxel_position.x << " " << camera_voxel_position.y << " " << camera_voxel_position.z << std::endl;
+  //camera_sublocation = glm::vec3(0.0);
+  main_pass_shader_->setIvec3("camera_position.position", camera_voxel_position);
+  main_pass_shader_->setVec3("camera_position.sublocation", camera_sublocation);
   main_pass_shader_->setVec3("camera_right", camera_.getRightLookDirection());
   main_pass_shader_->setVec3("camera_up", camera_.getUpLookDirection());
   main_pass_shader_->setVec3("camera_forward", camera_.getForwardLookDirection());
   renderFullscreenQuad();
+
+
+  //TMP
+  /*
+  uint octree_layers = world_.num_layers_;
+  glm::uvec3 int_position;
+  unsigned int mask = 0x7FFFFFFF >> (32-octree_layers+1);
+  unsigned int sign0 = (unsigned int)((float)((camera_voxel_position.x & 0x80000000) >> 31));
+  sign0 = (~sign0) & 0x1;
+  sign0 = sign0 << (octree_layers-2);
+  int_position.x = ((unsigned int)(camera_voxel_position.x) & mask) | sign0;
+  std::cout << int_position.x << std::endl;
+  */
 
   // Text pass
   glBindFramebuffer(GL_FRAMEBUFFER, text_pass_framebuffer_);
@@ -301,7 +320,7 @@ void Anthrax::updateCamera()
   // Update position
   glm::vec3 motion_direction = glm::vec3(0.0, 0.0, 0.0);
   float walking_speed = 1.5; // meters per second
-  float speed_multiplier = walking_speed * 100.0f; // Each voxel is 1cm in width
+  float speed_multiplier = walking_speed * 1.0f; // Each voxel is 1cm in width
   float motion_multiplier = frame_time_difference_ * speed_multiplier;
 
   if (glfwGetKey(window_, GLFW_KEY_A) == GLFW_PRESS)
