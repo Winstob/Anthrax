@@ -12,14 +12,24 @@
 #include "glm/gtx/quaternion.hpp"
 #include <glm/gtx/vector_angle.hpp>
 
+#include "intfloat.hpp"
+
 namespace Anthrax
 {
 
 class Camera
 {
 public:
-  Camera() : position(glm::vec3(0.0, 0.0, 0.0)), rotation(glm::quat(0.0, 0.0, 0.0, 0.0)) {}
-  Camera(glm::vec3 in_position) : position(in_position), rotation(glm::quat(0.0, 0.0, 0.0, 0.0)) {}
+  Camera() : Camera(glm::ivec3(0)) {}
+  Camera(glm::ivec3 in_position) : rotation(glm::quat(0.0, 0.0, 0.0, 0.0)) { position[0] = in_position.x; position[1] = in_position.y; position[2] = in_position.z; }
+  Camera& operator=(const Camera &other)
+  {
+    position[0] = other.position[0];
+    position[1] = other.position[1];
+    position[2] = other.position[2];
+    rotation = other.rotation;
+    return *this;
+  }
   glm::vec3 getUpDirection() { return glm::vec3(0.0, 1.0, 0.0); }
   /*
   glm::vec3 getUpDirection()
@@ -33,7 +43,7 @@ public:
   glm::vec3 getRightLookDirection() { return (rotation * glm::vec3(1.0, 0.0, 0.0)); }
   glm::vec3 getForwardLookDirection() { return (rotation * glm::vec3(0.0, 0.0, -1.0)); }
 
-  glm::vec3 position;
+  Intfloat position[3];
   glm::quat rotation;
 private:
 };

@@ -37,6 +37,7 @@ Anthrax::Anthrax()
   world_ = Octree(world_size);
   camera_ = Camera(glm::vec3(pow(2, world_size-3), pow(2, world_size-3), 0.0));
   //camera_ = Camera(glm::vec3(0.0, 0.0, 0.0));
+  //camera_ = Camera(glm::ivec3(0, 0, 0));
 }
 
 
@@ -160,7 +161,8 @@ void Anthrax::renderFrame()
   main_pass_shader_->setFloat("focal_distance", 1.0);
   main_pass_shader_->setInt("screen_width", window_width_);
   main_pass_shader_->setInt("screen_height", window_height_);
-  main_pass_shader_->setVec3("camera_position", camera_.position);
+  main_pass_shader_->setIvec3("camera_position.int_component", iComponents3(camera_.position));
+  main_pass_shader_->setVec3("camera_position.dec_component", fComponents3(camera_.position));
   main_pass_shader_->setVec3("camera_right", camera_.getRightLookDirection());
   main_pass_shader_->setVec3("camera_up", camera_.getUpLookDirection());
   main_pass_shader_->setVec3("camera_forward", camera_.getForwardLookDirection());
@@ -332,7 +334,29 @@ void Anthrax::updateCamera()
   glm::normalize(motion_direction);
   motion_direction *= motion_multiplier;
   motion_direction = camera_.rotation * motion_direction;
-  camera_.position += motion_direction;
+
+  /*
+  camera_.position_dec_component += motion_direction;
+  camera_.position_int_component += glm::ivec3(camera_.position_dec_component);
+  camera_.position_dec_component -= glm::ivec3(camera_.position_dec_component);
+  */
+  camera_.position[0] += motion_direction.x;
+  camera_.position[1] += motion_direction.y;
+  camera_.position[2] += motion_direction.z;
+  /*
+  std::cout << camera_.position[0].int_component << std::endl;
+  std::cout << camera_.position[0].dec_component << std::endl << std::endl;
+
+  int int_component = camera_.position[0].int_component + (0x1 << (world_.num_layers_-2));
+  float dec_component = camera_.position[0].dec_component;
+  if (dec_component < 0.0)
+  {
+    dec_component += 1.0;
+    int_component -= 1;
+  }
+  std::cout << int_component << std::endl;
+  std::cout << dec_component << std::endl << std::endl << std::endl;
+  */
   return;
 }
 

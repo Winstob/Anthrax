@@ -26,6 +26,7 @@
 #include "character.hpp"
 #include "idmap.hpp"
 #include "text.hpp"
+#include "intfloat.hpp"
 
 namespace Anthrax
 {

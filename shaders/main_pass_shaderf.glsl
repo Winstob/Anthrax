@@ -6,8 +6,6 @@
 #version 460 core
 //#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
 
-#define MAX_OCTREE_LAYERS 64
-
 in vec2 screen_position;
 //out vec4 FragColor;
 layout (location = 0) out vec4 FragColor;
@@ -26,70 +24,85 @@ layout (std430, binding = 2) buffer lod_pool_ssbo
   readonly uint lod_pool[]; // Stored as a compressed vector of 4 8-bit unsigned integers
 };
 
+struct WorldLocation
+{
+  ivec3 int_component;
+  vec3 dec_component;
+};
+
+
+struct uinfl
+{
+  uint int_component;
+  float dec_component;
+};
+uinfl uinflAdd(uinfl first, uinfl second);
+uinfl uinflSub(uinfl first, uinfl second);
+
+struct ufvec3
+{
+  uvec3 int_component;
+  vec3 dec_component;
+};
+
 uniform int octree_layers;
 uniform float focal_distance;
 uniform int screen_width;
 uniform int screen_height;
-uniform vec3 camera_position;
+uniform WorldLocation camera_position;
 uniform vec3 camera_right;
 uniform vec3 camera_up;
 uniform vec3 camera_forward;
 
-
-struct VoxelLocation
+struct Voxel
 {
-  uint stack_trace_octants[MAX_OCTREE_LAYERS];
-  uint stack_trace_indices[MAX_OCTREE_LAYERS];
+  ufvec3 position; // The position of the voxel where the origin is at the corner of the world (not the center)
   uint layer;
-  vec3 center;
-  vec3 sublocation; // Allows for a point within the voxel - mainly used for casting rays
-                    // Normalized coordinates between -1.0 and 1.0 in each axis, regardless of layer
   uint type;
 };
 
 struct Ray
 {
   vec3 ray_dir;
-  VoxelLocation voxel_location;
+  Voxel voxel_location;
   uint num_steps;
   float distance_traveled;
 };
 
-const float epsilon = 0.0;
-const float render_distance = 100.0 * 1000 * 10;
-//const float render_distance = 1024.0;
+const float render_distance = 100.0 * 1000 * 10; // 10KM render distance
+//const float render_distance = 1024.0; // 64 chunk render distance
+const uint lod_multiplier = 4;
 
 
 vec3 calculateMainRayDirection();
-uint stepToEdge(inout Ray ray);
-VoxelLocation findVoxelLocation(vec3 world_location);
-uint createTargetVoxelTraceSingleAxisStep(inout float position, float radius);
-//bool jumpToNeighbor(inout VoxelLocation voxel_location, uint neighbor);
-bool jumpToNeighbor(inout Ray ray, uint neighbor);
-bool rayStep(inout Ray ray);
+Voxel getVoxelInfo(in ufvec3 world_position, in uint lod_layer);
+Voxel findVoxelLocation(WorldLocation world_location);
+double findSafeDistance(in Ray ray);
+bool oldRayMarch(inout Ray ray);
+bool rayMarch(inout Ray ray);
 uint computeLOD(float dist);
-
 
 void main()
 {
   Ray ray;
   ray.ray_dir = calculateMainRayDirection();
-  bool is_within_world;
   ray.voxel_location = findVoxelLocation(camera_position);
   ray.num_steps = 0;
   ray.distance_traveled = 0.0;
 
   uint voxel_type;
-  bool reached_max_steps = true;
-  //bool reached_max_steps = false;
   for (uint i = 0; i < pow(2, octree_layers); i++)
   {
-    //if (rayStep(ray) || ray.distance_traveled >= render_distance)
-    if (rayStep(ray))
+    //if (rayMarch(ray) || ray.distance_traveled >= render_distance)
+    if (rayMarch(ray))
     {
       break;
     }
   }
+  /*
+  FragColor = vec4(ray.voxel_location.position/pow(2, octree_layers-1), 1.0);
+  return;
+  */
   voxel_type = ray.voxel_location.type;
 
   //uint voxel_type = indirection_pool[3];
@@ -99,16 +112,17 @@ void main()
   }
   else
   {
-    FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+    //FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+    FragColor = vec4(ray.voxel_location.position.dec_component, 1.0);
+    //FragColor = vec4(ray.voxel_location.position-uvec3(ray.voxel_location.position), 1.0);
+    //FragColor = vec4(vec3(float(ray.num_steps)/2.0), 1.0);
     //FragColor = vec4(ray.voxel_location.sublocation, 1.0);
     //FragColor = vec4(1.0-vec3(ray.distance_traveled/(1<<(octree_layers+1))), 1.0);
   }
-  FragColor = vec4(ray.voxel_location.sublocation, 1.0);
-  //FragColor = vec4(vec3(float(ray.num_steps)/(1<<(octree_layers-1))), 1.0);
-  //FragColor = vec4(ray.voxel_location.center/(1<<octree_layers), 1.0);
-  //FragColor = vec4(ray.ray_dir, 1.0);
-  //FragColor = vec4(float(ray.voxel_location.layer)/float(octree_layers), 0.0, 0.0, 1.0);
-  //FragColor = vec4(0.3, 0.7, 0.5, 1.0);
+  //FragColor.xyz += vec3(ray.distance_traveled / render_distance);
+  //FragColor = vec4(ray.voxel_location.position.dec_component, 1.0);
+  //FragColor = vec4(vec3(ray.distance_traveled / pow(2, octree_layers)), 1.0);
+  //FragColor = vec4(vec3(float(ray.num_steps) / 8.0), 1.0);
 
   // cel shading
   /*
@@ -131,393 +145,323 @@ vec3 calculateMainRayDirection()
 }
 
 
-uint stepToEdge(inout Ray ray)
+Voxel getVoxelInfo(in ufvec3 world_position, in uint lod_layer)
 {
-  // Step to the edge of the current voxel, in the direction of the ray
-  // Return the new intersecting plane (0=-x, 1=+x, 2=-y, 3=+y, 4=-z, 5=+z)
-  // First, find the dominating axis (first plane of intersection with the ray)
-  // Note that the sublocation coordinates are normalized between -1.0 and 1.0, so we can use the sign function here
-  float x_factor = (sign(ray.ray_dir.x) - ray.voxel_location.sublocation.x) / ray.ray_dir.x;
-  float y_factor = (sign(ray.ray_dir.y) - ray.voxel_location.sublocation.y) / ray.ray_dir.y;
-  float z_factor = (sign(ray.ray_dir.z) - ray.voxel_location.sublocation.z) / ray.ray_dir.z;
+  Voxel voxel;
+  voxel.position = world_position;
 
-  // Now find the dominating intersection plane and step forwards to it
-  float neighbor_direction;
-  if (x_factor < y_factor && x_factor < z_factor)
+  voxel.layer = octree_layers;
+  uint current_octree_index = 0;
+  bool found_uniform = false;
+  for (uint i = 0; i < octree_layers-lod_layer; i++)
   {
-    // x is the dominating intersection plane
-    ray.voxel_location.sublocation += (x_factor * ray.ray_dir);
-    ray.distance_traveled += x_factor * float(1<<ray.voxel_location.layer);
-    neighbor_direction = (sign(ray.ray_dir.x) + 1.0) * 0.5;
-  }
-  else if (y_factor < z_factor)
-  {
-    // y is the dominating intersection plane
-    ray.voxel_location.sublocation += (y_factor * ray.ray_dir);
-    ray.distance_traveled += y_factor * float(1<<ray.voxel_location.layer);
-    neighbor_direction = (sign(ray.ray_dir.y) + 1.0) * 0.5 + 2.0;
-  }
-  else
-  {
-    // z is the dominating intersection plane
-    ray.voxel_location.sublocation += (z_factor * ray.ray_dir);
-    ray.distance_traveled += z_factor * float(1<<ray.voxel_location.layer);
-    neighbor_direction = (sign(ray.ray_dir.z) + 1.0) * 0.5 + 4.0;
-  }
-  ray.num_steps++;
+    uint shifter = octree_layers-i-2;
+    uint current_octant = ((world_position.int_component.x >> shifter) & 1u) | (((world_position.int_component.y >> shifter) & 1u) << 2) | (((~world_position.int_component.z >> shifter) & 1u) << 1);
 
-  return uint(neighbor_direction);
+    current_octree_index = indirection_pool[(current_octree_index<<3) | current_octant];
+
+    voxel.layer--;
+
+    voxel.type = voxel_type_pool[current_octree_index];
+    if (voxel.type != 0)
+    {
+      found_uniform = true;
+      break;
+    }
+
+    if (current_octree_index == 0)
+    {
+      found_uniform = true;
+      break;
+    }
+  }
+  if (!found_uniform)
+  {
+    // This is either a recursive element (fractal) or the LOD limit has been reached.
+    voxel.type = 1;
+  }
+
+  return voxel;
+
 }
 
 
-VoxelLocation findVoxelLocation(vec3 world_location)
+Voxel findVoxelLocation(WorldLocation world_location)
 {
-  VoxelLocation voxel_location;
-  voxel_location.center = vec3(0.0, 0.0, 0.0);
-  voxel_location.layer = octree_layers;
-  uint current_octree_index = 0;
-  bool found_uniform = false;
-  float radius = float(1 << (octree_layers-1)) / 2;
-  vec3 world_location_copy = world_location;
-  for (uint i = 0; i < octree_layers-1; i++)
-  {
-    uint x_target_trace = createTargetVoxelTraceSingleAxisStep(world_location_copy.x, radius);
-    uint y_target_trace = createTargetVoxelTraceSingleAxisStep(world_location_copy.y, radius);
-    uint z_target_trace = createTargetVoxelTraceSingleAxisStep(world_location_copy.z, radius);
-    radius *= 0.5;
-    voxel_location.stack_trace_octants[i] = 0;
-    voxel_location.stack_trace_octants[i] += x_target_trace;
-    voxel_location.stack_trace_octants[i] += 4 * y_target_trace;
-    voxel_location.stack_trace_octants[i] += 2*(1-z_target_trace);
-    voxel_location.center.x += x_target_trace * radius * 2 - radius;
-    voxel_location.center.y += y_target_trace * radius * 2 - radius;
-    voxel_location.center.z += z_target_trace * radius * 2 - radius;
+  Voxel voxel_location;
 
-    current_octree_index = indirection_pool[(current_octree_index<<3) + voxel_location.stack_trace_octants[i]];
-    voxel_location.stack_trace_indices[i] = current_octree_index;
-    voxel_location.layer -= 1;
-    if (current_octree_index == uint(0))
-    {
-      // This entire octree is air
-      voxel_location.type = 0;
-      found_uniform = true;
-      break;
-    }
-    if (voxel_type_pool[current_octree_index] != uint(0))
-    {
-      // This entire octree is uniform (not air)
-      voxel_location.type = 1;
-      found_uniform = true;
-      break;
-    }
+  voxel_location.position.int_component = uvec3(world_location.int_component) + uvec3(0x1 << (octree_layers-2));
+
+  voxel_location.position.dec_component = world_location.dec_component;
+  if (voxel_location.position.dec_component.x < 0.0)
+  {
+    voxel_location.position.dec_component.x += 1.0;
+    voxel_location.position.int_component.x -= 1;
+  }
+  if (voxel_location.position.dec_component.y < 0.0)
+  {
+    voxel_location.position.dec_component.y += 1.0;
+    voxel_location.position.int_component.y -= 1;
+  }
+  if (voxel_location.position.dec_component.z < 0.0)
+  {
+    voxel_location.position.dec_component.z += 1.0;
+    voxel_location.position.int_component.z -= 1;
   }
 
-  if (!found_uniform)
-  {
-    // The maximum number of traversals have been made but there are still more children to this node.
-    // If intentional, this is probably supposed to be a fractal.
-    voxel_location.type = 1;
-  }
-  bool is_within_world = true;
-
-  voxel_location.sublocation = (world_location - voxel_location.center) * 2.0 / (1 << (voxel_location.layer - 1));
+  voxel_location = getVoxelInfo(voxel_location.position, 1);
 
   return voxel_location;
 }
 
 
-uint createTargetVoxelTraceSingleAxisStep(inout float position, float radius)
+uint stepToEdge(inout Ray ray)
 {
-  /*
-  radius *= 0.5;
-  if (position > 0.0)
+  // Takes in ray and steps it in the specified direction until it hits the edge of the voxel it is
+  // currently in (based on the layer). Outputs the neighboring voxel:
+  // -x = 0
+  // +x = 1
+  // -y = 2
+  // +y = 3
+  // -z = 4
+  // +z = 5
+  uint sublocation_mask = uint(0xFFFFFFFF) >> (32-ray.voxel_location.layer+1);
+  if (ray.voxel_location.layer == 1) sublocation_mask = 0u;
+  //float radius = float(1u << (ray.voxel_location.layer-2));
+  uinfl max_sublocation = {sublocation_mask, 1.0f};
+  uinfl min_sublocation = {0, 0.0f};
+  uinfl x_sublocation, y_sublocation, z_sublocation;
+  x_sublocation.int_component = ray.voxel_location.position.int_component.x & sublocation_mask;
+  x_sublocation.dec_component = ray.voxel_location.position.dec_component.x;
+  y_sublocation.int_component = ray.voxel_location.position.int_component.y & sublocation_mask;
+  y_sublocation.dec_component = ray.voxel_location.position.dec_component.y;
+  z_sublocation.int_component = ray.voxel_location.position.int_component.z & sublocation_mask;
+  z_sublocation.dec_component = ray.voxel_location.position.dec_component.z;
+
+  uinfl x_distance = max_sublocation, y_distance = max_sublocation, z_distance = max_sublocation;
+  if (ray.ray_dir.x < 0.0)
+    x_distance = x_sublocation;
+  else if (ray.ray_dir.x > 0.0)
+    x_distance = uinflSub(max_sublocation, x_sublocation);
+  if (ray.ray_dir.y < 0.0)
+    y_distance = y_sublocation;
+  else if (ray.ray_dir.y > 0.0)
+    y_distance = uinflSub(max_sublocation, y_sublocation);
+  if (ray.ray_dir.z < 0.0)
+    z_distance = z_sublocation;
+  else if (ray.ray_dir.z > 0.0)
+    z_distance = uinflSub(max_sublocation, z_sublocation);
+
+
+  double tmp = double(x_distance.int_component) + x_distance.dec_component;
+  double x_factor = tmp / abs(ray.ray_dir.x);
+  tmp = double(y_distance.int_component) + y_distance.dec_component;
+  double y_factor = tmp / abs(ray.ray_dir.y);
+  tmp = double(z_distance.int_component) + z_distance.dec_component;
+  double z_factor = tmp / abs(ray.ray_dir.z);
+
+  uint neighbor;
+  if (x_factor < y_factor && x_factor < z_factor)
   {
-    position -= radius;
-    return 1;
+    // x is the dominating axis
+    if (ray.ray_dir.x < 0.0)
+    {
+      neighbor = 0;
+      x_sublocation = min_sublocation;
+    }
+    else
+    {
+      neighbor = 1;
+      x_sublocation = max_sublocation;
+    }
+    tmp = double(y_sublocation.int_component) + y_sublocation.dec_component;
+    tmp += ray.ray_dir.y * x_factor;
+    y_sublocation.int_component = uint(tmp);
+    y_sublocation.dec_component = float(tmp - y_sublocation.int_component);
+
+    tmp = double(z_sublocation.int_component) + z_sublocation.dec_component;
+    tmp += ray.ray_dir.z * x_factor;
+    z_sublocation.int_component = uint(tmp);
+    z_sublocation.dec_component = float(tmp - z_sublocation.int_component);
+
+    ray.distance_traveled += float(x_factor);
+  }
+  else if (y_factor < z_factor)
+  {
+    // y is the dominating axis
+    if (ray.ray_dir.y < 0.0)
+    {
+      neighbor = 2;
+      y_sublocation = min_sublocation;
+    }
+    else
+    {
+      neighbor = 3;
+      y_sublocation = max_sublocation;
+    }
+    tmp = double(x_sublocation.int_component) + x_sublocation.dec_component;
+    tmp += ray.ray_dir.x * y_factor;
+    x_sublocation.int_component = uint(tmp);
+    x_sublocation.dec_component = float(tmp - x_sublocation.int_component);
+
+    tmp = double(z_sublocation.int_component) + z_sublocation.dec_component;
+    tmp += ray.ray_dir.z * y_factor;
+    z_sublocation.int_component = uint(tmp);
+    z_sublocation.dec_component = float(tmp - z_sublocation.int_component);
+
+    ray.distance_traveled += float(y_factor);
   }
   else
   {
-    position += radius;
-    return 0;
+    // z is the dominating axis
+    if (ray.ray_dir.z < 0.0)
+    {
+      neighbor = 4;
+      z_sublocation = min_sublocation;
+    }
+    else
+    {
+      neighbor = 5;
+      z_sublocation = max_sublocation;
+    }
+    tmp = double(x_sublocation.int_component) + x_sublocation.dec_component;
+    tmp += ray.ray_dir.x * z_factor;
+    x_sublocation.int_component = uint(tmp);
+    x_sublocation.dec_component = float(tmp - x_sublocation.int_component);
+
+    tmp = double(y_sublocation.int_component) + y_sublocation.dec_component;
+    tmp += ray.ray_dir.y * z_factor;
+    y_sublocation.int_component = uint(tmp);
+    y_sublocation.dec_component = float(tmp - y_sublocation.int_component);
+
+    ray.distance_traveled += float(z_factor);
   }
-  */
-  float move = 0.5*radius*sign(position);
-  position -= move;
-  return uint((sign(move) + 1.0)*0.5);
+
+  ray.voxel_location.position.int_component.x = (ray.voxel_location.position.int_component.x & (~sublocation_mask)) | (x_sublocation.int_component & sublocation_mask);
+  ray.voxel_location.position.dec_component.x = x_sublocation.dec_component;
+  ray.voxel_location.position.int_component.y = (ray.voxel_location.position.int_component.y & (~sublocation_mask)) | (y_sublocation.int_component & sublocation_mask);
+  ray.voxel_location.position.dec_component.y = y_sublocation.dec_component;
+  ray.voxel_location.position.int_component.z = (ray.voxel_location.position.int_component.z & (~sublocation_mask)) | (z_sublocation.int_component & sublocation_mask);
+  ray.voxel_location.position.dec_component.z = z_sublocation.dec_component;
+
+  return neighbor;
 }
 
 
 bool jumpToNeighbor(inout Ray ray, uint neighbor)
 {
-  // NOTE: This does not correctly compute the center of the new voxel location.
-  //
-  // Jump to the specified neighbor without changing the world position
-  // It's done this way in an effor to minimize floating point errors
-
-  // neighbor_octant values:
-  // 0 = left (-x)
-  // 1 = right (+x)
-  // 2 = bottom (-y)
-  // 3 = top (+y)
-  // 4 = back (-z)
-  // 5 = front(+z)
-
-  uint old_layer = ray.voxel_location.layer;
-
-  // First, find the path (stack_trace_octants) to the neighboring voxel (this may be incomplete or overcomplete)
-  // format: sign * mod(target_path[i], mod_value) < comp_value
-  // 0 -> 1 - mod(target_path[i], 2) < 1
-  // 1 -> 0 + mod(target_path[i], 2) < 1
-  // 2 -> 7 - mod(target_path[i], 8) < 4
-  // 3 -> 0 + mod(target_path[i], 8) < 4
-  // 4 -> 0 + mod(target_path[i], 4) < 2
-  // 5 -> 3 - mod(target_path[i], 4) < 2
-  //
-  // 0 -> -mod(target_path[i], 2) < 0
-  // 1 -> mod(target_path[i], 2) < 1
-  // 2 -> -mod(target_path[i], 8) < -3
-  // 3 -> mod(target_path[i], 8) < 4
-  // 4 -> mod(target_path[i], 4) < 2
-  // 5 -> -mod(target_path[i], 4) < -1
-  //
-  // sign
-  // 0 -> -1
-  // 1 -> 1
-  // 2 -> -1
-  // 3 -> 1
-  // 4 -> 1
-  // 5 -> -1
-  // mod_value
-  // 0 -> 2
-  // 1 -> 2
-  // 2 -> 8
-  // 3 -> 8
-  // 4 -> 4
-  // 5 -> 4
-  // comp_value
-  // 0 -> 0
-  // 1 -> 1
-  // 2 -> -4
-  // 3 -> 4
-  // 4 -> 2
-  // 5 -> -2
-  int sign0, mod_value, comp_value, add_value;
-
-  uvec3 constant, multiplier; // used for the next step
+  // return value: true if the ray is within bounds of the world, false otherwise
+  uint max_location = uint(0xFFFFFFFF) >> (32-octree_layers+1);
+  ray.voxel_location.type = 0;
   if (neighbor == 0)
   {
-    sign0 = -1;
-    mod_value = 2;
-    comp_value = 0;
-    add_value = -1;
-    constant = uvec3(1, 0, 0);
-    multiplier = uvec3(0, 4, 2);
+    if (ray.voxel_location.position.int_component.x == 0) return false;
+    ray.voxel_location.position.int_component.x--;
+    ray.voxel_location.position.dec_component.x = 1.0;
   }
   else if (neighbor == 1)
   {
-    sign0 = 1;
-    mod_value = 2;
-    comp_value = 1;
-    add_value = 1;
-    constant = uvec3(0, 0, 0);
-    multiplier = uvec3(0, 4, 2);
+    if (ray.voxel_location.position.int_component.x == max_location) return false;
+    ray.voxel_location.position.int_component.x++;
+    ray.voxel_location.position.dec_component.x = 0.0;
   }
   else if (neighbor == 2)
   {
-    sign0 = -1;
-    mod_value = 8;
-    comp_value = -3;
-    add_value = -4;
-    constant = uvec3(0, 4, 0);
-    multiplier = uvec3(1, 0, 2);
+    if (ray.voxel_location.position.int_component.y == 0) return false;
+    ray.voxel_location.position.int_component.y--;
+    ray.voxel_location.position.dec_component.y = 1.0;
   }
   else if (neighbor == 3)
   {
-    sign0 = 1;
-    mod_value = 8;
-    comp_value = 4;
-    add_value = 4;
-    constant = uvec3(0, 0, 0);
-    multiplier = uvec3(1, 0, 2);
+    if (ray.voxel_location.position.int_component.y == max_location) return false;
+    ray.voxel_location.position.int_component.y++;
+    ray.voxel_location.position.dec_component.y = 0.0;
   }
   else if (neighbor == 4)
   {
-    sign0 = 1;
-    mod_value = 4;
-    comp_value = 2;
-    add_value = 2;
-    constant = uvec3(0, 0, 0);
-    multiplier = uvec3(1, 4, 0);
+    if (ray.voxel_location.position.int_component.z == 0) return false;
+    ray.voxel_location.position.int_component.z--;
+    ray.voxel_location.position.dec_component.z = 1.0;
   }
   else if (neighbor == 5)
   {
-    sign0 = -1;
-    mod_value = 4;
-    comp_value = -1;
-    add_value = -2;
-    constant = uvec3(0, 0, 2);
-    multiplier = uvec3(1, 4, 0);
-  }
-  uint i;
-  uint last_unchanged_layer = ray.voxel_location.layer+1;
-  bool found = false;
-  // Find the last odd number, subtract 1 from it, then add 1 to all following numbers
-  for (i = ray.voxel_location.layer; i < octree_layers; i++)
-  {
-    if (sign0 * mod(ray.voxel_location.stack_trace_octants[octree_layers-i-1], mod_value) < comp_value)
-    {
-      ray.voxel_location.stack_trace_octants[octree_layers-i-1] += add_value;
-      found = true;
-      break;
-    }
-    else
-      last_unchanged_layer++;
-      ray.voxel_location.stack_trace_octants[octree_layers-i-1] -= add_value;
-  }
-  if (!found)
-  {
-    return false;
-  }
-  uint last_unchanged_index = octree_layers-i-1;
-  i = ray.voxel_location.layer-1;
-  vec3 voxel_sublocation_copy = ray.voxel_location.sublocation;
-  float radius = 1.0;
-
-  for (uint j = 0; i >= 1; i--, j++)
-  {
-    uint next_x_trace = createTargetVoxelTraceSingleAxisStep(voxel_sublocation_copy.x, radius);
-    uint next_y_trace = createTargetVoxelTraceSingleAxisStep(voxel_sublocation_copy.y, radius);
-    uint next_z_trace = 1-createTargetVoxelTraceSingleAxisStep(voxel_sublocation_copy.z, radius);
-    radius *= 0.5;
-    ray.voxel_location.stack_trace_octants[octree_layers-i-1] = next_x_trace*multiplier.x + constant.x;
-    ray.voxel_location.stack_trace_octants[octree_layers-i-1] += next_y_trace*multiplier.y + constant.y;
-    ray.voxel_location.stack_trace_octants[octree_layers-i-1] += next_z_trace*multiplier.z + constant.z;
-
-    /*
-    ray.voxel_location.center.x += next_x_trace*multiplier.x*radius*2 - radius;
-    ray.voxel_location.center.y += next_x_trace*multiplier.y*radius*2 - radius;
-    ray.voxel_location.center.z += next_x_trace*multiplier.z*radius*2 - radius;
-    */
+    if (ray.voxel_location.position.int_component.z == max_location) return false;
+    ray.voxel_location.position.int_component.z++;
+    ray.voxel_location.position.dec_component.z = 0.0;
   }
 
-  //voxel_location.layer = octree_layers;
-  ray.voxel_location.layer = last_unchanged_layer;
-  ray.voxel_location.center = vec3(0.0, 0.0, 0.0);
-  radius = float(1 << (octree_layers-1)) * 0.5;
-  uint current_octree_index = ray.voxel_location.stack_trace_indices[last_unchanged_index];
-  bool found_uniform = false;
-  uint lod_layer = computeLOD(ray.distance_traveled);
-  for (uint i = last_unchanged_index; i < octree_layers-1; i++)
-  {
-    /*
-    radius *= 0.5;
-    vec3 multiplier = vec3(0.0);
-    if (mod(target_path[i], 2) == 1.0)
-      multiplier.x = 1.0;
-    if (target_path[i] >= 4.0)
-      multiplier.y = 1.0;
-    if (mod(target_path[i], 4) >= 2.0)
-      multiplier.z = 0.0;
-    voxel_location.center += multiplier * radius * 2 - radius;
-    */
+  ray.voxel_location = getVoxelInfo(ray.voxel_location.position, computeLOD(ray.distance_traveled));
 
-    current_octree_index = indirection_pool[(current_octree_index<<3) + ray.voxel_location.stack_trace_octants[i]];
-    ray.voxel_location.stack_trace_indices[i] = current_octree_index;
-    ray.voxel_location.layer--;
-    if (current_octree_index == uint(0))
-    {
-      // This entire octree is air
-      ray.voxel_location.type = 0;
-      found_uniform = true;
-      break;
-    }
-    if (voxel_type_pool[current_octree_index] != uint(0))
-    {
-      // This entire octree is uniform (not air)
-      ray.voxel_location.type = 1;
-      found_uniform = true;
-      break;
-    }
-    if (ray.voxel_location.layer <= lod_layer)
-    {
-      // This octree is far enough away that we can use the current octree for LOD
-      ray.voxel_location.type = 1;
-      break;
-    }
-  }
-
-  if (!found_uniform)
-  {
-    ray.voxel_location.type = 1;
-  }
-
-  // Calculate new sublocation
-  // Start at the current sublocation
-  // Flip the sign of the axis we've jumped across and snap to -1.0 or +1.0
-  if (neighbor <= 1)
-  {
-    ray.voxel_location.sublocation.x = -sign(ray.voxel_location.sublocation.x);
-  }
-  else if (neighbor <= 3)
-  {
-    ray.voxel_location.sublocation.y = -sign(ray.voxel_location.sublocation.y);
-  }
-  else
-  {
-    ray.voxel_location.sublocation.z = -sign(ray.voxel_location.sublocation.z);
-  }
-
-  if (ray.voxel_location.layer < old_layer)
-  {
-    // Recurse further down the octree
-    for (uint i = old_layer; i > ray.voxel_location.layer; i--)
-    {
-      vec3 modifier;
-      modifier.x = float((ray.voxel_location.stack_trace_octants[octree_layers-i] % 2));
-      modifier.y = float((ray.voxel_location.stack_trace_octants[octree_layers-i] % 8) / 4);
-      modifier.z = float(1 - ((ray.voxel_location.stack_trace_octants[octree_layers-i] % 4) / 2));
-
-      ray.voxel_location.sublocation = 2.0*ray.voxel_location.sublocation + 1.0 - 2.0*modifier;
-    }
-  }
-  else if (ray.voxel_location.layer > old_layer)
-  {
-    // Recurse up the octree
-    for (uint i = old_layer; i < ray.voxel_location.layer; i++)
-    {
-      vec3 modifier;
-      modifier.x = float((ray.voxel_location.stack_trace_octants[octree_layers-i-1] % 2));
-      modifier.y = float((ray.voxel_location.stack_trace_octants[octree_layers-i-1] % 8) / 4);
-      modifier.z = float(1 - ((ray.voxel_location.stack_trace_octants[octree_layers-i-1] % 4) / 2));
-
-      ray.voxel_location.sublocation = 0.5 * (ray.voxel_location.sublocation - 1.0) + modifier;
-    }
-  }
   return true;
 }
 
 
-bool rayStep(inout Ray ray)
+bool rayMarch(inout Ray ray)
 {
-  // First, move the the edge of the voxel in the direction of the ray
+  // Marches a ray forwards to the boundary of the neighboring voxel
+  // Returns true if the ray has hit a non-air voxel or has gone out of bounds, false otherwise
   uint neighbor = stepToEdge(ray);
-
-  // Next, jump to the neighboring voxel
-  bool in_bounds = jumpToNeighbor(ray, neighbor);
-  if (!in_bounds)
+  bool is_within_bounds = jumpToNeighbor(ray, neighbor);
+  ray.num_steps++;
+  if (!is_within_bounds)
   {
     ray.voxel_location.type = 0;
     return true;
   }
+  return ray.voxel_location.type != 0;
+}
 
-  // Do final checks to return appropriate value
-  // return true if the ray has hit a solid block, false otherwise
-  if (ray.voxel_location.type == 0)
+
+uinfl uinflAdd(uinfl first, uinfl second)
+{
+  uinfl result;
+  result.dec_component = first.dec_component + second.dec_component;
+  result.int_component = uint(result.dec_component);
+  result.dec_component -= result.int_component;
+  result.int_component += first.int_component + second.int_component;
+  return result;
+}
+uinfl uinflSub(uinfl first, uinfl second)
+{
+  first.int_component -= second.int_component;
+  first.dec_component -= second.dec_component;
+  if (first.dec_component < 0.0)
   {
-    // This voxel is uniformly air
-    return false;
+    first.dec_component += 1.0;
+    first.int_component -= 1;
   }
-  return true;
+  return first;
+}
+
+ufvec3 uf3Add(ufvec3 first, ufvec3 second)
+{
+  ufvec3 result;
+  result.dec_component = first.dec_component + second.dec_component;
+  result.int_component = uvec3(result.dec_component);
+  result.dec_component -= result.int_component;
+  result.int_component += first.int_component + second.int_component;
+  return result;
+}
+ufvec3 uf3Sub(ufvec3 first, ufvec3 second)
+{
+  first.int_component -= second.int_component;
+  first.dec_component -= second.dec_component;
+  if (first.dec_component.x < 0.0)
+  {
+    first.dec_component.x += 1.0;
+    first.int_component.x -= 1;
+  }
+  if (first.dec_component.y < 0.0)
+  {
+    first.dec_component.y += 1.0;
+    first.int_component.y -= 1;
+  }
+  if (first.dec_component.z < 0.0)
+  {
+    first.dec_component.z += 1.0;
+    first.int_component.z -= 1;
+  }
+  return first;
 }
 
 
@@ -525,7 +469,6 @@ uint computeLOD(float dist)
 {
   // Compute the lowest reasonable octree layer to use based on the given distance
   uint num_pixels = max(screen_width, screen_height);
-  uint num_visible_pixels = uint(dist / focal_distance);
-  return uint(log2(num_visible_pixels / num_pixels));
-  //return uint(dist / 1000) + 1;
+  uint num_visible_pixels = uint(dist / focal_distance)*lod_multiplier;
+  return max(uint(log2(num_visible_pixels / num_pixels)), 1);
 }
