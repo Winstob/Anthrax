@@ -33,7 +33,7 @@ Anthrax::Anthrax()
 {
   window_width_ = 800;
   window_height_ = 600;
-  int world_size = 16;
+  int world_size = 24;
   world_ = Octree(world_size);
   camera_ = Camera(glm::vec3(pow(2, world_size-3), pow(2, world_size-3), 0.0));
   //camera_ = Camera(glm::vec3(0.0, 0.0, 0.0));

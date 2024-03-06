@@ -66,40 +66,34 @@ struct Ray
   vec3 ray_dir;
   Voxel voxel_location;
   uint num_steps;
-  double distance_traveled;
+  float distance_traveled;
 };
 
-const float epsilon = 0.000001;
 const float render_distance = 100.0 * 1000 * 10; // 10KM render distance
 //const float render_distance = 1024.0; // 64 chunk render distance
-const uint lod_multiplier = 1;
+const uint lod_multiplier = 4;
 
 
 vec3 calculateMainRayDirection();
-Voxel getVoxelInfo(ufvec3 world_position);
+Voxel getVoxelInfo(in ufvec3 world_position, in uint lod_layer);
 Voxel findVoxelLocation(WorldLocation world_location);
 double findSafeDistance(in Ray ray);
 bool oldRayMarch(inout Ray ray);
 bool rayMarch(inout Ray ray);
-
+uint computeLOD(float dist);
 
 void main()
 {
   Ray ray;
   ray.ray_dir = calculateMainRayDirection();
-  bool is_within_world;
   ray.voxel_location = findVoxelLocation(camera_position);
   ray.num_steps = 0;
   ray.distance_traveled = 0.0;
 
   uint voxel_type;
-  bool reached_max_steps = true;
-  //bool reached_max_steps = false;
   for (uint i = 0; i < pow(2, octree_layers); i++)
-  //for (uint i = 0; i < 500; i++)
   {
     //if (rayMarch(ray) || ray.distance_traveled >= render_distance)
-    //if (oldRayMarch(ray))
     if (rayMarch(ray))
     {
       break;
@@ -151,7 +145,7 @@ vec3 calculateMainRayDirection()
 }
 
 
-Voxel getVoxelInfo(in ufvec3 world_position)
+Voxel getVoxelInfo(in ufvec3 world_position, in uint lod_layer)
 {
   Voxel voxel;
   voxel.position = world_position;
@@ -159,7 +153,7 @@ Voxel getVoxelInfo(in ufvec3 world_position)
   voxel.layer = octree_layers;
   uint current_octree_index = 0;
   bool found_uniform = false;
-  for (uint i = 0; i < octree_layers-1; i++)
+  for (uint i = 0; i < octree_layers-lod_layer; i++)
   {
     uint shifter = octree_layers-i-2;
     uint current_octant = ((world_position.int_component.x >> shifter) & 1u) | (((world_position.int_component.y >> shifter) & 1u) << 2) | (((~world_position.int_component.z >> shifter) & 1u) << 1);
@@ -183,6 +177,7 @@ Voxel getVoxelInfo(in ufvec3 world_position)
   }
   if (!found_uniform)
   {
+    // This is either a recursive element (fractal) or the LOD limit has been reached.
     voxel.type = 1;
   }
 
@@ -214,7 +209,7 @@ Voxel findVoxelLocation(WorldLocation world_location)
     voxel_location.position.int_component.z -= 1;
   }
 
-  voxel_location = getVoxelInfo(voxel_location.position);
+  voxel_location = getVoxelInfo(voxel_location.position, 1);
 
   return voxel_location;
 }
@@ -289,7 +284,7 @@ uint stepToEdge(inout Ray ray)
     z_sublocation.int_component = uint(tmp);
     z_sublocation.dec_component = float(tmp - z_sublocation.int_component);
 
-    ray.distance_traveled += x_factor;
+    ray.distance_traveled += float(x_factor);
   }
   else if (y_factor < z_factor)
   {
@@ -314,7 +309,7 @@ uint stepToEdge(inout Ray ray)
     z_sublocation.int_component = uint(tmp);
     z_sublocation.dec_component = float(tmp - z_sublocation.int_component);
 
-    ray.distance_traveled += y_factor;
+    ray.distance_traveled += float(y_factor);
   }
   else
   {
@@ -339,7 +334,7 @@ uint stepToEdge(inout Ray ray)
     y_sublocation.int_component = uint(tmp);
     y_sublocation.dec_component = float(tmp - y_sublocation.int_component);
 
-    ray.distance_traveled += z_factor;
+    ray.distance_traveled += float(z_factor);
   }
 
   ray.voxel_location.position.int_component.x = (ray.voxel_location.position.int_component.x & (~sublocation_mask)) | (x_sublocation.int_component & sublocation_mask);
@@ -395,7 +390,7 @@ bool jumpToNeighbor(inout Ray ray, uint neighbor)
     ray.voxel_location.position.dec_component.z = 0.0;
   }
 
-  ray.voxel_location = getVoxelInfo(ray.voxel_location.position);
+  ray.voxel_location = getVoxelInfo(ray.voxel_location.position, computeLOD(ray.distance_traveled));
 
   return true;
 }
@@ -403,6 +398,8 @@ bool jumpToNeighbor(inout Ray ray, uint neighbor)
 
 bool rayMarch(inout Ray ray)
 {
+  // Marches a ray forwards to the boundary of the neighboring voxel
+  // Returns true if the ray has hit a non-air voxel or has gone out of bounds, false otherwise
   uint neighbor = stepToEdge(ray);
   bool is_within_bounds = jumpToNeighbor(ray, neighbor);
   ray.num_steps++;
@@ -465,4 +462,13 @@ ufvec3 uf3Sub(ufvec3 first, ufvec3 second)
     first.int_component.z -= 1;
   }
   return first;
+}
+
+
+uint computeLOD(float dist)
+{
+  // Compute the lowest reasonable octree layer to use based on the given distance
+  uint num_pixels = max(screen_width, screen_height);
+  uint num_visible_pixels = uint(dist / focal_distance)*lod_multiplier;
+  return max(uint(log2(num_visible_pixels / num_pixels)), 1);
 }
