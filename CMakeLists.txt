@@ -30,11 +30,13 @@ set(HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/include/character.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/idmap.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/text.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/intfloat.hpp
   )
 
 set(SRC
   ${CMAKE_CURRENT_SOURCE_DIR}/src/anthrax.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/octree.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/intfloat.cpp
   )
 
 #set(SHADERS
