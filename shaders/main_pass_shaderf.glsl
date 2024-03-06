@@ -38,7 +38,6 @@ struct uinfl
 };
 uinfl uinflAdd(uinfl first, uinfl second);
 uinfl uinflSub(uinfl first, uinfl second);
-//double double(uinfl x) { return double(x.int_component) + double(x.dec_component); }
 
 struct ufvec3
 {
@@ -55,7 +54,7 @@ uniform vec3 camera_right;
 uniform vec3 camera_up;
 uniform vec3 camera_forward;
 
-struct VoxelLocation
+struct Voxel
 {
   ufvec3 position; // The position of the voxel where the origin is at the corner of the world (not the center)
   uint layer;
@@ -65,19 +64,20 @@ struct VoxelLocation
 struct Ray
 {
   vec3 ray_dir;
-  VoxelLocation voxel_location;
+  Voxel voxel_location;
   uint num_steps;
   double distance_traveled;
 };
 
 const float epsilon = 0.000001;
-const float render_distance = 100.0 * 1000 * 10;
-//const float render_distance = 1024.0;
+const float render_distance = 100.0 * 1000 * 10; // 10KM render distance
+//const float render_distance = 1024.0; // 64 chunk render distance
 const uint lod_multiplier = 1;
 
 
 vec3 calculateMainRayDirection();
-VoxelLocation findVoxelLocation(WorldLocation world_location);
+Voxel getVoxelInfo(ufvec3 world_position);
+Voxel findVoxelLocation(WorldLocation world_location);
 double findSafeDistance(in Ray ray);
 bool oldRayMarch(inout Ray ray);
 bool rayMarch(inout Ray ray);
@@ -118,29 +118,17 @@ void main()
   }
   else
   {
-    /*
-    if (voxel_type == 2)
-      FragColor = vec4(1.0, 0.0, 0.0, 1.0);
-    else
-      FragColor = vec4(1.0, 1.0, 1.0, 1.0);
-    */
+    //FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+    FragColor = vec4(ray.voxel_location.position.dec_component, 1.0);
     //FragColor = vec4(ray.voxel_location.position-uvec3(ray.voxel_location.position), 1.0);
-    FragColor = vec4(1.0, 1.0, 1.0, 1.0);
     //FragColor = vec4(vec3(float(ray.num_steps)/2.0), 1.0);
     //FragColor = vec4(ray.voxel_location.sublocation, 1.0);
     //FragColor = vec4(1.0-vec3(ray.distance_traveled/(1<<(octree_layers+1))), 1.0);
   }
-  FragColor = vec4(ray.voxel_location.position.dec_component, 1.0);
+  //FragColor.xyz += vec3(ray.distance_traveled / render_distance);
+  //FragColor = vec4(ray.voxel_location.position.dec_component, 1.0);
   //FragColor = vec4(vec3(ray.distance_traveled / pow(2, octree_layers)), 1.0);
   //FragColor = vec4(vec3(float(ray.num_steps) / 8.0), 1.0);
-  //FragColor = vec4(vec3(ray.voxel_location.position.int_component)/500.0, 1.0);
-  //FragColor = vec4(ray.voxel_location.position/float(ray.num_steps), 1.0);
-  //FragColor = vec4(ray.voxel_location.sublocation, 1.0);
-  //FragColor = vec4(vec3(float(ray.num_steps)/(1<<(octree_layers-1))), 1.0);
-  //FragColor = vec4(ray.voxel_location.center/(1<<octree_layers), 1.0);
-  //FragColor = vec4(ray.ray_dir, 1.0);
-  //FragColor = vec4(float(ray.voxel_location.layer)/float(octree_layers), 0.0, 0.0, 1.0);
-  //FragColor = vec4(0.3, 0.7, 0.5, 1.0);
 
   // cel shading
   /*
@@ -163,9 +151,49 @@ vec3 calculateMainRayDirection()
 }
 
 
-VoxelLocation findVoxelLocation(WorldLocation world_location)
+Voxel getVoxelInfo(in ufvec3 world_position)
 {
-  VoxelLocation voxel_location;
+  Voxel voxel;
+  voxel.position = world_position;
+
+  voxel.layer = octree_layers;
+  uint current_octree_index = 0;
+  bool found_uniform = false;
+  for (uint i = 0; i < octree_layers-1; i++)
+  {
+    uint shifter = octree_layers-i-2;
+    uint current_octant = ((world_position.int_component.x >> shifter) & 1u) | (((world_position.int_component.y >> shifter) & 1u) << 2) | (((~world_position.int_component.z >> shifter) & 1u) << 1);
+
+    current_octree_index = indirection_pool[(current_octree_index<<3) | current_octant];
+
+    voxel.layer--;
+
+    voxel.type = voxel_type_pool[current_octree_index];
+    if (voxel.type != 0)
+    {
+      found_uniform = true;
+      break;
+    }
+
+    if (current_octree_index == 0)
+    {
+      found_uniform = true;
+      break;
+    }
+  }
+  if (!found_uniform)
+  {
+    voxel.type = 1;
+  }
+
+  return voxel;
+
+}
+
+
+Voxel findVoxelLocation(WorldLocation world_location)
+{
+  Voxel voxel_location;
 
   voxel_location.position.int_component = uvec3(world_location.int_component) + uvec3(0x1 << (octree_layers-2));
 
@@ -186,38 +214,8 @@ VoxelLocation findVoxelLocation(WorldLocation world_location)
     voxel_location.position.int_component.z -= 1;
   }
 
-  //voxel_location.position = dvec3(voxel_location.position.int_component) + voxel_location.position.dec_component;
+  voxel_location = getVoxelInfo(voxel_location.position);
 
-  uvec3 int_position = voxel_location.position.int_component;
-
-  voxel_location.layer = octree_layers;
-  uint current_octree_index = 0;
-  bool found_uniform = false;
-  for (uint i = 0; i < octree_layers-1; i++)
-  {
-    
-    uint mask = uint(1) << (octree_layers-i-2);
-    uint current_octant = ((int_position.x & mask) >> (octree_layers-i-2)) | (((int_position.y & mask) >> (octree_layers-i-2)) << 2) | (((~int_position.z & mask) >> (octree_layers-i-2)) << 1);
-
-    current_octree_index = indirection_pool[(current_octree_index<<3) | current_octant];
-    voxel_location.layer--;
-
-    voxel_location.type = voxel_type_pool[current_octree_index];
-    if (voxel_location.type != 0)
-    {
-      found_uniform = true;
-      break;
-    }
-    if (current_octree_index == 0)
-    {
-      found_uniform = true;
-      break;
-    }
-  }
-  if (!found_uniform)
-  {
-    voxel_location.type = 1;
-  }
   return voxel_location;
 }
 
@@ -244,9 +242,6 @@ uint stepToEdge(inout Ray ray)
   y_sublocation.dec_component = ray.voxel_location.position.dec_component.y;
   z_sublocation.int_component = ray.voxel_location.position.int_component.z & sublocation_mask;
   z_sublocation.dec_component = ray.voxel_location.position.dec_component.z;
-  //ufvec3 sublocation;
-  //sublocation.int_component = ray.voxel_location.position.int_component & sublocation_mask;
-  //sublocation.dec_component = ray.voxel_location.position.dec_component;
 
   uinfl x_distance = max_sublocation, y_distance = max_sublocation, z_distance = max_sublocation;
   if (ray.ray_dir.x < 0.0)
@@ -400,38 +395,8 @@ bool jumpToNeighbor(inout Ray ray, uint neighbor)
     ray.voxel_location.position.dec_component.z = 0.0;
   }
 
+  ray.voxel_location = getVoxelInfo(ray.voxel_location.position);
 
-  uvec3 int_position = ray.voxel_location.position.int_component;
-
-  ray.voxel_location.layer = octree_layers;
-  uint current_octree_index = 0;
-  bool found_uniform = false;
-  for (uint i = 0; i < octree_layers-1; i++)
-  {
-    uint shifter = octree_layers-i-2;
-    uint current_octant = ((int_position.x >> shifter) & 1u) | (((int_position.y >> shifter) & 1u) << 2) | (((~int_position.z >> shifter) & 1u) << 1);
-
-    current_octree_index = indirection_pool[(current_octree_index<<3) | current_octant];
-
-    ray.voxel_location.layer--;
-
-    ray.voxel_location.type = voxel_type_pool[current_octree_index];
-    if (ray.voxel_location.type != 0)
-    {
-      found_uniform = true;
-      break;
-    }
-
-    if (current_octree_index == 0)
-    {
-      found_uniform = true;
-      break;
-    }
-  }
-  if (!found_uniform)
-  {
-    ray.voxel_location.type = 1;
-  }
   return true;
 }
 
