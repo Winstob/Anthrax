@@ -99,10 +99,6 @@ void main()
       break;
     }
   }
-  /*
-  FragColor = vec4(ray.voxel_location.position/pow(2, octree_layers-1), 1.0);
-  return;
-  */
   voxel_type = ray.voxel_location.type;
 
   //uint voxel_type = indirection_pool[3];
@@ -112,17 +108,14 @@ void main()
   }
   else
   {
-    //FragColor = vec4(1.0, 1.0, 1.0, 1.0);
-    FragColor = vec4(ray.voxel_location.position.dec_component, 1.0);
-    //FragColor = vec4(ray.voxel_location.position-uvec3(ray.voxel_location.position), 1.0);
-    //FragColor = vec4(vec3(float(ray.num_steps)/2.0), 1.0);
-    //FragColor = vec4(ray.voxel_location.sublocation, 1.0);
+    FragColor = vec4(0.2, 0.3, 0.9, 1.0);
+    //FragColor = vec4(ray.voxel_location.position.dec_component, 1.0);
     //FragColor = vec4(1.0-vec3(ray.distance_traveled/(1<<(octree_layers+1))), 1.0);
   }
   //FragColor.xyz += vec3(ray.distance_traveled / render_distance);
   //FragColor = vec4(ray.voxel_location.position.dec_component, 1.0);
   //FragColor = vec4(vec3(ray.distance_traveled / pow(2, octree_layers)), 1.0);
-  //FragColor = vec4(vec3(float(ray.num_steps) / 8.0), 1.0);
+  //FragColor = vec4(vec3(float(ray.num_steps) / 32.0), 1.0);
 
   // cel shading
   /*

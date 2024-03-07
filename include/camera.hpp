@@ -45,6 +45,8 @@ public:
 
   Intfloat position[3];
   glm::quat rotation;
+  float fov;
+  float focal_distance = 1.0;
 private:
 };
 

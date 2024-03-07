@@ -6,6 +6,8 @@
 #ifndef ANTHRAX_HPP
 #define ANTHRAX_HPP
 
+#define PI 3.14159265
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
@@ -37,6 +39,7 @@ public:
   Anthrax();
   ~Anthrax();
   int initWindow();
+  void setFOV(float angle);
   void exit();
   void renderFrame();
   bool windowShouldClose() const { return glfwWindowShouldClose(window_); }

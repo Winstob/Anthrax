@@ -115,6 +115,16 @@ int Anthrax::initWindow()
 }
 
 
+void Anthrax::setFOV(float angle)
+{
+  // Screen coordinates are between -1.0 and 1.0
+  // Calculate the focal distance given a fov angle in degrees
+  camera_.fov = angle;
+  camera_.focal_distance = 1.0/tan(angle*0.5*PI/180.0);
+  return;
+}
+
+
 void Anthrax::exit()
 {
   delete main_pass_shader_;
@@ -158,7 +168,7 @@ void Anthrax::renderFrame()
   glClear(GL_COLOR_BUFFER_BIT);
   main_pass_shader_->use();
   main_pass_shader_->setInt("octree_layers", world_.num_layers_);
-  main_pass_shader_->setFloat("focal_distance", 1.0);
+  main_pass_shader_->setFloat("focal_distance", camera_.focal_distance);
   main_pass_shader_->setInt("screen_width", window_width_);
   main_pass_shader_->setInt("screen_height", window_height_);
   main_pass_shader_->setIvec3("camera_position.int_component", iComponents3(camera_.position));
