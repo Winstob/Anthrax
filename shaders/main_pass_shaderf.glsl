@@ -45,6 +45,21 @@ struct ufvec3
   vec3 dec_component;
 };
 
+struct DirectedLight
+{
+  vec3 direction;
+  vec3 scatter_color;
+  vec3 color;
+};
+
+struct Material
+{
+  vec3 diffuse;
+  vec3 specular;
+  float shininess;
+  float opacity;
+};
+
 uniform int octree_layers;
 uniform float focal_distance;
 uniform int screen_width;
@@ -53,6 +68,7 @@ uniform WorldLocation camera_position;
 uniform vec3 camera_right;
 uniform vec3 camera_up;
 uniform vec3 camera_forward;
+uniform DirectedLight sunlight;
 
 struct Voxel
 {
@@ -67,6 +83,8 @@ struct Ray
   Voxel voxel_location;
   uint num_steps;
   float distance_traveled;
+  vec3 surface_normal;
+  vec4 color;
 };
 
 const float render_distance = 100.0 * 1000 * 10; // 10KM render distance
@@ -82,6 +100,9 @@ bool oldRayMarch(inout Ray ray);
 bool rayMarch(inout Ray ray);
 uint computeLOD(float dist);
 
+Material materialLookup(uint id);
+void addSunlight(inout Ray incoming_ray, in Material material);
+
 void main()
 {
   Ray ray;
@@ -89,6 +110,8 @@ void main()
   ray.voxel_location = findVoxelLocation(camera_position);
   ray.num_steps = 0;
   ray.distance_traveled = 0.0;
+  ray.surface_normal = vec3(0.0, 0.0, 0.0);
+  ray.color = vec4(0.0, 0.0, 0.0, 0.0);
 
   uint voxel_type;
   for (uint i = 0; i < pow(2, octree_layers); i++)
@@ -104,27 +127,24 @@ void main()
   //uint voxel_type = indirection_pool[3];
   if (voxel_type == 0)
   {
-    FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    FragColor = vec4(0.0, 0.0, 0.0, 0.0);
   }
   else
   {
-    FragColor = vec4(0.2, 0.3, 0.9, 1.0);
     //FragColor = vec4(ray.voxel_location.position.dec_component, 1.0);
     //FragColor = vec4(1.0-vec3(ray.distance_traveled/(1<<(octree_layers+1))), 1.0);
+
+    Material material = materialLookup(ray.voxel_location.type);
+    //ray.color = vec4(material.diffuse, material.opacity);
+    addSunlight(ray, material);
+    FragColor = ray.color;
   }
   //FragColor.xyz += vec3(ray.distance_traveled / render_distance);
   //FragColor = vec4(ray.voxel_location.position.dec_component, 1.0);
   //FragColor = vec4(vec3(ray.distance_traveled / pow(2, octree_layers)), 1.0);
   //FragColor = vec4(vec3(float(ray.num_steps) / 32.0), 1.0);
 
-  // cel shading
-  /*
-  float eps = 1/ray.voxel_location.layer * 0.05;
-  if ((abs(ray.voxel_location.sublocation.x) > 1.0-eps && (abs(ray.voxel_location.sublocation.y) > 1.0-eps || abs(ray.voxel_location.sublocation.z) > 1.0-eps)) || (abs(ray.voxel_location.sublocation.y) > 1.0-eps && abs(ray.voxel_location.sublocation.z) > 1.0-eps))
-  {
-    FragColor = vec4(vec3(0.0), 1.0);
-  }
-  */
+
   //FragColor = FragColor * max((1-ray.distance_traveled/render_distance), 0.0); // Fog
 }
 
@@ -349,36 +369,42 @@ bool jumpToNeighbor(inout Ray ray, uint neighbor)
   if (neighbor == 0)
   {
     if (ray.voxel_location.position.int_component.x == 0) return false;
+    ray.surface_normal = vec3(1.0, 0.0, 0.0);
     ray.voxel_location.position.int_component.x--;
     ray.voxel_location.position.dec_component.x = 1.0;
   }
   else if (neighbor == 1)
   {
     if (ray.voxel_location.position.int_component.x == max_location) return false;
+    ray.surface_normal = vec3(-1.0, 0.0, 0.0);
     ray.voxel_location.position.int_component.x++;
     ray.voxel_location.position.dec_component.x = 0.0;
   }
   else if (neighbor == 2)
   {
     if (ray.voxel_location.position.int_component.y == 0) return false;
+    ray.surface_normal = vec3(0.0, 1.0, 0.0);
     ray.voxel_location.position.int_component.y--;
     ray.voxel_location.position.dec_component.y = 1.0;
   }
   else if (neighbor == 3)
   {
     if (ray.voxel_location.position.int_component.y == max_location) return false;
+    ray.surface_normal = vec3(0.0, -1.0, 0.0);
     ray.voxel_location.position.int_component.y++;
     ray.voxel_location.position.dec_component.y = 0.0;
   }
   else if (neighbor == 4)
   {
     if (ray.voxel_location.position.int_component.z == 0) return false;
+    ray.surface_normal = vec3(0.0, 0.0, 1.0);
     ray.voxel_location.position.int_component.z--;
     ray.voxel_location.position.dec_component.z = 1.0;
   }
   else if (neighbor == 5)
   {
     if (ray.voxel_location.position.int_component.z == max_location) return false;
+    ray.surface_normal = vec3(0.0, 0.0, -1.0);
     ray.voxel_location.position.int_component.z++;
     ray.voxel_location.position.dec_component.z = 0.0;
   }
@@ -465,3 +491,62 @@ uint computeLOD(float dist)
   uint num_visible_pixels = uint(dist / focal_distance)*lod_multiplier;
   return max(uint(log2(num_visible_pixels / num_pixels)), 1);
 }
+
+
+Material materialLookup(uint id)
+{
+  // TODO: make a material lookup table defined by CPU
+  Material material;
+  if (id == 1)
+  {
+    material.diffuse = vec3(0.2, 0.3, 0.9);
+    material.specular = vec3(0.2, 0.2, 0.2);
+    material.shininess = 32.0f;
+    material.opacity = 1.0;
+  }
+
+  return material;
+}
+
+
+void addSunlight(inout Ray incoming_ray, in Material material)
+{
+  Ray ray = incoming_ray;
+  ray.ray_dir = -sunlight.direction;
+  bool is_in_shadow = false;
+  if (dot(incoming_ray.surface_normal, ray.ray_dir) <= 0.0)
+  {
+    is_in_shadow = true;
+  }
+  else
+  {
+    for (uint i = 0; i < pow(2, octree_layers); i++)
+    {
+      if (rayMarch(ray))
+      {
+        break;
+      }
+    }
+    if (ray.voxel_location.type != 0)
+    {
+      // This voxel is not exposed to sunlight
+      is_in_shadow = true;
+    }
+  }
+
+  vec3 color = material.diffuse * sunlight.scatter_color;
+  if (!is_in_shadow)
+  {
+    float diffuse_factor = max(dot(-sunlight.direction, incoming_ray.surface_normal), 0.0);
+    color += diffuse_factor * material.diffuse * sunlight.scatter_color;
+
+    vec3 halfway_direction = normalize(normalize(-sunlight.direction) + -incoming_ray.ray_dir);
+    float spec = pow(max(dot(incoming_ray.surface_normal, halfway_direction), 0.0), material.shininess*256.0f);
+    color += sunlight.color * (spec * material.specular);
+  }
+
+  incoming_ray.color += vec4(color*material.opacity, material.opacity);
+
+  return;
+}
+
