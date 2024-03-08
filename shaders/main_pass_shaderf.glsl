@@ -89,7 +89,7 @@ struct Ray
 
 const float render_distance = 100.0 * 1000 * 10; // 10KM render distance
 //const float render_distance = 1024.0; // 64 chunk render distance
-const uint lod_multiplier = 4;
+const uint lod_multiplier = 16;
 
 
 vec3 calculateMainRayDirection();
@@ -101,7 +101,9 @@ bool rayMarch(inout Ray ray);
 uint computeLOD(float dist);
 
 Material materialLookup(uint id);
+float lerp(float a, float b, float f);
 void addSunlight(inout Ray incoming_ray, in Material material);
+void addAmbientOcclusion(inout Ray incoming_ray, in Material material);
 
 void main()
 {
@@ -137,6 +139,7 @@ void main()
     Material material = materialLookup(ray.voxel_location.type);
     //ray.color = vec4(material.diffuse, material.opacity);
     addSunlight(ray, material);
+    addAmbientOcclusion(ray, material);
     FragColor = ray.color;
   }
   //FragColor.xyz += vec3(ray.distance_traveled / render_distance);
@@ -509,6 +512,12 @@ Material materialLookup(uint id)
 }
 
 
+float lerp(float a, float b, float f)
+{
+  return a + f * (b - a);
+}
+
+
 void addSunlight(inout Ray incoming_ray, in Material material)
 {
   Ray ray = incoming_ray;
@@ -550,3 +559,55 @@ void addSunlight(inout Ray incoming_ray, in Material material)
   return;
 }
 
+
+void addAmbientOcclusion(inout Ray incoming_ray, in Material material)
+{
+  float ao_component = 1.0;
+
+  float ao_distance = 1.0f;
+  //uint num_rays = (2*uint(ceil(ao_distance)))*4;
+  uint num_rays = 8;
+  Ray ray;
+  float x_component = 0.0;
+  float z_component = 1.0;
+  float x_increment = 4.0 / num_rays;
+  float z_increment = 2.0 / num_rays;
+
+  mat3 rotation = mat3(1.0-abs(incoming_ray.surface_normal.x), incoming_ray.surface_normal.x, 0.0,
+       abs(incoming_ray.surface_normal.x), incoming_ray.surface_normal.y, abs(incoming_ray.surface_normal.z),
+       0.0, incoming_ray.surface_normal.z, 1.0-abs(incoming_ray.surface_normal.z));
+
+  for (uint i = 0; i < num_rays; i++)
+  {
+    ray = incoming_ray;
+    ray.num_steps = 0;
+    ray.distance_traveled = 0.0;
+    ray.ray_dir.x = x_component-1.0;
+    ray.ray_dir.y = ao_distance;
+    ray.ray_dir.z = z_component-1.0;
+    x_component = (mod(x_component+x_increment, 2.0));
+    z_component = (mod(z_component+z_increment, 2.0));
+
+    ray.ray_dir = normalize(ray.ray_dir) * rotation;
+
+    rayMarch(ray);
+    ray.distance_traveled = 0.0;
+    for (uint j = 0; j < ceil(ao_distance); j++)
+    {
+      if (!rayMarch(ray) || ray.distance_traveled > ao_distance)
+        break;
+    }
+    if (ray.distance_traveled > ao_distance)
+      ray.voxel_location.type = 0;
+    if (ray.voxel_location.type != 0)
+    {
+      Material material = materialLookup(ray.voxel_location.type);
+      float normalized_distance = ray.distance_traveled/ao_distance;
+      ao_component -= (lerp(1.0, 0.01, normalized_distance) * material.opacity) / float(num_rays);
+      //ao_component -= ray.distance_traveled/ao_distance * material.opacity / float(num_rays);
+    }
+  }
+
+  incoming_ray.color.xyz *= ao_component;
+  return;
+}
