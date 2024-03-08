@@ -84,7 +84,7 @@ struct Ray
   uint num_steps;
   float distance_traveled;
   vec3 surface_normal;
-  vec4 color;
+  vec3 color;
 };
 
 const float render_distance = 100.0 * 1000 * 10; // 10KM render distance
@@ -103,7 +103,8 @@ uint computeLOD(float dist);
 Material materialLookup(uint id);
 float lerp(float a, float b, float f);
 void addSunlight(inout Ray incoming_ray, in Material material);
-void addAmbientOcclusion(inout Ray incoming_ray, in Material material);
+void addAmbientOcclusion(inout Ray incoming_ray);
+void addReflections(inout Ray incoming_ray, in Material material, in uint num_hops);
 
 void main()
 {
@@ -113,7 +114,7 @@ void main()
   ray.num_steps = 0;
   ray.distance_traveled = 0.0;
   ray.surface_normal = vec3(0.0, 0.0, 0.0);
-  ray.color = vec4(0.0, 0.0, 0.0, 0.0);
+  ray.color = vec3(0.0);
 
   uint voxel_type;
   for (uint i = 0; i < pow(2, octree_layers); i++)
@@ -139,8 +140,9 @@ void main()
     Material material = materialLookup(ray.voxel_location.type);
     //ray.color = vec4(material.diffuse, material.opacity);
     addSunlight(ray, material);
-    addAmbientOcclusion(ray, material);
-    FragColor = ray.color;
+    addAmbientOcclusion(ray);
+    addReflections(ray, material, 4);
+    FragColor = vec4(ray.color, 1.0);
   }
   //FragColor.xyz += vec3(ray.distance_traveled / render_distance);
   //FragColor = vec4(ray.voxel_location.position.dec_component, 1.0);
@@ -554,13 +556,13 @@ void addSunlight(inout Ray incoming_ray, in Material material)
     color += sunlight.color * (spec * material.specular);
   }
 
-  incoming_ray.color += vec4(color*material.opacity, material.opacity);
+  incoming_ray.color += color*material.opacity;
 
   return;
 }
 
 
-void addAmbientOcclusion(inout Ray incoming_ray, in Material material)
+void addAmbientOcclusion(inout Ray incoming_ray)
 {
   float ao_component = 1.0;
 
@@ -608,6 +610,37 @@ void addAmbientOcclusion(inout Ray incoming_ray, in Material material)
     }
   }
 
-  incoming_ray.color.xyz *= ao_component;
+  incoming_ray.color *= ao_component;
   return;
+}
+
+
+void addReflections(inout Ray incoming_ray, in Material material, in uint num_hops)
+{
+  Ray ray = incoming_ray;
+
+  vec3 total_specular = material.specular;
+  vec3 total_reflection_color = vec3(0.0);
+  Material current_material;
+  for (uint i = 0; i < num_hops; i++)
+  {
+    ray.ray_dir = reflect(ray.ray_dir, ray.surface_normal);
+    rayMarch(ray);
+    for (uint j = 0; j < pow(2, octree_layers); j++)
+    {
+      if (rayMarch(ray))
+      {
+        break;
+      }
+    }
+    if (ray.voxel_location.type == 0)
+      break;
+    current_material = materialLookup(ray.voxel_location.type);
+    total_reflection_color += current_material.diffuse * total_specular;
+    total_specular *= current_material.specular;
+  }
+
+  incoming_ray.color += total_reflection_color;
+  return;
+
 }
