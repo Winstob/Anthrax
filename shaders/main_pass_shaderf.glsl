@@ -58,6 +58,7 @@ struct Material
   vec3 specular;
   float shininess;
   float opacity;
+  float refraction_index;
 };
 
 uniform int octree_layers;
@@ -91,7 +92,7 @@ const float render_distance = 100.0 * 1000 * 10; // 10KM render distance
 //const float render_distance = 1024.0; // 64 chunk render distance
 const uint lod_multiplier = 16;
 const uint num_transparency_hops = 16;
-const uint num_reflection_hops = 4;
+const uint num_reflection_hops = 1;
 
 
 vec3 calculateMainRayDirection();
@@ -117,9 +118,10 @@ void main()
   ray.surface_normal = vec3(0.0, 0.0, 0.0);
   ray.color = vec3(0.0);
 
-  vec3 collective_color = vec3(0.0);
-  float collective_opacity = 0.0;
+  vec3 cumulative_color = vec3(0.0);
+  float cumulative_opacity = 0.0;
   int current_num_reflection_hops = int(num_reflection_hops);
+  Material material = materialLookup(ray.voxel_info.type);
   for (int i = 0; i < num_transparency_hops+1; i++)
   {
     bool out_of_bounds;
@@ -136,34 +138,33 @@ void main()
       break;
     }
 
-    if (ray.voxel_info.type == 0)
-    {
-      continue;
-    }
-    else
-    {
-      //FragColor = vec4(ray.voxel_info.position.dec_component, 1.0);
-      //FragColor = vec4(1.0-vec3(ray.distance_traveled/(1<<(octree_layers+1))), 1.0);
+    float refraction_indices_ratio = material.refraction_index;
+    material = materialLookup(ray.voxel_info.type);
+    refraction_indices_ratio = refraction_indices_ratio / material.refraction_index;
 
-      Material material = materialLookup(ray.voxel_info.type);
-      //ray.color = vec4(material.diffuse, material.opacity);
+    if (ray.voxel_info.type != 0)
+    {
       addSunlight(ray, material);
-      addAmbientOcclusion(ray);
-      addReflections(ray, material, current_num_reflection_hops--);
+      if (i == 0)
+        addAmbientOcclusion(ray);
+      addReflections(ray, material, current_num_reflection_hops);
+      current_num_reflection_hops = max(int(current_num_reflection_hops)-1, 0);
 
       ray.color = min(ray.color, vec3(1.0));
-      collective_color += ray.color * max((1.0-collective_opacity), 0.0);
-      collective_opacity += material.opacity;
-      if (collective_opacity >= 1.0)
+      cumulative_color += ray.color * max((1.0-cumulative_opacity), 0.0);
+      cumulative_opacity += material.opacity;
+      if (cumulative_opacity >= 1.0)
       {
-        collective_opacity = 1.0;
+        cumulative_opacity = 1.0;
         break;
       }
 
       ray.color = vec3(0.0);
     }
+    ray.ray_dir = refract(ray.ray_dir, ray.surface_normal, refraction_indices_ratio);
+    if (ray.ray_dir == vec3(0.0)) ray.ray_dir = ray.surface_normal;
   }
-  FragColor = vec4(collective_color, 1.0);
+  FragColor = vec4(cumulative_color, 1.0);
   //FragColor.xyz += vec3(ray.distance_traveled / render_distance);
   //FragColor = vec4(ray.voxel_info.position.dec_component, 1.0);
   //FragColor = vec4(vec3(ray.distance_traveled / pow(2, octree_layers)), 1.0);
@@ -532,13 +533,15 @@ Material materialLookup(uint id)
     material.specular = vec3(0.0);
     material.shininess = 0.0f;
     material.opacity = 0.0;
+    material.refraction_index = 1.0003;
   }
   if (id == 1)
   {
     material.diffuse = vec3(0.2, 0.3, 0.9);
-    material.specular = vec3(0.5, 0.5, 0.5);
+    material.specular = vec3(0.1, 0.1, 0.1);
     material.shininess = 32.0f;
     material.opacity = 0.6;
+    material.refraction_index = 1.52;
   }
   /*
   if (id == 1)
