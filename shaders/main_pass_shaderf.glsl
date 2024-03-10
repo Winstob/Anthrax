@@ -74,6 +74,7 @@ uniform DirectedLight sunlight;
 struct VoxelInfo
 {
   ufvec3 position; // The position of the voxel where the origin is at the corner of the world (not the center)
+  uint octants_trace[32];
   uint layer;
   uint type;
 };
@@ -97,6 +98,7 @@ const uint num_reflection_hops = 1;
 
 vec3 calculateMainRayDirection();
 VoxelInfo getVoxelInfo(in ufvec3 world_position, in uint lod_layer);
+VoxelInfo getVoxelInfo(in ufvec3 world_position, in uint lod_layer, in VoxelInfo help_voxel);
 VoxelInfo convertToVoxelInfo(WorldLocation world_location);
 bool rayMarch(inout Ray ray, out bool out_of_bounds);
 uint computeLOD(float dist);
@@ -183,21 +185,38 @@ vec3 calculateMainRayDirection()
   return normalize(x + y + z);
 }
 
-
 VoxelInfo getVoxelInfo(in ufvec3 world_position, in uint lod_layer)
+{
+  VoxelInfo tmp;
+  tmp.layer = octree_layers;
+  return getVoxelInfo(world_position, lod_layer, tmp);
+}
+
+VoxelInfo getVoxelInfo(in ufvec3 world_position, in uint lod_layer, in VoxelInfo help_voxel)
 {
   VoxelInfo voxel;
   voxel.position = world_position;
+  voxel.octants_trace = help_voxel.octants_trace;
 
-  voxel.layer = octree_layers;
   uint current_octree_index = 0;
+  uvec3 compare_positions = ~(help_voxel.position.int_component ^ world_position.int_component); // XNOR
+  uint i;
+  for (i = 0; i < octree_layers-help_voxel.layer; i++)
+  {
+    if (((compare_positions >> (octree_layers-i-2)) & 1u) != uvec3(1))
+      break;
+    current_octree_index = voxel.octants_trace[i];
+  }
+
+  voxel.layer = octree_layers-i;
   bool found_uniform = false;
-  for (uint i = 0; i < octree_layers-lod_layer; i++)
+  for (; i < octree_layers-lod_layer; i++)
   {
     uint shifter = octree_layers-i-2;
     uint current_octant = ((world_position.int_component.x >> shifter) & 1u) | (((world_position.int_component.y >> shifter) & 1u) << 2) | (((~world_position.int_component.z >> shifter) & 1u) << 1);
 
     current_octree_index = indirection_pool[(current_octree_index<<3) | current_octant];
+    voxel.octants_trace[i] = current_octree_index;
 
     voxel.layer--;
 
@@ -390,6 +409,7 @@ uint stepToEdge(inout Ray ray)
 bool jumpToNeighbor(inout Ray ray, uint neighbor)
 {
   // return value: true if the ray is within bounds of the world, false otherwise
+  VoxelInfo last_voxel = ray.voxel_info;
   uint max_location = uint(0xFFFFFFFF) >> (32-octree_layers+1);
   if (neighbor == 0)
   {
@@ -434,7 +454,7 @@ bool jumpToNeighbor(inout Ray ray, uint neighbor)
     ray.voxel_info.position.dec_component.z = 0.0;
   }
 
-  ray.voxel_info = getVoxelInfo(ray.voxel_info.position, computeLOD(ray.distance_traveled));
+  ray.voxel_info = getVoxelInfo(ray.voxel_info.position, computeLOD(ray.distance_traveled), last_voxel);
 
   return true;
 }
@@ -541,7 +561,7 @@ Material materialLookup(uint id)
     //material.diffuse = vec3(1.0, 0.0, 0.0);
     material.specular = vec3(0.1, 0.1, 0.1);
     material.shininess = 32.0f;
-    material.opacity = 0.6;
+    material.opacity = 0.2;
     material.refraction_index = 1.52;
   }
   if (id == 2)

@@ -269,7 +269,6 @@ void Anthrax::createWorld()
   std::ifstream voxel_type_file("world/voxel_type_pool.txt");
   while (voxel_type_file >> val)
   {
-    if (val != 0) std::cout << val << std::endl;
     world_.voxel_type_pool_[index] = val;
     index++;
   }
