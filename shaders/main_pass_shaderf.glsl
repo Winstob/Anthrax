@@ -98,7 +98,6 @@ const uint num_reflection_hops = 1;
 vec3 calculateMainRayDirection();
 VoxelInfo getVoxelInfo(in ufvec3 world_position, in uint lod_layer);
 VoxelInfo convertToVoxelInfo(WorldLocation world_location);
-double findSafeDistance(in Ray ray);
 bool rayMarch(inout Ray ray, out bool out_of_bounds);
 uint computeLOD(float dist);
 
@@ -168,6 +167,7 @@ void main()
   //FragColor.xyz += vec3(ray.distance_traveled / render_distance);
   //FragColor = vec4(ray.voxel_info.position.dec_component, 1.0);
   //FragColor = vec4(vec3(ray.distance_traveled / pow(2, octree_layers)), 1.0);
+  //FragColor.xyz += vec3(ray.distance_traveled / pow(2, octree_layers));
   //FragColor = vec4(vec3(float(ray.num_steps) / 32.0), 1.0);
 
 
@@ -538,20 +538,19 @@ Material materialLookup(uint id)
   if (id == 1)
   {
     material.diffuse = vec3(0.2, 0.3, 0.9);
+    //material.diffuse = vec3(1.0, 0.0, 0.0);
     material.specular = vec3(0.1, 0.1, 0.1);
     material.shininess = 32.0f;
     material.opacity = 0.6;
     material.refraction_index = 1.52;
   }
-  /*
-  if (id == 1)
+  if (id == 2)
   {
-    material.diffuse = vec3(0.5, 0.5, 0.5);
-    material.specular = vec3(1.0);
-    material.shininess = 64.0f;
-    material.opacity = 0.01;
+    material.diffuse = vec3(1.0);
+    material.specular = vec3(0.0);
+    material.shininess = 32.0f;
+    material.opacity = 1.0;
   }
-  */
 
   return material;
 }
@@ -567,12 +566,12 @@ void addSunlight(inout Ray incoming_ray, in Material material)
 {
   Ray ray = incoming_ray;
   ray.ray_dir = -sunlight.direction;
-  vec3 shadow_color = vec3(0.0);
+  vec3 shadow_color = vec3(1.0);
   float shadow_darkness = 0.0;
   bool out_of_bounds;
   if (dot(incoming_ray.surface_normal, ray.ray_dir) <= 0.0)
   {
-    shadow_color = vec3(1.0);
+    shadow_color = vec3(0.0);
   }
   else
   {
@@ -588,7 +587,7 @@ void addSunlight(inout Ray incoming_ray, in Material material)
       if (out_of_bounds) break;
       Material current_material = materialLookup(ray.voxel_info.type);
       shadow_darkness += current_material.opacity;
-      shadow_color += current_material.diffuse * shadow_darkness;
+      shadow_color -= (vec3(1.0)-current_material.diffuse) * shadow_darkness;
       if (shadow_darkness >= 1.0)
       {
         shadow_darkness = 1.0;
@@ -596,18 +595,19 @@ void addSunlight(inout Ray incoming_ray, in Material material)
       }
     }
   }
+  shadow_color = max(shadow_color, vec3(0.0));
 
   // Ambient lighting
   vec3 color = material.diffuse * sunlight.scatter_color;
 
   // Diffuse lighting
   float diffuse_factor = max(dot(-sunlight.direction, incoming_ray.surface_normal), 0.0);
-  color += (diffuse_factor * material.diffuse * sunlight.scatter_color) * (vec3(1.0)-shadow_color) * (1.0-shadow_darkness);
+  color += (diffuse_factor * material.diffuse * sunlight.scatter_color) * (shadow_color);// * (1.0-shadow_darkness);
 
   // Specular lighting
   vec3 halfway_direction = normalize(normalize(-sunlight.direction) + -incoming_ray.ray_dir);
   float spec = pow(max(dot(incoming_ray.surface_normal, halfway_direction), 0.0), material.shininess*256.0f);
-  color += (sunlight.color * (spec * material.specular)) * (vec3(1.0)-shadow_color) * (1.0-shadow_darkness);
+  color += (sunlight.color * (spec * material.specular)) * (shadow_color);// * (1.0-shadow_darkness);
 
 
   incoming_ray.color += color*material.opacity;
