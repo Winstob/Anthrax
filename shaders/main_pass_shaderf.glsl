@@ -221,13 +221,7 @@ VoxelInfo getVoxelInfo(in ufvec3 world_position, in uint lod_layer, in VoxelInfo
     voxel.layer--;
 
     voxel.type = voxel_type_pool[current_octree_index];
-    if (voxel.type != 0)
-    {
-      found_uniform = true;
-      break;
-    }
-
-    if (current_octree_index == 0)
+    if (voxel.type != 0 || current_octree_index == 0)
     {
       found_uniform = true;
       break;
@@ -409,52 +403,52 @@ uint stepToEdge(inout Ray ray)
 bool jumpToNeighbor(inout Ray ray, uint neighbor)
 {
   // return value: true if the ray is within bounds of the world, false otherwise
-  VoxelInfo last_voxel = ray.voxel_info;
+  ufvec3 new_position = ray.voxel_info.position;
   uint max_location = uint(0xFFFFFFFF) >> (32-octree_layers+1);
   if (neighbor == 0)
   {
-    if (ray.voxel_info.position.int_component.x == 0) return false;
+    if (new_position.int_component.x == 0) return false;
     ray.surface_normal = vec3(1.0, 0.0, 0.0);
-    ray.voxel_info.position.int_component.x--;
-    ray.voxel_info.position.dec_component.x = 1.0;
+    new_position.int_component.x--;
+    new_position.dec_component.x = 1.0;
   }
   else if (neighbor == 1)
   {
-    if (ray.voxel_info.position.int_component.x == max_location) return false;
+    if (new_position.int_component.x == max_location) return false;
     ray.surface_normal = vec3(-1.0, 0.0, 0.0);
-    ray.voxel_info.position.int_component.x++;
-    ray.voxel_info.position.dec_component.x = 0.0;
+    new_position.int_component.x++;
+    new_position.dec_component.x = 0.0;
   }
   else if (neighbor == 2)
   {
-    if (ray.voxel_info.position.int_component.y == 0) return false;
+    if (new_position.int_component.y == 0) return false;
     ray.surface_normal = vec3(0.0, 1.0, 0.0);
-    ray.voxel_info.position.int_component.y--;
-    ray.voxel_info.position.dec_component.y = 1.0;
+    new_position.int_component.y--;
+    new_position.dec_component.y = 1.0;
   }
   else if (neighbor == 3)
   {
-    if (ray.voxel_info.position.int_component.y == max_location) return false;
+    if (new_position.int_component.y == max_location) return false;
     ray.surface_normal = vec3(0.0, -1.0, 0.0);
-    ray.voxel_info.position.int_component.y++;
-    ray.voxel_info.position.dec_component.y = 0.0;
+    new_position.int_component.y++;
+    new_position.dec_component.y = 0.0;
   }
   else if (neighbor == 4)
   {
-    if (ray.voxel_info.position.int_component.z == 0) return false;
+    if (new_position.int_component.z == 0) return false;
     ray.surface_normal = vec3(0.0, 0.0, 1.0);
-    ray.voxel_info.position.int_component.z--;
-    ray.voxel_info.position.dec_component.z = 1.0;
+    new_position.int_component.z--;
+    new_position.dec_component.z = 1.0;
   }
   else if (neighbor == 5)
   {
-    if (ray.voxel_info.position.int_component.z == max_location) return false;
+    if (new_position.int_component.z == max_location) return false;
     ray.surface_normal = vec3(0.0, 0.0, -1.0);
-    ray.voxel_info.position.int_component.z++;
-    ray.voxel_info.position.dec_component.z = 0.0;
+    new_position.int_component.z++;
+    new_position.dec_component.z = 0.0;
   }
 
-  ray.voxel_info = getVoxelInfo(ray.voxel_info.position, computeLOD(ray.distance_traveled), last_voxel);
+  ray.voxel_info = getVoxelInfo(new_position, computeLOD(ray.distance_traveled), ray.voxel_info);
 
   return true;
 }
