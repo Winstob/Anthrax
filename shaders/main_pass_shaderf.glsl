@@ -74,6 +74,7 @@ uniform DirectedLight sunlight;
 struct VoxelInfo
 {
   ufvec3 position; // The position of the voxel where the origin is at the corner of the world (not the center)
+  uint octants_trace[32];
   uint layer;
   uint type;
 };
@@ -97,8 +98,8 @@ const uint num_reflection_hops = 1;
 
 vec3 calculateMainRayDirection();
 VoxelInfo getVoxelInfo(in ufvec3 world_position, in uint lod_layer);
+VoxelInfo getVoxelInfo(in ufvec3 world_position, in uint lod_layer, in VoxelInfo help_voxel);
 VoxelInfo convertToVoxelInfo(WorldLocation world_location);
-double findSafeDistance(in Ray ray);
 bool rayMarch(inout Ray ray, out bool out_of_bounds);
 uint computeLOD(float dist);
 
@@ -168,6 +169,7 @@ void main()
   //FragColor.xyz += vec3(ray.distance_traveled / render_distance);
   //FragColor = vec4(ray.voxel_info.position.dec_component, 1.0);
   //FragColor = vec4(vec3(ray.distance_traveled / pow(2, octree_layers)), 1.0);
+  //FragColor.xyz += vec3(ray.distance_traveled / pow(2, octree_layers));
   //FragColor = vec4(vec3(float(ray.num_steps) / 32.0), 1.0);
 
 
@@ -183,32 +185,43 @@ vec3 calculateMainRayDirection()
   return normalize(x + y + z);
 }
 
-
 VoxelInfo getVoxelInfo(in ufvec3 world_position, in uint lod_layer)
+{
+  VoxelInfo tmp;
+  tmp.layer = octree_layers;
+  return getVoxelInfo(world_position, lod_layer, tmp);
+}
+
+VoxelInfo getVoxelInfo(in ufvec3 world_position, in uint lod_layer, in VoxelInfo help_voxel)
 {
   VoxelInfo voxel;
   voxel.position = world_position;
+  voxel.octants_trace = help_voxel.octants_trace;
 
-  voxel.layer = octree_layers;
   uint current_octree_index = 0;
+  uvec3 compare_positions = ~(help_voxel.position.int_component ^ world_position.int_component); // XNOR
+  uint i;
+  for (i = 0; i < octree_layers-help_voxel.layer; i++)
+  {
+    if (((compare_positions >> (octree_layers-i-2)) & 1u) != uvec3(1))
+      break;
+    current_octree_index = voxel.octants_trace[i];
+  }
+
+  voxel.layer = octree_layers-i;
   bool found_uniform = false;
-  for (uint i = 0; i < octree_layers-lod_layer; i++)
+  for (; i < octree_layers-lod_layer; i++)
   {
     uint shifter = octree_layers-i-2;
     uint current_octant = ((world_position.int_component.x >> shifter) & 1u) | (((world_position.int_component.y >> shifter) & 1u) << 2) | (((~world_position.int_component.z >> shifter) & 1u) << 1);
 
     current_octree_index = indirection_pool[(current_octree_index<<3) | current_octant];
+    voxel.octants_trace[i] = current_octree_index;
 
     voxel.layer--;
 
     voxel.type = voxel_type_pool[current_octree_index];
-    if (voxel.type != 0)
-    {
-      found_uniform = true;
-      break;
-    }
-
-    if (current_octree_index == 0)
+    if (voxel.type != 0 || current_octree_index == 0)
     {
       found_uniform = true;
       break;
@@ -390,51 +403,52 @@ uint stepToEdge(inout Ray ray)
 bool jumpToNeighbor(inout Ray ray, uint neighbor)
 {
   // return value: true if the ray is within bounds of the world, false otherwise
+  ufvec3 new_position = ray.voxel_info.position;
   uint max_location = uint(0xFFFFFFFF) >> (32-octree_layers+1);
   if (neighbor == 0)
   {
-    if (ray.voxel_info.position.int_component.x == 0) return false;
+    if (new_position.int_component.x == 0) return false;
     ray.surface_normal = vec3(1.0, 0.0, 0.0);
-    ray.voxel_info.position.int_component.x--;
-    ray.voxel_info.position.dec_component.x = 1.0;
+    new_position.int_component.x--;
+    new_position.dec_component.x = 1.0;
   }
   else if (neighbor == 1)
   {
-    if (ray.voxel_info.position.int_component.x == max_location) return false;
+    if (new_position.int_component.x == max_location) return false;
     ray.surface_normal = vec3(-1.0, 0.0, 0.0);
-    ray.voxel_info.position.int_component.x++;
-    ray.voxel_info.position.dec_component.x = 0.0;
+    new_position.int_component.x++;
+    new_position.dec_component.x = 0.0;
   }
   else if (neighbor == 2)
   {
-    if (ray.voxel_info.position.int_component.y == 0) return false;
+    if (new_position.int_component.y == 0) return false;
     ray.surface_normal = vec3(0.0, 1.0, 0.0);
-    ray.voxel_info.position.int_component.y--;
-    ray.voxel_info.position.dec_component.y = 1.0;
+    new_position.int_component.y--;
+    new_position.dec_component.y = 1.0;
   }
   else if (neighbor == 3)
   {
-    if (ray.voxel_info.position.int_component.y == max_location) return false;
+    if (new_position.int_component.y == max_location) return false;
     ray.surface_normal = vec3(0.0, -1.0, 0.0);
-    ray.voxel_info.position.int_component.y++;
-    ray.voxel_info.position.dec_component.y = 0.0;
+    new_position.int_component.y++;
+    new_position.dec_component.y = 0.0;
   }
   else if (neighbor == 4)
   {
-    if (ray.voxel_info.position.int_component.z == 0) return false;
+    if (new_position.int_component.z == 0) return false;
     ray.surface_normal = vec3(0.0, 0.0, 1.0);
-    ray.voxel_info.position.int_component.z--;
-    ray.voxel_info.position.dec_component.z = 1.0;
+    new_position.int_component.z--;
+    new_position.dec_component.z = 1.0;
   }
   else if (neighbor == 5)
   {
-    if (ray.voxel_info.position.int_component.z == max_location) return false;
+    if (new_position.int_component.z == max_location) return false;
     ray.surface_normal = vec3(0.0, 0.0, -1.0);
-    ray.voxel_info.position.int_component.z++;
-    ray.voxel_info.position.dec_component.z = 0.0;
+    new_position.int_component.z++;
+    new_position.dec_component.z = 0.0;
   }
 
-  ray.voxel_info = getVoxelInfo(ray.voxel_info.position, computeLOD(ray.distance_traveled));
+  ray.voxel_info = getVoxelInfo(new_position, computeLOD(ray.distance_traveled), ray.voxel_info);
 
   return true;
 }
@@ -538,20 +552,19 @@ Material materialLookup(uint id)
   if (id == 1)
   {
     material.diffuse = vec3(0.2, 0.3, 0.9);
+    //material.diffuse = vec3(1.0, 0.0, 0.0);
     material.specular = vec3(0.1, 0.1, 0.1);
     material.shininess = 32.0f;
-    material.opacity = 0.6;
+    material.opacity = 0.2;
     material.refraction_index = 1.52;
   }
-  /*
-  if (id == 1)
+  if (id == 2)
   {
-    material.diffuse = vec3(0.5, 0.5, 0.5);
-    material.specular = vec3(1.0);
-    material.shininess = 64.0f;
-    material.opacity = 0.01;
+    material.diffuse = vec3(1.0);
+    material.specular = vec3(0.0);
+    material.shininess = 32.0f;
+    material.opacity = 1.0;
   }
-  */
 
   return material;
 }
@@ -567,12 +580,12 @@ void addSunlight(inout Ray incoming_ray, in Material material)
 {
   Ray ray = incoming_ray;
   ray.ray_dir = -sunlight.direction;
-  vec3 shadow_color = vec3(0.0);
+  vec3 shadow_color = vec3(1.0);
   float shadow_darkness = 0.0;
   bool out_of_bounds;
   if (dot(incoming_ray.surface_normal, ray.ray_dir) <= 0.0)
   {
-    shadow_color = vec3(1.0);
+    shadow_color = vec3(0.0);
   }
   else
   {
@@ -588,7 +601,7 @@ void addSunlight(inout Ray incoming_ray, in Material material)
       if (out_of_bounds) break;
       Material current_material = materialLookup(ray.voxel_info.type);
       shadow_darkness += current_material.opacity;
-      shadow_color += current_material.diffuse * shadow_darkness;
+      shadow_color -= (vec3(1.0)-current_material.diffuse) * shadow_darkness;
       if (shadow_darkness >= 1.0)
       {
         shadow_darkness = 1.0;
@@ -596,18 +609,19 @@ void addSunlight(inout Ray incoming_ray, in Material material)
       }
     }
   }
+  shadow_color = max(shadow_color, vec3(0.0));
 
   // Ambient lighting
   vec3 color = material.diffuse * sunlight.scatter_color;
 
   // Diffuse lighting
   float diffuse_factor = max(dot(-sunlight.direction, incoming_ray.surface_normal), 0.0);
-  color += (diffuse_factor * material.diffuse * sunlight.scatter_color) * (vec3(1.0)-shadow_color) * (1.0-shadow_darkness);
+  color += (diffuse_factor * material.diffuse * sunlight.scatter_color) * (shadow_color);// * (1.0-shadow_darkness);
 
   // Specular lighting
   vec3 halfway_direction = normalize(normalize(-sunlight.direction) + -incoming_ray.ray_dir);
   float spec = pow(max(dot(incoming_ray.surface_normal, halfway_direction), 0.0), material.shininess*256.0f);
-  color += (sunlight.color * (spec * material.specular)) * (vec3(1.0)-shadow_color) * (1.0-shadow_darkness);
+  color += (sunlight.color * (spec * material.specular)) * (shadow_color);// * (1.0-shadow_darkness);
 
 
   incoming_ray.color += color*material.opacity;

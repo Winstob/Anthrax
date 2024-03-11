@@ -3,6 +3,7 @@
  * Author: Gavin Ralston
  * Date Created: 2024-02-03
 \* ---------------------------------------------------------------- */
+#include <fstream>
 #include "anthrax.hpp"
 
 #ifndef WINDOW_NAME
@@ -35,8 +36,8 @@ Anthrax::Anthrax()
   window_height_ = 600;
   int world_size = 24;
   world_ = Octree(world_size);
-  camera_ = Camera(glm::vec3(pow(2, world_size-3), pow(2, world_size-3), 0.0));
-  //camera_ = Camera(glm::vec3(0.0, 0.0, 0.0));
+  //camera_ = Camera(glm::vec3(pow(2, world_size-3), pow(2, world_size-3), 0.0));
+  camera_ = Camera(glm::vec3(0.0, 0.0, 0.0));
   //camera_ = Camera(glm::ivec3(0, 0, 0));
 }
 
@@ -257,6 +258,21 @@ void Anthrax::initializeShaders()
 
 void Anthrax::createWorld()
 {
+  unsigned int val, index = 0;
+  std::ifstream indirection_file("world/indirection_pool.txt");
+  while (indirection_file >> val)
+  {
+    world_.indirection_pool_[index] = val;
+    index++;
+  }
+  index = 0;
+  std::ifstream voxel_type_file("world/voxel_type_pool.txt");
+  while (voxel_type_file >> val)
+  {
+    world_.voxel_type_pool_[index] = val;
+    index++;
+  }
+  /*
   unsigned int next_free_index = 1;
   for (unsigned int i = 0; i < world_.num_indices_; i++)
   {
@@ -280,6 +296,7 @@ void Anthrax::createWorld()
       world_.voxel_type_pool_[i] = 0;
     world_.lod_pool_[i] = 0x000000FF; // White, opaque
   }
+  */
   return;
 }
 
