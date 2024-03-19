@@ -179,8 +179,8 @@ void Anthrax::renderFrame()
   main_pass_shader_->setVec3("camera_forward", camera_.getForwardLookDirection());
   //main_pass_shader_->setVec3("sunlight.direction", glm::normalize(glm::vec3(0.4, -0.5, 0.1)));
   main_pass_shader_->setVec3("sunlight.direction", glm::vec3(glm::cos(glfwGetTime()/16), -glm::sin(glfwGetTime()/16), glm::sin(glfwGetTime()/27)));
-  main_pass_shader_->setVec3("sunlight.scatter_color", glm::normalize(glm::vec3(0.8, 0.8, 1.0)));
-  main_pass_shader_->setVec3("sunlight.color", glm::normalize(glm::vec3(0.2, 0.2, 0.0)));
+  main_pass_shader_->setVec3("sunlight.scatter_color", glm::normalize(glm::vec3(0.6, 0.6, 1.0)));
+  main_pass_shader_->setVec3("sunlight.color", glm::normalize(glm::vec3(0.4, 0.4, 0.0)));
   renderFullscreenQuad();
 
   // Text pass

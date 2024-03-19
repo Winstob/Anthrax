@@ -74,6 +74,7 @@ uniform DirectedLight sunlight;
 struct VoxelInfo
 {
   ufvec3 position; // The position of the voxel where the origin is at the corner of the world (not the center)
+  dvec3 dposition;
   uint octants_trace[32];
   uint layer;
   uint type;
@@ -87,14 +88,15 @@ struct Ray
   float distance_traveled;
   vec3 surface_normal;
   vec3 color;
+  uint num_lookups;
 };
 
 const float render_distance = 100.0 * 1000 * 10; // 10KM render distance
 //const float render_distance = 1024.0; // 64 chunk render distance
 const uint lod_multiplier = 16;
-const uint num_transparency_hops = 16;
 const uint num_reflection_hops = 1;
 
+uint num_lookups = 0;
 
 vec3 calculateMainRayDirection();
 VoxelInfo getVoxelInfo(in ufvec3 world_position, in uint lod_layer);
@@ -123,49 +125,48 @@ void main()
   float cumulative_opacity = 0.0;
   int current_num_reflection_hops = int(num_reflection_hops);
   Material material = materialLookup(ray.voxel_info.type);
-  for (int i = 0; i < num_transparency_hops+1; i++)
+
+
+  bool out_of_bounds;
+  for (uint j = 0; j < pow(2, octree_layers); j++)
   {
-    bool out_of_bounds;
-    for (uint j = 0; j < pow(2, octree_layers); j++)
+    //if (rayMarch(ray) || ray.distance_traveled >= render_distance)
+    if (rayMarch(ray, out_of_bounds))
     {
-      //if (rayMarch(ray) || ray.distance_traveled >= render_distance)
-      if (rayMarch(ray, out_of_bounds))
-      {
+      if (out_of_bounds)
         break;
-      }
-    }
-    if (out_of_bounds)
-    {
-      break;
-    }
 
-    float refraction_indices_ratio = material.refraction_index;
-    material = materialLookup(ray.voxel_info.type);
-    refraction_indices_ratio = refraction_indices_ratio / material.refraction_index;
+      float refraction_indices_ratio = material.refraction_index;
+      material = materialLookup(ray.voxel_info.type);
+      refraction_indices_ratio = refraction_indices_ratio / material.refraction_index;
 
-    if (ray.voxel_info.type != 0)
-    {
-      addSunlight(ray, material);
-      if (i == 0)
+      if (ray.voxel_info.type != 0)
+      {
+        addSunlight(ray, material);
         addAmbientOcclusion(ray);
-      addReflections(ray, material, current_num_reflection_hops);
-      current_num_reflection_hops = max(int(current_num_reflection_hops)-1, 0);
+        addReflections(ray, material, current_num_reflection_hops);
+        current_num_reflection_hops = max(int(current_num_reflection_hops)-1, 0);
 
-      ray.color = min(ray.color, vec3(1.0));
-      cumulative_color += ray.color * max((1.0-cumulative_opacity), 0.0);
-      cumulative_opacity += material.opacity;
-      if (cumulative_opacity >= 1.0)
-      {
-        cumulative_opacity = 1.0;
-        break;
+        ray.color = min(ray.color, vec3(1.0));
+        cumulative_color += ray.color * max((1.0-cumulative_opacity), 0.0);
+        cumulative_opacity += material.opacity;
+        if (cumulative_opacity >= 1.0)
+        {
+          cumulative_opacity = 1.0;
+          break;
+        }
+
+        ray.color = vec3(0.0);
+
       }
-
-      ray.color = vec3(0.0);
+      ray.ray_dir = refract(ray.ray_dir, ray.surface_normal, refraction_indices_ratio);
+      if (ray.ray_dir == vec3(0.0)) ray.ray_dir = ray.surface_normal;
     }
-    ray.ray_dir = refract(ray.ray_dir, ray.surface_normal, refraction_indices_ratio);
-    if (ray.ray_dir == vec3(0.0)) ray.ray_dir = ray.surface_normal;
   }
-  FragColor = vec4(cumulative_color, 1.0);
+
+
+  //FragColor = vec4(cumulative_color, 1.0);
+  FragColor = vec4(vec3(float(num_lookups)/400.0), 1.0);
   //FragColor.xyz += vec3(ray.distance_traveled / render_distance);
   //FragColor = vec4(ray.voxel_info.position.dec_component, 1.0);
   //FragColor = vec4(vec3(ray.distance_traveled / pow(2, octree_layers)), 1.0);
@@ -203,7 +204,7 @@ VoxelInfo getVoxelInfo(in ufvec3 world_position, in uint lod_layer, in VoxelInfo
   uint i;
   for (i = 0; i < octree_layers-help_voxel.layer; i++)
   {
-    if (((compare_positions >> (octree_layers-i-2)) & 1u) != uvec3(1))
+    if (((compare_positions >> (octree_layers-i-2)) & 1u) != uvec3(1u))
       break;
     current_octree_index = voxel.octants_trace[i];
   }
@@ -217,6 +218,7 @@ VoxelInfo getVoxelInfo(in ufvec3 world_position, in uint lod_layer, in VoxelInfo
 
     current_octree_index = indirection_pool[(current_octree_index<<3) | current_octant];
     voxel.octants_trace[i] = current_octree_index;
+    num_lookups++;
 
     voxel.layer--;
 
@@ -267,7 +269,7 @@ VoxelInfo convertToVoxelInfo(WorldLocation world_location)
 }
 
 
-uint stepToEdge(inout Ray ray)
+vec3 stepToEdge(inout Ray ray)
 {
   // Takes in ray and steps it in the specified direction until it hits the edge of the voxel it is
   // currently in (based on the layer). Outputs the neighboring voxel:
@@ -312,18 +314,18 @@ uint stepToEdge(inout Ray ray)
   tmp = double(z_distance.int_component) + z_distance.dec_component;
   double z_factor = tmp / abs(ray.ray_dir.z);
 
-  uint neighbor;
+  vec3 dominant_direction = vec3(0.0);
   if (x_factor < y_factor && x_factor < z_factor)
   {
     // x is the dominating axis
     if (ray.ray_dir.x < 0.0)
     {
-      neighbor = 0;
+      dominant_direction.x = -1.0;
       x_sublocation = min_sublocation;
     }
     else
     {
-      neighbor = 1;
+      dominant_direction.x = 1.0;
       x_sublocation = max_sublocation;
     }
     tmp = double(y_sublocation.int_component) + y_sublocation.dec_component;
@@ -343,12 +345,12 @@ uint stepToEdge(inout Ray ray)
     // y is the dominating axis
     if (ray.ray_dir.y < 0.0)
     {
-      neighbor = 2;
+      dominant_direction.y = -1.0;
       y_sublocation = min_sublocation;
     }
     else
     {
-      neighbor = 3;
+      dominant_direction.y = 1.0;
       y_sublocation = max_sublocation;
     }
     tmp = double(x_sublocation.int_component) + x_sublocation.dec_component;
@@ -368,12 +370,12 @@ uint stepToEdge(inout Ray ray)
     // z is the dominating axis
     if (ray.ray_dir.z < 0.0)
     {
-      neighbor = 4;
+      dominant_direction.z = -1.0;
       z_sublocation = min_sublocation;
     }
     else
     {
-      neighbor = 5;
+      dominant_direction.z = 1.0;
       z_sublocation = max_sublocation;
     }
     tmp = double(x_sublocation.int_component) + x_sublocation.dec_component;
@@ -396,57 +398,25 @@ uint stepToEdge(inout Ray ray)
   ray.voxel_info.position.int_component.z = (ray.voxel_info.position.int_component.z & (~sublocation_mask)) | (z_sublocation.int_component & sublocation_mask);
   ray.voxel_info.position.dec_component.z = z_sublocation.dec_component;
 
-  return neighbor;
+  return dominant_direction;
 }
 
 
-bool jumpToNeighbor(inout Ray ray, uint neighbor)
+bool jumpToNeighbor(inout Ray ray, vec3 dominant_direction)
 {
   // return value: true if the ray is within bounds of the world, false otherwise
   ufvec3 new_position = ray.voxel_info.position;
   uint max_location = uint(0xFFFFFFFF) >> (32-octree_layers+1);
-  if (neighbor == 0)
-  {
-    if (new_position.int_component.x == 0) return false;
-    ray.surface_normal = vec3(1.0, 0.0, 0.0);
-    new_position.int_component.x--;
-    new_position.dec_component.x = 1.0;
-  }
-  else if (neighbor == 1)
-  {
-    if (new_position.int_component.x == max_location) return false;
-    ray.surface_normal = vec3(-1.0, 0.0, 0.0);
-    new_position.int_component.x++;
-    new_position.dec_component.x = 0.0;
-  }
-  else if (neighbor == 2)
-  {
-    if (new_position.int_component.y == 0) return false;
-    ray.surface_normal = vec3(0.0, 1.0, 0.0);
-    new_position.int_component.y--;
-    new_position.dec_component.y = 1.0;
-  }
-  else if (neighbor == 3)
-  {
-    if (new_position.int_component.y == max_location) return false;
-    ray.surface_normal = vec3(0.0, -1.0, 0.0);
-    new_position.int_component.y++;
-    new_position.dec_component.y = 0.0;
-  }
-  else if (neighbor == 4)
-  {
-    if (new_position.int_component.z == 0) return false;
-    ray.surface_normal = vec3(0.0, 0.0, 1.0);
-    new_position.int_component.z--;
-    new_position.dec_component.z = 1.0;
-  }
-  else if (neighbor == 5)
-  {
-    if (new_position.int_component.z == max_location) return false;
-    ray.surface_normal = vec3(0.0, 0.0, -1.0);
-    new_position.int_component.z++;
-    new_position.dec_component.z = 0.0;
-  }
+
+  uvec3 tmp = uvec3(abs(dominant_direction));
+  uint dominant_axis_location = tmp.x*new_position.int_component.x + tmp.y*new_position.int_component.y + tmp.z*new_position.int_component.z;
+  if (dominant_axis_location == 0 || dominant_axis_location == max_location) return false;
+
+  ray.surface_normal = -dominant_direction;
+
+  new_position.int_component += ivec3(dominant_direction);
+  new_position.dec_component *= -abs(dominant_direction) + vec3(1.0);
+  new_position.dec_component += (-dominant_direction + 1.0)*0.5 * abs(dominant_direction);
 
   ray.voxel_info = getVoxelInfo(new_position, computeLOD(ray.distance_traveled), ray.voxel_info);
 
@@ -460,8 +430,8 @@ bool rayMarch(inout Ray ray, out bool out_of_bounds)
   // Returns true if the ray has gone out of bounds or hits a voxel of different type, false otherwise
   uint previous_voxel_type = ray.voxel_info.type;
 
-  uint neighbor = stepToEdge(ray);
-  bool is_within_bounds = jumpToNeighbor(ray, neighbor);
+  vec3 dominant_direction = stepToEdge(ray);
+  bool is_within_bounds = jumpToNeighbor(ray, dominant_direction);
   out_of_bounds = !is_within_bounds;
   ray.num_steps++;
   if (!is_within_bounds)
@@ -549,7 +519,7 @@ Material materialLookup(uint id)
     material.opacity = 0.0;
     material.refraction_index = 1.0003;
   }
-  if (id == 1)
+  else if (id == 1)
   {
     material.diffuse = vec3(0.2, 0.3, 0.9);
     //material.diffuse = vec3(1.0, 0.0, 0.0);
@@ -558,7 +528,7 @@ Material materialLookup(uint id)
     material.opacity = 0.2;
     material.refraction_index = 1.52;
   }
-  if (id == 2)
+  else if (id == 2)
   {
     material.diffuse = vec3(1.0);
     material.specular = vec3(0.0);
@@ -580,6 +550,7 @@ void addSunlight(inout Ray incoming_ray, in Material material)
 {
   Ray ray = incoming_ray;
   ray.ray_dir = -sunlight.direction;
+  //vec3 shadow_color = sunlight.color;
   vec3 shadow_color = vec3(1.0);
   float shadow_darkness = 0.0;
   bool out_of_bounds;
@@ -589,27 +560,24 @@ void addSunlight(inout Ray incoming_ray, in Material material)
   }
   else
   {
-    for (uint i = 0; i < pow(2, octree_layers); i++)
+    for (uint j = 0; j < pow(2, octree_layers); j++)
     {
-      for (uint j = 0; j < pow(2, octree_layers); j++)
+      if (rayMarch(ray, out_of_bounds))
       {
-        if (rayMarch(ray, out_of_bounds))
+        if (out_of_bounds) break;
+        Material current_material = materialLookup(ray.voxel_info.type);
+        shadow_darkness += current_material.opacity;
+        shadow_color *= (vec3(1.0)-current_material.diffuse) * (1.0-shadow_darkness);
+        if (shadow_darkness >= 1.0)
         {
+          shadow_darkness = 1.0;
           break;
         }
-      }
-      if (out_of_bounds) break;
-      Material current_material = materialLookup(ray.voxel_info.type);
-      shadow_darkness += current_material.opacity;
-      shadow_color -= (vec3(1.0)-current_material.diffuse) * shadow_darkness;
-      if (shadow_darkness >= 1.0)
-      {
-        shadow_darkness = 1.0;
-        break;
       }
     }
   }
   shadow_color = max(shadow_color, vec3(0.0));
+  shadow_color *= sunlight.color;
 
   // Ambient lighting
   vec3 color = material.diffuse * sunlight.scatter_color;
