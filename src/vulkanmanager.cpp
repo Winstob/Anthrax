@@ -107,7 +107,7 @@ void VulkanManager::drawFrame()
 
 void VulkanManager::destroy()
 {
-  //vkWaitDeviceIdle(device_); // Wait for any asynchronous operations to finish
+  vkDeviceWaitIdle(device_); // Wait for any asynchronous operations to finish
 
   vkDestroySemaphore(device_, image_available_semaphore_, nullptr);
   vkDestroySemaphore(device_, render_finished_semaphore_, nullptr);
@@ -125,10 +125,10 @@ void VulkanManager::destroy()
     vkDestroyImageView(device_, image_view, nullptr);
   }
   vkDestroySwapchainKHR(device_, swap_chain_, nullptr);
+  vkDestroyDevice(device_, nullptr);
   vkDestroySurfaceKHR(instance_, surface_, nullptr);
   vkDestroyInstance(instance_, nullptr);
   glfwDestroyWindow(window_);
-  vkDestroyDevice(device_, nullptr);
 
   glfwTerminate();
 
@@ -168,8 +168,6 @@ void VulkanManager::createInstance()
   auto extensions = getRequiredInstanceExtensions();
   create_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
   create_info.ppEnabledExtensionNames = extensions.data();
-
-  create_info.enabledLayerCount = 0;
 
   if (vkCreateInstance(&create_info, nullptr, &instance_) != VK_SUCCESS)
   {
@@ -693,7 +691,8 @@ std::vector<const char*> VulkanManager::getRequiredInstanceExtensions()
 
   std::vector<const char*> extensions(glfw_extensions, glfw_extensions + glfw_extension_count);
 
-  if (enable_validation_layers_) {
+  if (enable_validation_layers_)
+  {
     extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
   }
 
