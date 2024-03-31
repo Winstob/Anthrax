@@ -39,27 +39,34 @@ Anthrax::Anthrax()
   //camera_ = Camera(glm::vec3(pow(2, world_size-3), pow(2, world_size-3), 0.0));
   camera_ = Camera(glm::vec3(0.0, 0.0, 0.0));
   //camera_ = Camera(glm::ivec3(0, 0, 0));
+  
+  vulkan_manager_ = new VulkanManager();
 }
 
 
 Anthrax::~Anthrax()
 {
+  delete vulkan_manager_;
   exit();
 }
 
 
-int Anthrax::initWindow()
+int Anthrax::init()
 {
+  vulkan_manager_->init();
   // Initialize glfw
-  glfwInit();
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  //glfwInit();
+  //glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+  //glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+  //glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
+  /*
 #ifdef __APPLE__
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
+  */
 
+  /*
   // Create glfw window
   window_ = glfwCreateWindow(window_width_, window_height_, xstr(WINDOW_NAME), NULL, NULL);
   //window = glfwCreateWindow(window_width_, window_height_, x_str(WINDOW_NAME), glfwGetPrimaryMonitor(), NULL);
@@ -69,6 +76,37 @@ int Anthrax::initWindow()
     glfwTerminate();
     return -1;
   }
+
+  VkApplicationInfo app_info{};
+  app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+  app_info.pApplicationName = xstr(WINDOW_NAME);
+  app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+  app_info.pEngineName = "Anthrax";
+  app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+  app_info.apiVersion = VK_API_VERSION_1_0;
+
+  VkInstanceCreateInfo create_info{};
+  create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+  create_info.pApplicationInfo = &app_info;
+
+  uint32_t glfw_extension_count = 0;
+  const char **glfw_extensions;
+  glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
+  create_info.enabledExtensionCount = glfw_extension_count;
+  create_info.ppEnabledExtensionNames = glfw_extensions;
+
+  create_info.enabledLayerCount = 0;
+
+  if (vkCreateInstance(&create_info, nullptr, &vulkan_instance_) != VK_SUCCESS)
+  {
+    std::runtime_error("Failed to create Vulkan instance");
+  }
+
+
+  pickPhysicalDevice();
+  */
+
+  /*
   glfwMakeContextCurrent(window_);
   glfwSetFramebufferSizeCallback(window_, framebufferSizeCallback);
   glfwSetCursorPosCallback(window_, cursorPosCallback);
@@ -85,12 +123,6 @@ int Anthrax::initWindow()
     return -1;
   }
 
-  // Face culling
-  /*
-  glEnable(GL_CULL_FACE);
-  glCullFace(GL_BACK);
-  */
-
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -106,10 +138,6 @@ int Anthrax::initWindow()
   main_pass_shader_->use();
   initializeWorldSSBOs();
 
-  /*
-  int tmp;
-  glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &tmp);
-  std::cout << (tmp >> 20) << std::endl;
   */
 
   return 0;
@@ -128,6 +156,7 @@ void Anthrax::setFOV(float angle)
 
 void Anthrax::exit()
 {
+  /*
   delete main_pass_shader_;
   delete text_pass_shader_;
   delete screen_pass_shader_;
@@ -137,12 +166,18 @@ void Anthrax::exit()
   glDeleteBuffers(1, &indirection_pool_ssbo_);
   glDeleteBuffers(1, &voxel_type_pool_ssbo_);
   glDeleteBuffers(1, &lod_pool_ssbo_);
+  */
+
+  vkDestroyInstance(vulkan_instance_, nullptr);
+  glfwDestroyWindow(window_);
   glfwTerminate();
 }
 
 
 void Anthrax::renderFrame()
 {
+  vulkan_manager_->drawFrame();
+  /*
   if (window_size_changed_)
   {
     window_size_changed_ = false;
@@ -208,12 +243,14 @@ void Anthrax::renderFrame()
 
   glfwSwapBuffers(window_);
   glfwPollEvents();
+  */
   return;
 }
 
 
 void Anthrax::renderFullscreenQuad()
 {
+  /*
   if (quad_vao_ == 0)
   {
     // Set up fullscreen quad
@@ -237,12 +274,14 @@ void Anthrax::renderFullscreenQuad()
   glBindVertexArray(quad_vao_);
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
   glBindVertexArray(0);
+  */
   return;
 }
 
 
 void Anthrax::initializeShaders()
 {
+  /*
   std::string shader_directory = xstr(SHADER_DIRECTORY);
   shader_directory += "/";
 
@@ -251,6 +290,7 @@ void Anthrax::initializeShaders()
   text_pass_shader_ = new Shader(Shader::ShaderInputType::FILEPATH, (shader_directory + "text_pass_shaderv.glsl").c_str(), (shader_directory + "text_pass_shaderf.glsl").c_str());
 
   screen_pass_shader_ = new Shader(Shader::ShaderInputType::FILEPATH, (shader_directory + "screen_pass_shaderv.glsl").c_str(), (shader_directory + "screen_pass_shaderf.glsl").c_str());
+  */
 
   return;
 }
@@ -303,6 +343,7 @@ void Anthrax::createWorld()
 
 void Anthrax::initializeWorldSSBOs()
 {
+  /*
   glGenBuffers(1, &indirection_pool_ssbo_);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, indirection_pool_ssbo_);
   glBufferData(GL_SHADER_STORAGE_BUFFER, 8 * sizeof(uint32_t) * world_.num_indices_, world_.indirection_pool_, GL_DYNAMIC_DRAW);
@@ -319,12 +360,14 @@ void Anthrax::initializeWorldSSBOs()
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, lod_pool_ssbo_);
 
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+  */
   return;
 }
 
 
 void Anthrax::updateCamera()
 {
+  /*
   // Update rotation
   float sensitivity = 0.01;
   glm::quat yaw_quaternion = glm::angleAxis(sensitivity*(-mouse_x_difference_), camera_.getUpDirection());
@@ -366,27 +409,9 @@ void Anthrax::updateCamera()
   motion_direction *= motion_multiplier;
   motion_direction = camera_.rotation * motion_direction;
 
-  /*
-  camera_.position_dec_component += motion_direction;
-  camera_.position_int_component += glm::ivec3(camera_.position_dec_component);
-  camera_.position_dec_component -= glm::ivec3(camera_.position_dec_component);
-  */
   camera_.position[0] += motion_direction.x;
   camera_.position[1] += motion_direction.y;
   camera_.position[2] += motion_direction.z;
-  /*
-  std::cout << camera_.position[0].int_component << std::endl;
-  std::cout << camera_.position[0].dec_component << std::endl << std::endl;
-
-  int int_component = camera_.position[0].int_component + (0x1 << (world_.num_layers_-2));
-  float dec_component = camera_.position[0].dec_component;
-  if (dec_component < 0.0)
-  {
-    dec_component += 1.0;
-    int_component -= 1;
-  }
-  std::cout << int_component << std::endl;
-  std::cout << dec_component << std::endl << std::endl << std::endl;
   */
   return;
 }
@@ -394,6 +419,7 @@ void Anthrax::updateCamera()
 
 void Anthrax::mainFramebufferSetup()
 {
+  /*
   if (main_pass_framebuffer_ == 0)
   {
     glGenFramebuffers(1, &main_pass_framebuffer_);
@@ -418,12 +444,14 @@ void Anthrax::mainFramebufferSetup()
     std::cout << "Framebuffer not complete!" << std::endl;
 
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  */
   return;
 }
 
 
 void Anthrax::textTexturesSetup()
 {
+  /*
   FT_Library ft;
   if (FT_Init_FreeType(&ft))
   {
@@ -495,13 +523,14 @@ void Anthrax::textTexturesSetup()
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
   }
+  */
 
   return;
 }
 
 void Anthrax::textFramebufferSetup()
 {
-
+  /*
   if (text_pass_framebuffer_ == 0)
   {
     glGenFramebuffers(1, &text_pass_framebuffer_);
@@ -526,12 +555,14 @@ void Anthrax::textFramebufferSetup()
     std::cout << "Framebuffer not complete!" << std::endl;
 
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  */
   return;
 }
 
 
 void Anthrax::renderText(std::string text, float x, float y, float scale, glm::vec3 color)
 {
+  /*
   text_pass_shader_->use();
   text_pass_shader_->setVec3("color", color);
   glm::mat4 projection = glm::ortho(0.0f, static_cast<float>(window_width_), 0.0f, static_cast<float>(window_height_));
@@ -574,6 +605,7 @@ void Anthrax::renderText(std::string text, float x, float y, float scale, glm::v
   }
   glBindVertexArray(0);
   glBindTexture(GL_TEXTURE_2D, 0);
+  */
 
   return;
 }
@@ -597,10 +629,12 @@ int Anthrax::removeText(unsigned int id)
 
 void Anthrax::framebufferSizeCallback(GLFWwindow *window, int width, int height)
 {
+  /*
   glViewport(0, 0, width, height);
   window_width_ = width;
   window_height_ = height;
   window_size_changed_ = true;
+  */
 }
 
 
@@ -618,10 +652,12 @@ void Anthrax::scrollCallback(GLFWwindow *window, double xoffset, double yoffset)
 
 void Anthrax::keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
+  /*
   if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
   {
     glfwSetWindowShouldClose(window_, GL_TRUE);
   }
+  */
 }
 
 } // namespace Anthrax

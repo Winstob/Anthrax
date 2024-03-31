@@ -8,8 +8,13 @@
 
 #define PI 3.14159265
 
+#include "vulkanmanager.hpp"
+
+/*
 #include <glad/glad.h>
+#define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+*/
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
@@ -17,12 +22,13 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/vector_angle.hpp>
 
+#include <vector>
 #include <iostream>
 #include <map>
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
-#include "shader.hpp"
+//#include "shader.hpp"
 #include "octree.hpp"
 #include "camera.hpp"
 #include "character.hpp"
@@ -38,16 +44,19 @@ class Anthrax
 public:
   Anthrax();
   ~Anthrax();
-  int initWindow();
+  int init();
   void setFOV(float angle);
   void exit();
   void renderFrame();
-  bool windowShouldClose() const { return glfwWindowShouldClose(window_); }
+  bool windowShouldClose() const { return false; }//glfwWindowShouldClose(window_); }
 
   unsigned int addText(std::string text, float x, float y, float scale, glm::vec3 color);
   unsigned int addText(std::string text, float x, float y, float scale, float colorx, float colory, float colorz) { return addText(text, x, y, scale, glm::vec3(colorx, colory, colorz)); }
   int removeText(unsigned int id);
 private:
+  VulkanManager *vulkan_manager_;
+  void pickPhysicalDevice();
+  bool isDeviceSuitable(VkPhysicalDevice device);
   void renderFullscreenQuad();
   void initializeShaders();
   void createWorld();
@@ -60,11 +69,14 @@ private:
   void renderText(Text text) { renderText(text.text, text.x, text.y, text.scale, text.color); }
 
   // Shader passes
+  /*
   Shader *main_pass_shader_;
   Shader *text_pass_shader_;
   Shader *screen_pass_shader_;
+  */
 
   static GLFWwindow* window_;
+  VkInstance vulkan_instance_;
 
   float previous_frame_time_ = 0.0;
   float frame_time_difference_ = 0.0;
