@@ -45,6 +45,10 @@ private:
   void createCommandBuffer();
   void createSyncObjects();
 
+  void destroySwapChain();
+  void recreateSwapChain();
+  bool framebuffer_resized_ = false;
+
   VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& available_formats);
   VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& available_present_modes);
   VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
@@ -81,7 +85,7 @@ private:
   VkFence in_flight_fence_;
 
   // Settings
-  static unsigned int window_width_, window_height_;
+  unsigned int window_width_, window_height_;
 
 
   class QueueFamilyIndices
@@ -111,6 +115,9 @@ private:
   };
   const bool enable_validation_layers_ = true;
   bool checkValidationLayerSupport();
+
+  // GLFW callbacks
+  static void framebufferSizeCallback(GLFWwindow *window, int width, int height);
 };
 
 } // namespace Anthrax

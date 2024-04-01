@@ -20,19 +20,21 @@ namespace Anthrax
 
 // Static member allocation
 GLFWwindow *VulkanManager::window_;
-unsigned int VulkanManager::window_width_ = 800;
-unsigned int VulkanManager::window_height_ = 600;
 
 
 
 VulkanManager::VulkanManager()
 {
+  window_width_ = 800;
+  window_height_ = 600;
+  return;
 }
 
 
 VulkanManager::~VulkanManager()
 {
   destroy();
+  return;
 }
 
 
@@ -47,6 +49,8 @@ void VulkanManager::init()
     glfwTerminate();
     return;
   }
+  glfwSetWindowUserPointer(window_, this);
+  glfwSetFramebufferSizeCallback(window_, framebufferSizeCallback);
 
   createInstance();
   createSurface();
@@ -61,6 +65,7 @@ void VulkanManager::init()
   createCommandBuffer();
   createSyncObjects();
 
+  return;
 }
 
 
@@ -71,6 +76,7 @@ void VulkanManager::drawFrame()
 
   uint32_t image_index;
   vkAcquireNextImageKHR(device_, swap_chain_, UINT64_MAX, image_available_semaphore_, VK_NULL_HANDLE, &image_index);
+
   vkResetCommandBuffer(command_buffer_, 0);
   recordCommandBuffer(command_buffer_, image_index);
 
@@ -101,7 +107,18 @@ void VulkanManager::drawFrame()
   present_info.pSwapchains = swap_chains;
   present_info.pImageIndices = &image_index;
   present_info.pResults = nullptr;
-  vkQueuePresentKHR(present_queue_, &present_info);
+  VkResult result = vkQueuePresentKHR(present_queue_, &present_info);
+  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebuffer_resized_)
+  {
+    recreateSwapChain();
+    framebuffer_resized_ = false;
+  }
+  else if (result != VK_SUCCESS)
+  {
+    throw std::runtime_error("Failed to acquire swap chain image");
+  }
+  glfwPollEvents();
+  return;
 }
 
 
@@ -109,22 +126,15 @@ void VulkanManager::destroy()
 {
   vkDeviceWaitIdle(device_); // Wait for any asynchronous operations to finish
 
+  destroySwapChain();
+
   vkDestroySemaphore(device_, image_available_semaphore_, nullptr);
   vkDestroySemaphore(device_, render_finished_semaphore_, nullptr);
   vkDestroyFence(device_, in_flight_fence_, nullptr);
   vkDestroyCommandPool(device_, command_pool_, nullptr);
-  for (auto framebuffer : swap_chain_framebuffers_)
-  {
-    vkDestroyFramebuffer(device_, framebuffer, nullptr);
-  }
   vkDestroyPipeline(device_, graphics_pipeline_, nullptr);
   vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
   vkDestroyRenderPass(device_, render_pass_, nullptr);
-  for (auto image_view : swap_chain_image_views_)
-  {
-    vkDestroyImageView(device_, image_view, nullptr);
-  }
-  vkDestroySwapchainKHR(device_, swap_chain_, nullptr);
   vkDestroyDevice(device_, nullptr);
   vkDestroySurfaceKHR(instance_, surface_, nullptr);
   vkDestroyInstance(instance_, nullptr);
@@ -641,6 +651,34 @@ void VulkanManager::createSyncObjects()
 }
 
 
+void VulkanManager::destroySwapChain()
+{
+  for (auto framebuffer : swap_chain_framebuffers_)
+  {
+    vkDestroyFramebuffer(device_, framebuffer, nullptr);
+  }
+  for (auto image_view : swap_chain_image_views_)
+  {
+    vkDestroyImageView(device_, image_view, nullptr);
+  }
+  vkDestroySwapchainKHR(device_, swap_chain_, nullptr);
+
+  return;
+}
+
+
+void VulkanManager::recreateSwapChain()
+{
+  vkDeviceWaitIdle(device_);
+
+  destroySwapChain();
+
+  createSwapChain();
+  createImageViews();
+  createFramebuffers();
+}
+
+
 VkSurfaceFormatKHR VulkanManager::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& available_formats)
 {
   for (const auto& available_format : available_formats) {
@@ -857,5 +895,13 @@ bool VulkanManager::checkValidationLayerSupport()
   return true;
 }
 
+
+void VulkanManager::framebufferSizeCallback(GLFWwindow *window, int width, int height)
+{
+  auto vulkan_manager = reinterpret_cast<VulkanManager*>(glfwGetWindowUserPointer(window));
+  vulkan_manager->framebuffer_resized_ = true;
+  vulkan_manager->window_width_ = width;
+  vulkan_manager->window_height_ = height;
+}
 
 } // namespace Anthrax
