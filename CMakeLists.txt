@@ -24,6 +24,10 @@ add_subdirectory(${GLAD_DIR})
 add_subdirectory(${GLM_DIR})
 add_subdirectory(${FREETYPE_DIR})
 
+set(TOOLS
+  ${CMAKE_CURRENT_SOURCE_DIR}/tools/tools.hpp
+  )
+
 set(HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/include/vulkanmanager.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/anthrax.hpp
@@ -34,6 +38,7 @@ set(HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/include/idmap.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/text.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/intfloat.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/graphicsPipeline.hpp
   )
 
 set(SRC
@@ -41,6 +46,8 @@ set(SRC
   ${CMAKE_CURRENT_SOURCE_DIR}/src/anthrax.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/octree.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/intfloat.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/shader.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/graphicsPipeline.cpp
   )
 
 #set(SHADERS
@@ -48,6 +55,7 @@ set(SRC
 #  )
 
 add_library(${PROJECT_NAME}
+  ${TOOLS}
   ${SRC}
   ${HEADERS}
   )
@@ -62,5 +70,6 @@ target_link_libraries(${PROJECT_NAME}
 
 target_include_directories(${PROJECT_NAME}
   PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/tools
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   )

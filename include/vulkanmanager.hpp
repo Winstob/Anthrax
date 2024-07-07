@@ -16,6 +16,8 @@
 #include <optional>
 #include <fstream>
 
+#include "graphicsPipeline.hpp"
+
 namespace Anthrax
 {
 
@@ -73,8 +75,7 @@ private:
   std::vector<VkFramebuffer> swap_chain_framebuffers_;
 
   VkRenderPass render_pass_;
-  VkPipelineLayout pipeline_layout_;
-  VkPipeline graphics_pipeline_;
+  GraphicsPipeline *graphics_pipeline_;
 
   VkCommandPool command_pool_;
   VkCommandBuffer command_buffer_;
@@ -105,9 +106,6 @@ private:
     std::vector<VkPresentModeKHR> present_modes;
   };
   SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
-
-  static std::vector<char> readFile(const std::string &filename);
-  VkShaderModule createShaderModule(const std::vector<char> &code);
 
   // Validation layers
   const std::vector<const char*> validation_layers_ = {
