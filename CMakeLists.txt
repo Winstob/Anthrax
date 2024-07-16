@@ -2,6 +2,9 @@ project(anthrax)
 
 set(PROJECT_NAME anthrax)
 
+set(COMPILE_FLAGS "-g")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMPILE_FLAGS}")
+
 #add_compile_definitions(SHADER_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/shaders)
 add_compile_definitions(SHADER_DIRECTORY=shaders)
 
@@ -32,6 +35,7 @@ set(HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/include/vulkanmanager.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/anthrax.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/buffer.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/device.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/shader.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/octree.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/camera.hpp
@@ -46,6 +50,7 @@ set(SRC
   ${CMAKE_CURRENT_SOURCE_DIR}/src/vulkanmanager.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/anthrax.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/buffer.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/device.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/octree.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/intfloat.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/shader.cpp

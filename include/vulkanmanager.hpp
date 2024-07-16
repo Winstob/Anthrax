@@ -16,6 +16,7 @@
 #include <optional>
 #include <fstream>
 
+#include "device.hpp"
 #include "graphicsPipeline.hpp"
 
 namespace Anthrax
@@ -34,10 +35,11 @@ private:
 
   void createInstance();
   void createSurface();
-  void pickPhysicalDevice();
+  void createAnthraxDevice();
+  VkPhysicalDevice pickPhysicalDevice();
   bool isDeviceSuitable(VkPhysicalDevice device);
   bool checkDeviceExtensionSupport(VkPhysicalDevice device);
-  void createLogicalDevice();
+  VkDevice createLogicalDevice(VkPhysicalDevice physical_device);
   void createSwapChain();
   void createImageViews();
   void createRenderPass();
@@ -64,8 +66,7 @@ private:
   static GLFWwindow *window_;
   VkSurfaceKHR surface_;
   VkInstance instance_;
-  VkPhysicalDevice physical_device_;
-  VkDevice device_;
+  Device device_;
 
   VkSwapchainKHR swap_chain_;
   std::vector<VkImage> swap_chain_images_;
