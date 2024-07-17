@@ -13,51 +13,53 @@ namespace Anthrax
 {
 
 
-void Buffer::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &buffer_memory)
+Buffer::Buffer(Device device, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties)
 {
-  VkBufferCreateInfo buffer_info{};
-  buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-  buffer_info.size = size;
-  buffer_info.usage = usage;
-  buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	device_ = device;
 
-  if (vkCreateBuffer(device_, &buffer_info, nullptr, &buffer) != VK_SUCCESS)
-  {
-    throw std::runtime_error("Failed to create buffer!");
-  }
+	VkBufferCreateInfo buffer_info{};
+	buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer_info.size = size;
+	buffer_info.usage = usage;
+	buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-  VkMemoryRequirements mem_requirements;
-  vkGetBufferMemoryRequirements(device_, buffer, &mem_requirements);
+	if (vkCreateBuffer(device_.logical, &buffer_info, nullptr, &buffer_) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to create buffer!");
+	}
+
+	VkMemoryRequirements mem_requirements;
+	vkGetBufferMemoryRequirements(device_.logical, buffer_, &mem_requirements);
 
 
-  VkMemoryAllocateInfo alloc_info{};
-  alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-  alloc_info.allocationSize = mem_requirements.size;
-  alloc_info.memoryTypeIndex = findMemoryType(mem_requirements.memoryTypeBits, properties);
+	VkMemoryAllocateInfo alloc_info{};
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.allocationSize = mem_requirements.size;
+	alloc_info.memoryTypeIndex = findMemoryType(mem_requirements.memoryTypeBits, properties);
 
-  if (vkAllocateMemory(device_, &alloc_info, nullptr, &buffer_memory) != VK_SUCCESS)
-  {
-    throw std::runtime_error("Failed to allocate buffer memory!");
-  }
+	if (vkAllocateMemory(device_.logical, &alloc_info, nullptr, &buffer_memory_) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to allocate buffer memory!");
+	}
 
-  vkBindBufferMemory(device_, buffer, buffer_memory, 0);
-  return;
+	vkBindBufferMemory(device_.logical, buffer_, buffer_memory_, 0);
+	return;
 }
 
 
 uint32_t Buffer::findMemoryType(uint32_t type_filter, VkMemoryPropertyFlags properties)
 {
-  VkPhysicalDeviceMemoryProperties mem_properties;
-  vkGetPhysicalDeviceMemoryProperties(physical_device_, &mem_properties);
+	VkPhysicalDeviceMemoryProperties mem_properties;
+	vkGetPhysicalDeviceMemoryProperties(device_.physical, &mem_properties);
 
-  for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++)
-  {
-    if (type_filter & (1 << i) && (mem_properties.memoryTypes[i].propertyFlags & properties) == properties)
-    {
-      return i;
-    }
-  }
-  throw std::runtime_error("Failed to find suitable memory type!");
+	for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++)
+	{
+		if (type_filter & (1 << i) && (mem_properties.memoryTypes[i].propertyFlags & properties) == properties)
+		{
+			return i;
+		}
+	}
+	throw std::runtime_error("Failed to find suitable memory type!");
 }
 
 

@@ -695,6 +695,7 @@ VulkanManager::QueueFamilyIndices VulkanManager::findQueueFamilies(VkPhysicalDev
   return indices;
 }
 
+
 VulkanManager::SwapChainSupportDetails VulkanManager::querySwapChainSupport(VkPhysicalDevice device)
 {
   SwapChainSupportDetails details;

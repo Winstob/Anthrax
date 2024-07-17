@@ -11,6 +11,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include "device.hpp"
 
 namespace Anthrax
 {
@@ -20,16 +21,18 @@ class Buffer
 {
 
 public:
-  Buffer(VkDevice device_, VkPhysicalDevice physical_device_);
-  ~Buffer();
+	Buffer(Device device, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties);
+	~Buffer();
+
+	VkBuffer data() { return buffer_; }
+	VkDeviceMemory getMemoryPtr() { return buffer_memory_; }
 
 private:
-  void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &buffer_memory);
-  uint32_t findMemoryType(uint32_t type_filter, VkMemoryPropertyFlags properties);
+	uint32_t findMemoryType(uint32_t type_filter, VkMemoryPropertyFlags properties);
 
-  VkDevice device_;
-  VkPhysicalDevice physical_device_;
-  VkBuffer buffer_;
+	Device device_;
+	VkBuffer buffer_;
+	VkDeviceMemory buffer_memory_;
 
 };
 
