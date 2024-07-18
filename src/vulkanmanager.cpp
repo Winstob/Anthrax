@@ -293,7 +293,7 @@ VkDevice VulkanManager::createLogicalDevice(VkPhysicalDevice physical_device)
   {
     VkDeviceQueueCreateInfo queue_create_info{};
     queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queue_create_info.queueFamilyIndex = indices.graphics_family.value();
+    queue_create_info.queueFamilyIndex = queue_family;
     queue_create_info.queueCount = 1;
     queue_create_info.pQueuePriorities = &queue_priority;
 
@@ -319,6 +319,7 @@ VkDevice VulkanManager::createLogicalDevice(VkPhysicalDevice physical_device)
 
   vkGetDeviceQueue(logical_device, indices.graphics_family.value(), 0, &graphics_queue_);
   vkGetDeviceQueue(logical_device, indices.present_family.value(), 0, &present_queue_);
+  vkGetDeviceQueue(logical_device, indices.compute_family.value(), 0, &compute_queue_);
 
   return logical_device;
 }
@@ -680,7 +681,10 @@ VulkanManager::QueueFamilyIndices VulkanManager::findQueueFamilies(VkPhysicalDev
   {
     if (queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT)
     {
-      indices.graphics_family = i;
+			if (!indices.graphics_family.has_value())
+			{
+				indices.graphics_family = i;
+			}
     }
     VkBool32 present_support = false;
     vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface_, &present_support);
@@ -688,6 +692,13 @@ VulkanManager::QueueFamilyIndices VulkanManager::findQueueFamilies(VkPhysicalDev
     {
       indices.present_family = i;
     }
+		if (queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT)
+		{
+			if (!indices.graphics_family.has_value() || indices.graphics_family != i)
+			{
+				indices.compute_family = i;
+			}
+		}
     if (indices.isComplete())
       break;
     i++;

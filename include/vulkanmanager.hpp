@@ -95,11 +95,18 @@ private:
   public:
     std::optional<uint32_t> graphics_family;
     std::optional<uint32_t> present_family;
-    bool isComplete() { return graphics_family.has_value() && present_family.has_value(); }
+    std::optional<uint32_t> compute_family;
+    bool isComplete()
+		{
+			return graphics_family.has_value() &&
+			present_family.has_value() &&
+			compute_family.has_value();
+		}
   };
   QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
   VkQueue graphics_queue_;
   VkQueue present_queue_;
+  VkQueue compute_queue_;
 
   struct SwapChainSupportDetails {
     VkSurfaceCapabilitiesKHR capabilities;
