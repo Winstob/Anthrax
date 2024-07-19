@@ -32,7 +32,7 @@ set(TOOLS
   )
 
 set(HEADERS
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/vulkanmanager.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/vulkan_manager.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/anthrax.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/buffer.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/device.hpp
@@ -43,18 +43,18 @@ set(HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/include/idmap.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/text.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/intfloat.hpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/graphicsPipeline.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/graphics_pipeline.hpp
   )
 
 set(SRC
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/vulkanmanager.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/vulkan_manager.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/anthrax.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/buffer.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/device.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/octree.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/intfloat.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/shader.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/graphicsPipeline.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics_pipeline.cpp
   )
 
 #set(SHADERS

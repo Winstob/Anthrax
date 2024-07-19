@@ -23,15 +23,15 @@ namespace Anthrax
 class Device
 {
 public:
-  Device(VkPhysicalDevice physical_device, VkDevice logical_device);
-  Device() : Device(VK_NULL_HANDLE, VK_NULL_HANDLE) {};
-  ~Device();
+	Device(VkPhysicalDevice physical_device, VkDevice logical_device);
+	Device() : Device(VK_NULL_HANDLE, VK_NULL_HANDLE) {};
+	~Device();
 	Device& operator=(const Device &rhs_device);
 
 	void destroy();
 
-  VkDevice logical;
-  VkPhysicalDevice physical;
+	VkDevice logical;
+	VkPhysicalDevice physical;
 
 private:
 

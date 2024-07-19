@@ -21,16 +21,16 @@ namespace Anthrax
 class Shader
 {
 public:
-  Shader(VkDevice device, std::string input_file);
-  ~Shader();
-  VkShaderModule data() { return module_; }
+	Shader(VkDevice device, std::string input_file);
+	~Shader();
+	VkShaderModule data() { return module_; }
 
 private:
-  std::vector<char> readFile(const std::string &filename);
-  VkShaderModule createShaderModule(const std::vector<char> &code);
+	std::vector<char> readFile(const std::string &filename);
+	VkShaderModule createShaderModule(const std::vector<char> &code);
 
-  VkDevice device_;
-  VkShaderModule module_;
+	VkDevice device_;
+	VkShaderModule module_;
 
 };
 
