@@ -16,16 +16,25 @@
 namespace Anthrax
 {
 
-
 class Buffer
 {
 
 public:
-	Buffer(Device device, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties);
+	enum BufferType
+	{
+		UNIFORM_TYPE,
+		STORAGE_TYPE
+	};
+
+	Buffer(Device device, VkDeviceSize size, BufferType buffer_type, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties);
 	~Buffer();
 
 	VkBuffer data() { return buffer_; }
 	VkDeviceMemory getMemoryPtr() { return buffer_memory_; }
+	BufferType type() { return type_; }
+
+	void* items() { return items_; }
+	size_t size() { return size_; }
 
 private:
 	uint32_t findMemoryType(uint32_t type_filter, VkMemoryPropertyFlags properties);
@@ -33,6 +42,10 @@ private:
 	Device device_;
 	VkBuffer buffer_;
 	VkDeviceMemory buffer_memory_;
+	BufferType type_;
+
+	void *items_;
+	size_t size_;
 
 };
 

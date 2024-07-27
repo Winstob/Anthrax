@@ -35,6 +35,7 @@ set(HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/include/vulkan_manager.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/anthrax.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/buffer.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/compute_shader_manager.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/device.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/shader.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/octree.hpp
@@ -50,6 +51,7 @@ set(SRC
   ${CMAKE_CURRENT_SOURCE_DIR}/src/vulkan_manager.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/anthrax.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/buffer.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/compute_shader_manager.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/device.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/octree.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/intfloat.cpp
