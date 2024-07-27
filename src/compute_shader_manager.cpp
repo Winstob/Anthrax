@@ -45,8 +45,7 @@ void ComputeShaderManager::init()
 	layout_info.bindingCount = buffers_.size();
 	layout_info.pBindings = layout_bindings;
 
-	VkDescriptorSetLayout descriptor_set_layout;
-	if (vkCreateDescriptorSetLayout(device_.logical, &layout_info, nullptr, &descriptor_set_layout) != VK_SUCCESS)
+	if (vkCreateDescriptorSetLayout(device_.logical, &layout_info, nullptr, &descriptor_set_layout_) != VK_SUCCESS)
 	{
 		throw std::runtime_error("Failed to create compute descriptor set layout!");
 	}
@@ -72,7 +71,7 @@ void ComputeShaderManager::init()
 	alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	alloc_info.descriptorPool = descriptor_pool_;
 	alloc_info.descriptorSetCount = 1;
-	alloc_info.pSetLayouts = &descriptor_set_layout;
+	alloc_info.pSetLayouts = &descriptor_set_layout_;
 	if (vkAllocateDescriptorSets(device_.logical, &alloc_info, &descriptor_set_) != VK_SUCCESS)
 	{
 		throw std::runtime_error("Failed to create compute descriptor set!");
@@ -106,13 +105,13 @@ void ComputeShaderManager::init()
 	vkUpdateDescriptorSets(device_.logical, buffers_.size(), descriptor_writes, 0, nullptr);
 
 	// Create shader module
-	Shader shader(device_.logical, shadercode_filename_);
+	Shader shader(device_, shadercode_filename_);
 
 	// Create pipeline
 	VkPipelineLayoutCreateInfo pipeline_layout_info{};
 	pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipeline_layout_info.setLayoutCount = 1;
-	pipeline_layout_info.pSetLayouts = &descriptor_set_layout;
+	pipeline_layout_info.pSetLayouts = &descriptor_set_layout_;
 	if (vkCreatePipelineLayout(device_.logical, &pipeline_layout_info, nullptr, &pipeline_layout_) != VK_SUCCESS)
 	{
 		throw std::runtime_error("Failed to create compute pipeline layout!");
@@ -144,6 +143,13 @@ void ComputeShaderManager::addBuffer(Buffer buffer)
 
 ComputeShaderManager::~ComputeShaderManager()
 {
+	vkDestroyDescriptorPool(device_.logical, descriptor_pool_, nullptr);
+	vkDestroyDescriptorSetLayout(device_.logical, descriptor_set_layout_, nullptr);
+	for (unsigned int i = 0; i < buffers_.size(); i++)
+	{
+		buffers_[i].destroy();
+	}
+
 	return;
 }
 

@@ -12,7 +12,7 @@ namespace Anthrax
 {
 
 
-Shader::Shader(VkDevice device, std::string input_file)
+Shader::Shader(Device device, std::string input_file)
 {
 	device_ = device;
 	module_ = createShaderModule(readFile(input_file));
@@ -21,7 +21,7 @@ Shader::Shader(VkDevice device, std::string input_file)
 
 Shader::~Shader()
 {
-	vkDestroyShaderModule(device_, module_, nullptr);
+	vkDestroyShaderModule(device_.logical, module_, nullptr);
 	return;
 }
 
@@ -52,7 +52,7 @@ VkShaderModule Shader::createShaderModule(const std::vector<char> &code)
 	create_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
 	VkShaderModule shader_module;
-	if (vkCreateShaderModule(device_, &create_info, nullptr, &shader_module) != VK_SUCCESS)
+	if (vkCreateShaderModule(device_.logical, &create_info, nullptr, &shader_module) != VK_SUCCESS)
 	{
 		throw std::runtime_error("Failed to create shader module");
 	}

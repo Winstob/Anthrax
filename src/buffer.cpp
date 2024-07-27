@@ -13,10 +13,12 @@ namespace Anthrax
 {
 
 
-Buffer::Buffer(Device device, VkDeviceSize size, BufferType buffer_type, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties)
+Buffer::Buffer(Device device, size_t size, BufferType buffer_type, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties)
 {
 	device_ = device;
 	type_ = buffer_type;
+	size_ = size_;
+	VkDeviceSize vk_size = size;
 
 	VkBufferCreateInfo buffer_info{};
 	buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -44,6 +46,23 @@ Buffer::Buffer(Device device, VkDeviceSize size, BufferType buffer_type, VkBuffe
 	}
 
 	vkBindBufferMemory(device_.logical, buffer_, buffer_memory_, 0);
+	return;
+}
+
+
+Buffer::~Buffer()
+{
+	destroy();
+
+	return;
+}
+
+
+void Buffer::destroy()
+{
+	vkDestroyBuffer(device_.logical, buffer_, nullptr);
+	vkFreeMemory(device_.logical, buffer_memory_, nullptr);
+
 	return;
 }
 

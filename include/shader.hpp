@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+#include "device.hpp"
+
 
 namespace Anthrax
 {
@@ -21,7 +23,7 @@ namespace Anthrax
 class Shader
 {
 public:
-	Shader(VkDevice device, std::string input_file);
+	Shader(Device device, std::string input_file);
 	~Shader();
 	VkShaderModule data() { return module_; }
 
@@ -29,7 +31,7 @@ private:
 	std::vector<char> readFile(const std::string &filename);
 	VkShaderModule createShaderModule(const std::vector<char> &code);
 
-	VkDevice device_;
+	Device device_;
 	VkShaderModule module_;
 
 };

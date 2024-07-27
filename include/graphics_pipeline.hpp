@@ -23,8 +23,7 @@ namespace Anthrax
 class GraphicsPipeline
 {
 public:
-	GraphicsPipeline() : GraphicsPipeline(VK_NULL_HANDLE) {}
-	GraphicsPipeline(VkDevice device);
+	GraphicsPipeline(Device device);
 	~GraphicsPipeline();
 	VkPipeline data() { return pipeline_; }
 
@@ -33,7 +32,7 @@ public:
 
 private:
 
-	VkDevice device_;
+	Device device_;
 	VkPipeline pipeline_;
 
 	VkPipelineLayout pipeline_layout_;

@@ -460,7 +460,7 @@ void VulkanManager::createRenderPass()
 
 void VulkanManager::createGraphicsPipeline()
 {
-	graphics_pipeline_ = new GraphicsPipeline(device_.logical);
+	graphics_pipeline_ = new GraphicsPipeline(device_);
 	graphics_pipeline_->linkToRenderPass(render_pass_, 0);
 	graphics_pipeline_->create();
 	return;

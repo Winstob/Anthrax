@@ -43,6 +43,7 @@ private:
 	std::string shadercode_filename_;
 
 	VkDescriptorPool descriptor_pool_;
+	VkDescriptorSetLayout descriptor_set_layout_;
 	VkDescriptorSet descriptor_set_;
 	VkPipelineLayout pipeline_layout_;
 	VkPipeline pipeline_;

@@ -14,7 +14,7 @@ namespace Anthrax
 {
 
 
-GraphicsPipeline::GraphicsPipeline(VkDevice device)
+GraphicsPipeline::GraphicsPipeline(Device device)
 {
 	device_ = device;
 	return;
@@ -23,8 +23,8 @@ GraphicsPipeline::GraphicsPipeline(VkDevice device)
 
 GraphicsPipeline::~GraphicsPipeline()
 {
-	vkDestroyPipeline(device_, pipeline_, nullptr);
-	vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
+	vkDestroyPipeline(device_.logical, pipeline_, nullptr);
+	vkDestroyPipelineLayout(device_.logical, pipeline_layout_, nullptr);
 }
 
 
@@ -133,7 +133,7 @@ void GraphicsPipeline::create()
 	pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipeline_layout_create_info.setLayoutCount = 0;
 	pipeline_layout_create_info.pushConstantRangeCount = 0;
-	if (vkCreatePipelineLayout(device_, &pipeline_layout_create_info, nullptr, &pipeline_layout_) != VK_SUCCESS)
+	if (vkCreatePipelineLayout(device_.logical, &pipeline_layout_create_info, nullptr, &pipeline_layout_) != VK_SUCCESS)
 	{
 		throw std::runtime_error("Failed to create pipeline layout");
 	}
@@ -156,7 +156,7 @@ void GraphicsPipeline::create()
 	pipeline_create_info.subpass = subpass_index_;
 	pipeline_create_info.basePipelineHandle = VK_NULL_HANDLE;
 	pipeline_create_info.basePipelineIndex = -1;
-	if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipeline_create_info, nullptr, &pipeline_) != VK_SUCCESS)
+	if (vkCreateGraphicsPipelines(device_.logical, VK_NULL_HANDLE, 1, &pipeline_create_info, nullptr, &pipeline_) != VK_SUCCESS)
 	{
 		throw std::runtime_error("Failed to create graphics pipeline");
 	}

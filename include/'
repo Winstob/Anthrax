@@ -28,7 +28,6 @@ public:
 
 	Buffer(Device device, size_t size, BufferType buffer_type, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties);
 	~Buffer();
-	void destroy();
 
 	VkBuffer data() { return buffer_; }
 	VkDeviceMemory getMemoryPtr() { return buffer_memory_; }
