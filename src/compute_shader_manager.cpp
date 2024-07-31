@@ -143,8 +143,22 @@ void ComputeShaderManager::addBuffer(Buffer buffer)
 
 ComputeShaderManager::~ComputeShaderManager()
 {
-	vkDestroyDescriptorPool(device_.logical, descriptor_pool_, nullptr);
-	vkDestroyDescriptorSetLayout(device_.logical, descriptor_set_layout_, nullptr);
+	destroy();
+
+	return;
+}
+
+
+void ComputeShaderManager::destroy()
+{
+	if (pipeline_ != VK_NULL_HANDLE)
+		vkDestroyPipeline(device_.logical, pipeline_, nullptr);
+	if (pipeline_layout_ != VK_NULL_HANDLE)
+		vkDestroyPipelineLayout(device_.logical, pipeline_layout_, nullptr);
+	if (descriptor_pool_ != VK_NULL_HANDLE)
+		vkDestroyDescriptorPool(device_.logical, descriptor_pool_, nullptr);
+	if (descriptor_set_layout_ != VK_NULL_HANDLE)
+		vkDestroyDescriptorSetLayout(device_.logical, descriptor_set_layout_, nullptr);
 	for (unsigned int i = 0; i < buffers_.size(); i++)
 	{
 		buffers_[i].destroy();

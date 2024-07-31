@@ -38,8 +38,8 @@ void GraphicsPipeline::linkToRenderPass(VkRenderPass render_pass, int subpass_in
 
 void GraphicsPipeline::create()
 {
-	Shader main_shaderv = Shader(device_, std::string(xstr(SHADER_DIRECTORY)) + "/mainv.spv");
-	Shader main_shaderf = Shader(device_, std::string(xstr(SHADER_DIRECTORY)) + "/mainf.spv");
+	Shader main_shaderv = Shader(device_, std::string(xstr(SHADER_DIRECTORY)) + "mainv.spv");
+	Shader main_shaderf = Shader(device_, std::string(xstr(SHADER_DIRECTORY)) + "mainf.spv");
 
 	VkPipelineShaderStageCreateInfo main_shaderv_stage_create_info{};
 	main_shaderv_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;

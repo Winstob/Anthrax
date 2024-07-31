@@ -18,6 +18,7 @@
 
 #include "device.hpp"
 #include "graphics_pipeline.hpp"
+#include "compute_shader_manager.hpp"
 
 namespace Anthrax
 {
@@ -52,6 +53,8 @@ private:
 	void destroySwapChain();
 	void recreateSwapChain();
 	bool framebuffer_resized_ = false;
+
+	void createComputeShader();
 
 	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& available_formats);
 	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& available_present_modes);
@@ -124,6 +127,8 @@ private:
 
 	// GLFW callbacks
 	static void framebufferSizeCallback(GLFWwindow *window, int width, int height);
+
+	ComputeShaderManager compute_shader_manager_;
 };
 
 } // namespace Anthrax

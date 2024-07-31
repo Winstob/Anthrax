@@ -64,6 +64,8 @@ void VulkanManager::init()
 	createCommandBuffer();
 	createSyncObjects();
 
+	createComputeShader();
+
 	return;
 }
 
@@ -124,6 +126,8 @@ void VulkanManager::drawFrame()
 void VulkanManager::destroy()
 {
 	vkDeviceWaitIdle(device_.logical); // Wait for any asynchronous operations to finish
+
+	compute_shader_manager_.destroy();
 
 	destroySwapChain();
 
@@ -737,9 +741,6 @@ VulkanManager::SwapChainSupportDetails VulkanManager::querySwapChainSupport(VkPh
 }
 
 
-
-
-
 bool VulkanManager::checkValidationLayerSupport()
 {
 	uint32_t layer_count;
@@ -764,6 +765,14 @@ bool VulkanManager::checkValidationLayerSupport()
 		}
 	}
 	return true;
+}
+
+
+void VulkanManager::createComputeShader()
+{
+	compute_shader_manager_ = ComputeShaderManager(device_, std::string(xstr(SHADER_DIRECTORY)) + "mainc.spv");
+
+	return;
 }
 
 
