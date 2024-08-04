@@ -18,11 +18,10 @@ Buffer::Buffer(Device device, size_t size, BufferType buffer_type, VkBufferUsage
 	device_ = device;
 	type_ = buffer_type;
 	size_ = size_;
-	VkDeviceSize vk_size = size;
 
 	VkBufferCreateInfo buffer_info{};
 	buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	buffer_info.size = size;
+	buffer_info.size = (VkDeviceSize)size;
 	buffer_info.usage = usage;
 	buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -52,7 +51,7 @@ Buffer::Buffer(Device device, size_t size, BufferType buffer_type, VkBufferUsage
 
 Buffer::~Buffer()
 {
-	destroy();
+	//destroy();
 
 	return;
 }

@@ -159,10 +159,12 @@ void ComputeShaderManager::destroy()
 		vkDestroyDescriptorPool(device_.logical, descriptor_pool_, nullptr);
 	if (descriptor_set_layout_ != VK_NULL_HANDLE)
 		vkDestroyDescriptorSetLayout(device_.logical, descriptor_set_layout_, nullptr);
+	/*
 	for (unsigned int i = 0; i < buffers_.size(); i++)
 	{
 		buffers_[i].destroy();
 	}
+	*/
 
 	return;
 }

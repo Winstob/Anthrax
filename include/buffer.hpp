@@ -27,6 +27,7 @@ public:
 	};
 
 	Buffer(Device device, size_t size, BufferType buffer_type, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties);
+	Buffer() {};
 	~Buffer();
 	void destroy();
 
@@ -40,8 +41,8 @@ private:
 	uint32_t findMemoryType(uint32_t type_filter, VkMemoryPropertyFlags properties);
 
 	Device device_;
-	VkBuffer buffer_;
-	VkDeviceMemory buffer_memory_;
+	VkBuffer buffer_ = VK_NULL_HANDLE;
+	VkDeviceMemory buffer_memory_ = VK_NULL_HANDLE;
 	BufferType type_;
 
 	size_t size_; // The size of the buffer in bytes

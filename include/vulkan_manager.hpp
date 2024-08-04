@@ -31,6 +31,8 @@ public:
 	void init();
 	void drawFrame();
 
+	Device getDevice() { return device_; }
+
 private:
 	void destroy();
 
