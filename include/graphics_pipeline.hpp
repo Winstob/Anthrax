@@ -23,9 +23,12 @@ namespace Anthrax
 class GraphicsPipeline
 {
 public:
-	GraphicsPipeline(Device device);
+	GraphicsPipeline() {};
+	GraphicsPipeline(Device device, std::string shadercode_file_prefix);
 	~GraphicsPipeline();
 	VkPipeline data() { return pipeline_; }
+
+	void destroy();
 
 	void linkToRenderPass(VkRenderPass render_pass, int subpass_index);
 	void create();
@@ -34,6 +37,8 @@ private:
 
 	Device device_;
 	VkPipeline pipeline_;
+
+	std::string shadercode_file_prefix_;
 
 	VkPipelineLayout pipeline_layout_;
 	VkRenderPass render_pass_;

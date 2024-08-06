@@ -17,8 +17,9 @@
 #include <fstream>
 
 #include "device.hpp"
-#include "graphics_pipeline.hpp"
+#include "render_pass.hpp"
 #include "compute_shader_manager.hpp"
+#include "swap_chain.hpp"
 
 namespace Anthrax
 {
@@ -73,19 +74,22 @@ private:
 	VkInstance instance_;
 	Device device_;
 
+	SwapChain swap_chain_;
+	/*
 	VkSwapchainKHR swap_chain_;
-	std::vector<VkImage> swap_chain_images_;
 	VkFormat swap_chain_image_format_;
 	VkExtent2D swap_chain_extent_;
+	*/
+	std::vector<VkImage> swap_chain_images_;
 	std::vector<VkImageView> swap_chain_image_views_;
 	std::vector<VkFramebuffer> swap_chain_framebuffers_;
 
-	VkRenderPass render_pass_;
-	GraphicsPipeline *graphics_pipeline_;
+	//VkRenderPass render_pass_;
+	RenderPass render_pass_;
+	//GraphicsPipeline *graphics_pipeline_;
 
 	VkCommandPool command_pool_;
 	VkCommandBuffer command_buffer_;
-	void recordCommandBuffer(VkCommandBuffer command_buffer, uint32_t image_index);
 
 	VkSemaphore image_available_semaphore_;
 	VkSemaphore render_finished_semaphore_;

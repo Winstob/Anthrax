@@ -14,17 +14,26 @@ namespace Anthrax
 {
 
 
-GraphicsPipeline::GraphicsPipeline(Device device)
+GraphicsPipeline::GraphicsPipeline(Device device, std::string shadercode_file_prefix)
 {
 	device_ = device;
+	shadercode_file_prefix_ = shadercode_file_prefix;
 	return;
 }
 
 
 GraphicsPipeline::~GraphicsPipeline()
 {
+	// destroy();
+	return;
+}
+
+
+void GraphicsPipeline::destroy()
+{
 	vkDestroyPipeline(device_.logical, pipeline_, nullptr);
 	vkDestroyPipelineLayout(device_.logical, pipeline_layout_, nullptr);
+	return;
 }
 
 
@@ -38,8 +47,8 @@ void GraphicsPipeline::linkToRenderPass(VkRenderPass render_pass, int subpass_in
 
 void GraphicsPipeline::create()
 {
-	Shader main_shaderv = Shader(device_, std::string(xstr(SHADER_DIRECTORY)) + "mainv.spv");
-	Shader main_shaderf = Shader(device_, std::string(xstr(SHADER_DIRECTORY)) + "mainf.spv");
+	Shader main_shaderv = Shader(device_, std::string(xstr(SHADER_DIRECTORY)) + shadercode_file_prefix_ + "v.spv");
+	Shader main_shaderf = Shader(device_, std::string(xstr(SHADER_DIRECTORY)) + shadercode_file_prefix_ + "f.spv");
 
 	VkPipelineShaderStageCreateInfo main_shaderv_stage_create_info{};
 	main_shaderv_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
