@@ -20,7 +20,9 @@
 #include "tools.hpp"
 #include "device.hpp"
 #include "buffer.hpp"
+#include "image.hpp"
 #include "shader.hpp"
+#include "descriptor.hpp"
 
 namespace Anthrax
 {
@@ -44,9 +46,7 @@ private:
 	std::vector<Buffer> buffers_;
 	std::string shadercode_filename_;
 
-	VkDescriptorPool descriptor_pool_ = VK_NULL_HANDLE;
-	VkDescriptorSetLayout descriptor_set_layout_ = VK_NULL_HANDLE;
-	VkDescriptorSet descriptor_set_ = VK_NULL_HANDLE;
+	Descriptor descriptor_;
 	VkPipelineLayout pipeline_layout_ = VK_NULL_HANDLE;
 	VkPipeline pipeline_ = VK_NULL_HANDLE;
 

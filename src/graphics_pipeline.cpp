@@ -138,10 +138,12 @@ void GraphicsPipeline::create()
 	dynamic_state_create_info.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
 	dynamic_state_create_info.pDynamicStates = dynamic_states.data();
 
+	// Create descriptor set
+
 	VkPipelineLayoutCreateInfo pipeline_layout_create_info{};
 	pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipeline_layout_create_info.setLayoutCount = 0;
-	pipeline_layout_create_info.pushConstantRangeCount = 0;
+	//pipeline_layout_create_info.pushConstantRangeCount = 0;
 	if (vkCreatePipelineLayout(device_.logical, &pipeline_layout_create_info, nullptr, &pipeline_layout_) != VK_SUCCESS)
 	{
 		throw std::runtime_error("Failed to create pipeline layout");
