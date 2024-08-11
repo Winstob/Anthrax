@@ -4,6 +4,8 @@
  * Date Created: 2024-08-06
 \* ---------------------------------------------------------------- */
 
+#include <iostream>
+
 #include "descriptor.hpp"
 
 namespace Anthrax
@@ -11,6 +13,7 @@ namespace Anthrax
 
 Descriptor::Descriptor(Device device, ShaderStage stage, std::vector<Buffer> buffers, std::vector<Image> images)
 {
+	if (images.size() != 0) throw std::runtime_error("Error: descriptors for images not yet implemented!");
 	device_ = device;
 
 	VkShaderStageFlagBits shader_stage;
@@ -30,10 +33,86 @@ Descriptor::Descriptor(Device device, ShaderStage stage, std::vector<Buffer> buf
 			break;
 	}
 
+	unsigned int num_uniform_buffers = 0;
+	unsigned int num_storage_buffers = 0;
+	unsigned int num_storage_images = 0;
+
 	// Create descriptor set layout
-	VkDescriptorSetLayoutBinding layout_bindings[buffers.size() + images.size()];
+	std::vector<VkDescriptorSetLayoutBinding> layout_bindings(buffers.size() + images.size());
 	unsigned int i;
 	for (i = 0; i < buffers.size(); i++)
+	{
+		VkDescriptorType descriptor_type;
+		switch (buffers[i].type())
+		{
+			case Buffer::UNIFORM_TYPE:
+				descriptor_type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+				num_uniform_buffers++;
+				break;
+			case Buffer::STORAGE_TYPE:
+				descriptor_type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+				num_storage_buffers++;
+				break;
+		}
+		layout_bindings[i].binding = i;
+		layout_bindings[i].descriptorCount = 1;
+		layout_bindings[i].descriptorType = descriptor_type;
+		layout_bindings[i].pImmutableSamplers = nullptr;
+		layout_bindings[i].stageFlags = shader_stage;
+	}
+	for (unsigned int j = 0; j < images.size(); j++)
+	{
+		num_storage_images++;
+
+		layout_bindings[i].binding = i;
+		layout_bindings[i].descriptorCount = 1;
+		layout_bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		layout_bindings[i].pImmutableSamplers = nullptr;
+		layout_bindings[i].stageFlags = shader_stage;
+		i++;
+	}
+	VkDescriptorSetLayoutCreateInfo layout_info{};
+	layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layout_info.bindingCount = buffers.size() + images.size();
+	layout_info.pBindings = layout_bindings.data();
+
+	if (vkCreateDescriptorSetLayout(device_.logical, &layout_info, nullptr, &descriptor_set_layout_) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to create descriptor set layout!");
+	}
+
+	// Create descriptor pool
+	// TODO: only allocate pools when descriptor counts are at least 1, so as not to create unnecessary pools
+	if (num_uniform_buffers == 0) num_uniform_buffers = 1;
+	if (num_storage_buffers == 0) num_storage_buffers = 1;
+	if (num_storage_images == 0) num_storage_images = 1;
+	std::array<VkDescriptorPoolSize, 2> pool_sizes{};
+	pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	pool_sizes[0].descriptorCount = num_uniform_buffers;
+	pool_sizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	pool_sizes[1].descriptorCount = num_storage_buffers;
+	VkDescriptorPoolCreateInfo pool_info{};
+	pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool_info.poolSizeCount = pool_sizes.size();
+	pool_info.pPoolSizes = pool_sizes.data();
+	pool_info.maxSets = buffers.size() + images.size();
+	if (vkCreateDescriptorPool(device_.logical, &pool_info, nullptr, &descriptor_pool_) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to create descriptor pool!");
+	}
+
+	// Create descriptor sets
+	VkDescriptorSetAllocateInfo alloc_info{};
+	alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	alloc_info.descriptorPool = descriptor_pool_;
+	alloc_info.descriptorSetCount = 1;
+	alloc_info.pSetLayouts = &descriptor_set_layout_;
+	if (vkAllocateDescriptorSets(device_.logical, &alloc_info, &descriptor_set_) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to create descriptor set!");
+	}
+	std::vector<VkWriteDescriptorSet> descriptor_writes(buffers.size());
+	for (unsigned int i = 0; i < buffers.size(); i++)
 	{
 		VkDescriptorType descriptor_type;
 		switch (buffers[i].type())
@@ -45,76 +124,10 @@ Descriptor::Descriptor(Device device, ShaderStage stage, std::vector<Buffer> buf
 				descriptor_type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 				break;
 		}
-		layout_bindings[i].binding = i;
-		layout_bindings[i].descriptorCount = 1;
-		layout_bindings[i].descriptorType = descriptor_type;
-		layout_bindings[i].pImmutableSamplers = nullptr;
-		layout_bindings[i].stageFlags = shader_stage;
-	}
-	for (unsigned int j = 0; j < images.size(); j++)
-	{
-		i++;
-		layout_bindings[i].binding = i;
-		layout_bindings[i].descriptorCount = 1;
-		layout_bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-		layout_bindings[i].pImmutableSamplers = nullptr;
-		layout_bindings[i].stageFlags = shader_stage;
-	}
-	VkDescriptorSetLayoutCreateInfo layout_info{};
-	layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layout_info.bindingCount = buffers_.size();
-	layout_info.pBindings = layout_bindings;
-
-	if (vkCreateDescriptorSetLayout(device_.logical, &layout_info, nullptr, &descriptor_set_layout_) != VK_SUCCESS)
-	{
-		throw std::runtime_error("Failed to create compute descriptor set layout!");
-	}
-
-	// Create descriptor pool
-	std::array<VkDescriptorPoolSize, 3> pool_sizes{};
-	pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	pool_sizes[0].descriptorCount = 1;
-	pool_sizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	pool_sizes[1].descriptorCount = 1;
-	pool_sizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	pool_sizes[2].descriptorCount = 1;
-	VkDescriptorPoolCreateInfo pool_info{};
-	pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	pool_info.poolSizeCount = pool_sizes.size();
-	pool_info.pPoolSizes = pool_sizes.data();
-	pool_info.maxSets = buffers.size() + images.size();
-	if (vkCreateDescriptorPool(device_.logical, &pool_info, nullptr, &descriptor_pool_) != VK_SUCCESS)
-	{
-		throw std::runtime_error("Failed to create compute descriptor pool!");
-	}
-
-	// Create descriptor sets
-	VkDescriptorSetAllocateInfo alloc_info{};
-	alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	alloc_info.descriptorPool = descriptor_pool_;
-	alloc_info.descriptorSetCount = 1;
-	alloc_info.pSetLayouts = &descriptor_set_layout_;
-	if (vkAllocateDescriptorSets(device_.logical, &alloc_info, &descriptor_set_) != VK_SUCCESS)
-	{
-		throw std::runtime_error("Failed to create compute descriptor set!");
-	}
-	VkWriteDescriptorSet descriptor_writes[buffers_.size()];
-	for (unsigned int i = 0; i < buffers_.size(); i++)
-	{
-		VkDescriptorType descriptor_type;
-		switch (buffers_[i].type())
-		{
-			case Buffer::UNIFORM_TYPE:
-				descriptor_type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-				break;
-			case Buffer::STORAGE_TYPE:
-				descriptor_type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-				break;
-		}
 		VkDescriptorBufferInfo buffer_info{};
-		buffer_info.buffer = buffers_[i].data();
+		buffer_info.buffer = buffers[i].data();
 		buffer_info.offset = 0;
-		buffer_info.range = buffers_[i].size();
+		buffer_info.range = buffers[i].size();
 
 		descriptor_writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptor_writes[i].dstSet = descriptor_set_;
@@ -124,43 +137,15 @@ Descriptor::Descriptor(Device device, ShaderStage stage, std::vector<Buffer> buf
 		descriptor_writes[i].descriptorCount = 1;
 		descriptor_writes[i].pBufferInfo = &buffer_info;
 	}
-	vkUpdateDescriptorSets(device_.logical, buffers_.size(), descriptor_writes, 0, nullptr);
+	vkUpdateDescriptorSets(device_.logical, buffers.size(), descriptor_writes.data(), 0, nullptr);
 
-	/*
-	// Create shader module
-	Shader shader(device_, shadercode_filename_);
-
-	// Create pipeline
-	VkPipelineLayoutCreateInfo pipeline_layout_info{};
-	pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipeline_layout_info.setLayoutCount = 1;
-	pipeline_layout_info.pSetLayouts = &descriptor_set_layout_;
-	if (vkCreatePipelineLayout(device_.logical, &pipeline_layout_info, nullptr, &pipeline_layout_) != VK_SUCCESS)
-	{
-		throw std::runtime_error("Failed to create compute pipeline layout!");
-	}
-	VkPipelineShaderStageCreateInfo shader_stage_create_info{};
-	shader_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	shader_stage_create_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-	shader_stage_create_info.module = shader.data();
-	shader_stage_create_info.pName = "main";
-	VkComputePipelineCreateInfo pipeline_info{};
-	pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-	pipeline_info.layout = pipeline_layout_;
-	pipeline_info.stage = shader_stage_create_info;
-	if (vkCreateComputePipelines(device_.logical, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &pipeline_) != VK_SUCCESS)
-	{
-		throw std::runtime_error("Failed to create compute pipeline!");
-	}
-	*/
-	
 	return;
 }
 
 
 Descriptor::~Descriptor()
 {
-	destroy();
+	//destroy();
 
 	return;
 }

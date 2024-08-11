@@ -110,8 +110,6 @@ private:
 	std::map<GLchar, Character> character_map_;
 	IDMap<Text> texts_;
 
-	Buffer ssbo_;
-
 };
 
 } // namespace Anthrax

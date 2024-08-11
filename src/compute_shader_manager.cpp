@@ -4,6 +4,8 @@
  * Date Created: 2024-07-20
 \* ---------------------------------------------------------------- */
 
+#include <iostream>
+
 #include "compute_shader_manager.hpp"
 
 namespace Anthrax
@@ -61,7 +63,7 @@ void ComputeShaderManager::addBuffer(Buffer buffer)
 
 ComputeShaderManager::~ComputeShaderManager()
 {
-	destroy();
+	//destroy();
 
 	return;
 }

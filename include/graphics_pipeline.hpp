@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "shader.hpp"
+#include "descriptor.hpp"
 
 
 namespace Anthrax
@@ -27,20 +28,29 @@ public:
 	GraphicsPipeline(Device device, std::string shadercode_file_prefix);
 	~GraphicsPipeline();
 	VkPipeline data() { return pipeline_; }
+	VkPipelineLayout getLayout() { return pipeline_layout_; }
+	VkDescriptorSet *getDescriptorSetPtr() { return descriptor_.getDescriptorSetPtr(); }
 
 	void destroy();
 
+	void addBuffer(Buffer buffer) { buffers_.push_back(buffer); }
+	void addImage(Image image);
+
 	void linkToRenderPass(VkRenderPass render_pass, int subpass_index);
-	void create();
+	void init();
 
 private:
 
 	Device device_;
-	VkPipeline pipeline_;
 
 	std::string shadercode_file_prefix_;
 
+	std::vector<Buffer> buffers_;
+	std::vector<Image> images_;
+
+	Descriptor descriptor_;
 	VkPipelineLayout pipeline_layout_;
+	VkPipeline pipeline_;
 	VkRenderPass render_pass_;
 	int subpass_index_;
 

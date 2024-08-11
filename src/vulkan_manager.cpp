@@ -57,6 +57,7 @@ void VulkanManager::init()
 	createAnthraxDevice();
 	createSwapChain();
 	createImageViews();
+	createBuffers();
 	createRenderPass();
 	//createGraphicsPipeline();
 	createFramebuffers();
@@ -65,6 +66,8 @@ void VulkanManager::init()
 	createSyncObjects();
 
 	createComputeShader();
+	createComputeCommandPool();
+	createComputeCommandBuffer();
 
 	return;
 }
@@ -72,6 +75,28 @@ void VulkanManager::init()
 
 void VulkanManager::drawFrame()
 {
+	// Compute pass
+	vkDeviceWaitIdle(device_.logical);
+	vkResetCommandBuffer(compute_command_buffer_, 0);
+	compute_shader_manager_.recordCommandBuffer(compute_command_buffer_);
+
+	VkSubmitInfo compute_submit_info{};
+	compute_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	compute_submit_info.commandBufferCount = 1;
+	compute_submit_info.pCommandBuffers = &compute_command_buffer_;
+	compute_submit_info.signalSemaphoreCount = 0;
+	//compute_submit_info.
+	
+	if (vkQueueSubmit(compute_queue_, 1, &compute_submit_info, VK_NULL_HANDLE) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to submit dispatch command buffer");
+	}
+	vkDeviceWaitIdle(device_.logical);
+
+
+
+
+	// Graphics pass
 	vkWaitForFences(device_.logical, 1, &in_flight_fence_, VK_TRUE, UINT64_MAX);
 	vkResetFences(device_.logical, 1, &in_flight_fence_);
 
@@ -127,6 +152,9 @@ void VulkanManager::drawFrame()
 void VulkanManager::destroy()
 {
 	vkDeviceWaitIdle(device_.logical); // Wait for any asynchronous operations to finish
+
+	raymarched_ssbo_.destroy();
+	world_ssbo_.destroy();
 
 	compute_shader_manager_.destroy();
 
@@ -429,6 +457,7 @@ void VulkanManager::createRenderPass()
 {
 	render_pass_ = RenderPass(device_, "main");
 	render_pass_.updateSwapChain(swap_chain_);
+	render_pass_.addBuffer(raymarched_ssbo_);
 	render_pass_.init();
 }
 
@@ -704,8 +733,56 @@ bool VulkanManager::checkValidationLayerSupport()
 void VulkanManager::createComputeShader()
 {
 	compute_shader_manager_ = ComputeShaderManager(device_, std::string(xstr(SHADER_DIRECTORY)) + "mainc.spv");
+	compute_shader_manager_.addBuffer(world_ssbo_);
+	compute_shader_manager_.addBuffer(raymarched_ssbo_);
+	compute_shader_manager_.init();
 
 	return;
+}
+
+
+void VulkanManager::createComputeCommandPool()
+{
+	QueueFamilyIndices queue_family_indices = findQueueFamilies(device_.physical);
+	VkCommandPoolCreateInfo pool_info{};
+	pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	pool_info.queueFamilyIndex = queue_family_indices.compute_family.value();
+	if (vkCreateCommandPool(device_.logical, &pool_info, nullptr, &compute_command_pool_) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to create compute command pool");
+	}
+}
+
+
+void VulkanManager::createComputeCommandBuffer()
+{
+	VkCommandBufferAllocateInfo alloc_info{};
+	alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	alloc_info.commandPool = compute_command_pool_;
+	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	alloc_info.commandBufferCount = 1;
+	if (vkAllocateCommandBuffers(device_.logical, &alloc_info, &compute_command_buffer_) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to allocate compute command buffers");
+	}
+}
+
+
+void VulkanManager::createBuffers()
+{
+	world_ssbo_ = Buffer(device_,
+			4,
+			Buffer::STORAGE_TYPE,
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+			);
+	raymarched_ssbo_ = Buffer(device_,
+			4*4,
+			Buffer::STORAGE_TYPE,
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+			);
 }
 
 

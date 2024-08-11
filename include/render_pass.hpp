@@ -39,7 +39,8 @@ public:
 
 	void updateSwapChain(SwapChain swap_chain) { swap_chain_ = swap_chain; } // TODO: make swapchain a pointer to an object shared between everything so this isn't necessary
 	void init();
-	void addBuffer(Buffer buffer);
+	void addBuffer(Buffer buffer) { buffers_.push_back(buffer); }
+	void addImage(Image image) { pipeline_.addImage(image); } // TODO: fix (see buffers_)
 
 	void recordCommandBuffer(VkCommandBuffer command_buffer, VkFramebuffer framebuffer);
 

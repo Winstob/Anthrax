@@ -24,7 +24,7 @@ Image::Image(Device device, int width, int height, VkImageUsageFlags usage, VkMe
 	image_create_info.extent.depth = 1;
 	image_create_info.mipLevels = 1;
 	image_create_info.arrayLayers = 1;
-	image_create_info.format = format;
+	image_create_info.format = format_;
 	image_create_info.tiling = VK_IMAGE_TILING_LINEAR;
 	image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	image_create_info.usage = usage;
@@ -94,7 +94,7 @@ void Image::createImageView()
 	image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	image_view_create_info.image = image_;
 	image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	image_view_create_info.format = format;
+	image_view_create_info.format = format_;
 	image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	image_view_create_info.subresourceRange.baseMipLevel = 0;
 	image_view_create_info.subresourceRange.levelCount = 1;

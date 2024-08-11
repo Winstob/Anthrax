@@ -40,15 +40,12 @@ public:
 	~Descriptor();
 	void destroy();
 
-	void init();
-
 	VkDescriptorSetLayout *getDescriptorSetLayoutPtr() { return &descriptor_set_layout_; }
 	VkDescriptorSet *getDescriptorSetPtr() { return &descriptor_set_; }
 
 private:
 	Device device_;
 
-	std::vector<Buffer> buffers_;
 	std::string shadercode_filename_;
 
 	VkDescriptorPool descriptor_pool_ = VK_NULL_HANDLE;

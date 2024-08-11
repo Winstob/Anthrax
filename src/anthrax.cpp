@@ -46,7 +46,6 @@ Anthrax::Anthrax()
 
 Anthrax::~Anthrax()
 {
-	ssbo_.destroy();
 	delete vulkan_manager_;
 	exit();
 }
@@ -55,12 +54,6 @@ Anthrax::~Anthrax()
 int Anthrax::init()
 {
 	vulkan_manager_->init();
-	ssbo_ = Buffer(vulkan_manager_->getDevice(),
-			8,
-			Buffer::STORAGE_TYPE,
-			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-			);
 	// Initialize glfw
 	//glfwInit();
 	//glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);

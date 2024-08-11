@@ -52,12 +52,15 @@ private:
 	void createCommandPool();
 	void createCommandBuffer();
 	void createSyncObjects();
+	void createBuffers();
 
 	void destroySwapChain();
 	void recreateSwapChain();
 	bool framebuffer_resized_ = false;
 
 	void createComputeShader();
+	void createComputeCommandPool();
+	void createComputeCommandBuffer();
 
 	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& available_formats);
 	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& available_present_modes);
@@ -135,6 +138,11 @@ private:
 	static void framebufferSizeCallback(GLFWwindow *window, int width, int height);
 
 	ComputeShaderManager compute_shader_manager_;
+	VkCommandPool compute_command_pool_;
+	VkCommandBuffer compute_command_buffer_;
+
+	Buffer world_ssbo_, raymarched_ssbo_;
+
 };
 
 } // namespace Anthrax

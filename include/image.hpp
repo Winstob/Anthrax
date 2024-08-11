@@ -33,7 +33,7 @@ private:
 	VkImage image_ = VK_NULL_HANDLE;
 	VkDeviceMemory image_memory_ = VK_NULL_HANDLE;
 	VkImageView image_view_ = VK_NULL_HANDLE;
-	VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+	VkFormat format_ = VK_FORMAT_R8G8B8A8_SRGB;
 
 	size_t size_; // The size of the buffer in bytes
 

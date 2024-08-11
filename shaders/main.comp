@@ -1,0 +1,23 @@
+/* ---------------------------------------------------------------- *\
+ * main.comp
+ * Author: Gavin Ralston
+ * Date Created: 2024-08-06
+\* ---------------------------------------------------------------- */
+#version 460
+
+layout (std140, binding = 0) readonly buffer ssbo0
+{
+	int world_ssbo[];
+};
+
+layout (std140, binding = 1) buffer ssbo1
+{
+	float out_image[];
+};
+
+
+void main()
+{
+	out_image[0] = 0.0;
+	return;
+}
