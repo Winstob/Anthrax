@@ -153,10 +153,13 @@ void VulkanManager::destroy()
 {
 	vkDeviceWaitIdle(device_.logical); // Wait for any asynchronous operations to finish
 
+	// Buffers
 	raymarched_ssbo_.destroy();
 	world_ssbo_.destroy();
 
+	// Compute shader stuff
 	compute_shader_manager_.destroy();
+	vkDestroyCommandPool(device_.logical, compute_command_pool_, nullptr);
 
 	destroySwapChain();
 
