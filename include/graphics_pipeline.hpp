@@ -34,7 +34,7 @@ public:
 	void destroy();
 
 	void addBuffer(Buffer buffer) { buffers_.push_back(buffer); }
-	void addImage(Image image);
+	void addImage(Image image) { images_.push_back(image); }
 
 	void linkToRenderPass(VkRenderPass render_pass, int subpass_index);
 	void init();

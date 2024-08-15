@@ -13,7 +13,6 @@ namespace Anthrax
 
 Descriptor::Descriptor(Device device, ShaderStage stage, std::vector<Buffer> buffers, std::vector<Image> images)
 {
-	if (images.size() != 0) throw std::runtime_error("Error: descriptors for images not yet implemented!");
 	device_ = device;
 
 	VkShaderStageFlagBits shader_stage;
@@ -36,6 +35,7 @@ Descriptor::Descriptor(Device device, ShaderStage stage, std::vector<Buffer> buf
 	unsigned int num_uniform_buffers = 0;
 	unsigned int num_storage_buffers = 0;
 	unsigned int num_storage_images = 0;
+	unsigned int num_combined_images = 0;
 
 	// Create descriptor set layout
 	std::vector<VkDescriptorSetLayoutBinding> layout_bindings(buffers.size() + images.size());
@@ -62,11 +62,23 @@ Descriptor::Descriptor(Device device, ShaderStage stage, std::vector<Buffer> buf
 	}
 	for (unsigned int j = 0; j < images.size(); j++)
 	{
-		num_storage_images++;
-
+		VkDescriptorType descriptor_type;
+		switch (stage)
+		{
+			case ShaderStage::COMPUTE:
+				descriptor_type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+				num_storage_images++;
+				break;
+			default:
+				descriptor_type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+				//descriptor_type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+				num_combined_images++;
+				break;
+		}
+	
 		layout_bindings[i].binding = i;
 		layout_bindings[i].descriptorCount = 1;
-		layout_bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		layout_bindings[i].descriptorType = descriptor_type;
 		layout_bindings[i].pImmutableSamplers = nullptr;
 		layout_bindings[i].stageFlags = shader_stage;
 		i++;
@@ -86,11 +98,17 @@ Descriptor::Descriptor(Device device, ShaderStage stage, std::vector<Buffer> buf
 	if (num_uniform_buffers == 0) num_uniform_buffers = 1;
 	if (num_storage_buffers == 0) num_storage_buffers = 1;
 	if (num_storage_images == 0) num_storage_images = 1;
-	std::array<VkDescriptorPoolSize, 2> pool_sizes{};
+	if (num_combined_images == 0) num_combined_images = 1;
+	std::array<VkDescriptorPoolSize, 4> pool_sizes{};
 	pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	pool_sizes[0].descriptorCount = num_uniform_buffers;
 	pool_sizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	pool_sizes[1].descriptorCount = num_storage_buffers;
+	pool_sizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	pool_sizes[2].descriptorCount = num_storage_images;
+	//pool_sizes[3].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE;
+	pool_sizes[3].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+	pool_sizes[3].descriptorCount = num_combined_images;
 	VkDescriptorPoolCreateInfo pool_info{};
 	pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	pool_info.poolSizeCount = pool_sizes.size();
@@ -111,8 +129,10 @@ Descriptor::Descriptor(Device device, ShaderStage stage, std::vector<Buffer> buf
 	{
 		throw std::runtime_error("Failed to create descriptor set!");
 	}
-	std::vector<VkWriteDescriptorSet> descriptor_writes(buffers.size());
-	for (unsigned int i = 0; i < buffers.size(); i++)
+	std::vector<VkWriteDescriptorSet> descriptor_writes(buffers.size() + images.size());
+	std::vector<VkDescriptorBufferInfo> buffer_info(buffers.size());
+	std::vector<VkDescriptorImageInfo> image_info(images.size());
+	for (i = 0; i < buffers.size(); i++)
 	{
 		VkDescriptorType descriptor_type;
 		switch (buffers[i].type())
@@ -124,10 +144,10 @@ Descriptor::Descriptor(Device device, ShaderStage stage, std::vector<Buffer> buf
 				descriptor_type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 				break;
 		}
-		VkDescriptorBufferInfo buffer_info{};
-		buffer_info.buffer = buffers[i].data();
-		buffer_info.offset = 0;
-		buffer_info.range = buffers[i].size();
+		//VkDescriptorBufferInfo buffer_info{};
+		buffer_info[i].buffer = buffers[i].data();
+		buffer_info[i].offset = 0;
+		buffer_info[i].range = buffers[i].size();
 
 		descriptor_writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptor_writes[i].dstSet = descriptor_set_;
@@ -135,9 +155,39 @@ Descriptor::Descriptor(Device device, ShaderStage stage, std::vector<Buffer> buf
 		descriptor_writes[i].dstArrayElement = 0;
 		descriptor_writes[i].descriptorType = descriptor_type;
 		descriptor_writes[i].descriptorCount = 1;
-		descriptor_writes[i].pBufferInfo = &buffer_info;
+		descriptor_writes[i].pBufferInfo = &(buffer_info[i]);
+		//std::cout << descriptor_writes[i].pBufferInfo[i].offset << std::endl;
 	}
-	vkUpdateDescriptorSets(device_.logical, buffers.size(), descriptor_writes.data(), 0, nullptr);
+	for (unsigned int j = 0; j < images.size(); j++)
+	{
+		VkDescriptorType descriptor_type;
+		switch (stage)
+		{
+			case ShaderStage::COMPUTE:
+				descriptor_type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+				break;
+			default:
+				descriptor_type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+				//descriptor_type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+				break;
+		}
+
+		//VkDescriptorImageInfo image_info{};
+		image_info[j].sampler = VK_NULL_HANDLE;
+		image_info[j].imageView = images[j].getImageView();
+		image_info[j].imageLayout = images[j].getImageLayout();
+
+		descriptor_writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptor_writes[i].dstSet = descriptor_set_;
+		descriptor_writes[i].dstBinding = i;
+		descriptor_writes[i].dstArrayElement = 0;
+		descriptor_writes[i].descriptorType = descriptor_type;
+		descriptor_writes[i].descriptorCount = 1;
+		descriptor_writes[i].pImageInfo = &(image_info[j]);
+		i++;
+	}
+
+	vkUpdateDescriptorSets(device_.logical, buffers.size() + images.size(), descriptor_writes.data(), 0, nullptr);
 
 	return;
 }

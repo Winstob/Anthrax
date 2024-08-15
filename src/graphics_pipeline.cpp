@@ -149,7 +149,7 @@ void GraphicsPipeline::init()
 	pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	if (buffers_.size() + images_.size() > 0)
 	{
-		pipeline_layout_create_info.setLayoutCount = buffers_.size();
+		pipeline_layout_create_info.setLayoutCount = 1;
 		pipeline_layout_create_info.pSetLayouts = descriptor_.getDescriptorSetLayoutPtr();
 	}
 	else

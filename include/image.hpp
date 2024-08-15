@@ -25,15 +25,24 @@ public:
 	~Image();
 	void destroy();
 
+	VkImageView getImageView() { return image_view_; }
+	VkImageLayout getImageLayout() { return layout_; }
+
 private:
 	uint32_t findMemoryType(uint32_t type_filter, VkMemoryPropertyFlags properties);
 	void createImageView();
+	void transitionImageLayout();
 
 	Device device_;
 	VkImage image_ = VK_NULL_HANDLE;
 	VkDeviceMemory image_memory_ = VK_NULL_HANDLE;
 	VkImageView image_view_ = VK_NULL_HANDLE;
-	VkFormat format_ = VK_FORMAT_R8G8B8A8_SRGB;
+	//VkFormat format_ = VK_FORMAT_R8G8B8A8_SRGB;
+	//VkFormat format_ = VK_FORMAT_B8G8R8A8_SRGB;
+	//VkFormat format_ = VK_FORMAT_D32_SFLOAT;
+	VkFormat format_ = VK_FORMAT_R8G8B8A8_UNORM;
+	//VkImageLayout layout_ = VK_IMAGE_LAYOUT_UNDEFINED;
+	VkImageLayout layout_ = VK_IMAGE_LAYOUT_GENERAL;
 
 	size_t size_; // The size of the buffer in bytes
 

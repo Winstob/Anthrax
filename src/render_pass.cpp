@@ -70,6 +70,10 @@ void RenderPass::init()
 	{
 		pipeline_.addBuffer(buffers_[i]);
 	}
+	for (unsigned int i = 0; i < images_.size(); i++)
+	{
+		pipeline_.addImage(images_[i]);
+	}
 	pipeline_.init();
 }
 

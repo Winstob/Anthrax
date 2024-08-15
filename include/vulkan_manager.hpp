@@ -40,10 +40,6 @@ private:
 	void createInstance();
 	void createSurface();
 	void createAnthraxDevice();
-	VkPhysicalDevice pickPhysicalDevice();
-	bool isDeviceSuitable(VkPhysicalDevice device);
-	bool checkDeviceExtensionSupport(VkPhysicalDevice device);
-	VkDevice createLogicalDevice(VkPhysicalDevice physical_device);
 	void createSwapChain();
 	void createImageViews();
 	void createRenderPass();
@@ -67,10 +63,6 @@ private:
 	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 
 	std::vector<const char*> getRequiredInstanceExtensions();
-
-	std::vector<const char*> device_extensions_ = {
-		VK_KHR_SWAPCHAIN_EXTENSION_NAME
-	};
 
 	static GLFWwindow *window_;
 	VkSurfaceKHR surface_;
@@ -120,13 +112,6 @@ private:
 	VkQueue present_queue_;
 	VkQueue compute_queue_;
 
-	struct SwapChainSupportDetails {
-		VkSurfaceCapabilitiesKHR capabilities;
-		std::vector<VkSurfaceFormatKHR> formats;
-		std::vector<VkPresentModeKHR> present_modes;
-	};
-	SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
-
 	// Validation layers
 	const std::vector<const char*> validation_layers_ = {
 		"VK_LAYER_KHRONOS_validation"
@@ -142,6 +127,7 @@ private:
 	VkCommandBuffer compute_command_buffer_;
 
 	Buffer world_ssbo_, raymarched_ssbo_;
+	Image raymarched_image_;
 
 };
 

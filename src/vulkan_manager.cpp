@@ -76,9 +76,9 @@ void VulkanManager::init()
 void VulkanManager::drawFrame()
 {
 	// Compute pass
-	vkDeviceWaitIdle(device_.logical);
+	//vkDeviceWaitIdle(device_.logical);
 	vkResetCommandBuffer(compute_command_buffer_, 0);
-	compute_shader_manager_.recordCommandBuffer(compute_command_buffer_);
+	compute_shader_manager_.recordCommandBuffer(compute_command_buffer_, 100, 100, 1);
 
 	VkSubmitInfo compute_submit_info{};
 	compute_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -87,13 +87,11 @@ void VulkanManager::drawFrame()
 	compute_submit_info.signalSemaphoreCount = 0;
 	//compute_submit_info.
 	
-	if (vkQueueSubmit(compute_queue_, 1, &compute_submit_info, VK_NULL_HANDLE) != VK_SUCCESS)
+	if (vkQueueSubmit(device_.getComputeQueue(), 1, &compute_submit_info, VK_NULL_HANDLE) != VK_SUCCESS)
 	{
 		throw std::runtime_error("Failed to submit dispatch command buffer");
 	}
-	vkDeviceWaitIdle(device_.logical);
-
-
+	vkDeviceWaitIdle(device_.logical); // TODO: add synchronization between writing to/reading from output image so we don't need to wait here
 
 
 	// Graphics pass
@@ -119,7 +117,7 @@ void VulkanManager::drawFrame()
 	VkSemaphore signal_semaphores[] = {render_finished_semaphore_};
 	submit_info.signalSemaphoreCount = 1;
 	submit_info.pSignalSemaphores = signal_semaphores;
-	if (vkQueueSubmit(graphics_queue_, 1, &submit_info, in_flight_fence_) != VK_SUCCESS)
+	if (vkQueueSubmit(device_.getGraphicsQueue(), 1, &submit_info, in_flight_fence_) != VK_SUCCESS)
 	{
 		throw std::runtime_error("Failed to submit draw command buffer");
 	}
@@ -134,7 +132,7 @@ void VulkanManager::drawFrame()
 	present_info.pSwapchains = swap_chains;
 	present_info.pImageIndices = &image_index;
 	present_info.pResults = nullptr;
-	VkResult result = vkQueuePresentKHR(present_queue_, &present_info);
+	VkResult result = vkQueuePresentKHR(device_.getPresentQueue(), &present_info);
 	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebuffer_resized_)
 	{
 		recreateSwapChain();
@@ -154,7 +152,8 @@ void VulkanManager::destroy()
 	vkDeviceWaitIdle(device_.logical); // Wait for any asynchronous operations to finish
 
 	// Buffers
-	raymarched_ssbo_.destroy();
+	//raymarched_ssbo_.destroy();
+	raymarched_image_.destroy();
 	world_ssbo_.destroy();
 
 	// Compute shader stuff
@@ -239,134 +238,14 @@ void VulkanManager::createSurface()
 
 void VulkanManager::createAnthraxDevice()
 {
-	VkPhysicalDevice physical_device = pickPhysicalDevice();
-	VkDevice logical_device = createLogicalDevice(physical_device);
-	device_ = Device(physical_device, logical_device);
-
+	device_ = Device(instance_, surface_);
 	return;
-}
-
-
-VkPhysicalDevice VulkanManager::pickPhysicalDevice()
-{
-	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
-	std::vector<VkPhysicalDevice> suitable_devices;
-	uint32_t device_count = 0;
-	vkEnumeratePhysicalDevices(instance_, &device_count, nullptr);
-	if (device_count == 0)
-		throw std::runtime_error("No compatible GPUs found");
-
-	std::vector<VkPhysicalDevice> devices(device_count);
-	vkEnumeratePhysicalDevices(instance_, &device_count, devices.data());
-
-	for (const auto &device : devices)
-	{
-		VkPhysicalDeviceProperties device_properties;
-		vkGetPhysicalDeviceProperties(device, &device_properties);
-		//std::cout << device_properties.deviceName << std::endl;
-		if (isDeviceSuitable(device))
-		{
-			suitable_devices.push_back(device);
-		}
-	}
-
-	if (suitable_devices.size() == 0)
-	{
-		throw std::runtime_error("Failed to find suitable GPU");
-	}
-
-	physical_device = suitable_devices[0];
-	return physical_device;
-}
-
-
-bool VulkanManager::isDeviceSuitable(VkPhysicalDevice device)
-{
-	/*
-	VkPhysicalDeviceProperties device_properties;
-	VkPhysicalDeviceFeatures device_features;
-	vkGetPhysicalDeviceProperties(device, &device_properties);
-	vkGetPhysicalDeviceFeatures(device, &device_features);
-
-	return device_features.geometryShader;
-	*/
-	QueueFamilyIndices indices = findQueueFamilies(device);
-	bool extensions_are_supported = checkDeviceExtensionSupport(device);
-
-	bool swap_chain_is_sufficient = false;
-	if (extensions_are_supported)
-	{
-		SwapChainSupportDetails swap_chain_support = querySwapChainSupport(device);
-		swap_chain_is_sufficient = !swap_chain_support.formats.empty() && !swap_chain_support.present_modes.empty();
-	}
-	return indices.isComplete() && extensions_are_supported && swap_chain_is_sufficient;
-}
-
-
-bool VulkanManager::checkDeviceExtensionSupport(VkPhysicalDevice device)
-{
-	uint32_t num_extensions;
-	vkEnumerateDeviceExtensionProperties(device, nullptr, &num_extensions, nullptr);
-
-	std::vector<VkExtensionProperties> available_extensions(num_extensions);
-	vkEnumerateDeviceExtensionProperties(device, nullptr, &num_extensions, available_extensions.data());
-
-	std::set<std::string> required_extensions(device_extensions_.begin(), device_extensions_.end());
-	for (const auto& extension : available_extensions)
-	{
-		required_extensions.erase(extension.extensionName);
-	}
-	return required_extensions.empty();
-}
-
-
-VkDevice VulkanManager::createLogicalDevice(VkPhysicalDevice physical_device)
-{
-	QueueFamilyIndices indices = findQueueFamilies(physical_device);
-
-	std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
-	std::set<uint32_t> unique_queue_families = {indices.graphics_family.value(), indices.present_family.value()};
-
-	float queue_priority = 1.0f;
-	for (uint32_t queue_family : unique_queue_families)
-	{
-		VkDeviceQueueCreateInfo queue_create_info{};
-		queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-		queue_create_info.queueFamilyIndex = queue_family;
-		queue_create_info.queueCount = 1;
-		queue_create_info.pQueuePriorities = &queue_priority;
-
-		queue_create_infos.push_back(queue_create_info);
-	}
-
-	VkPhysicalDeviceFeatures device_features{};
-
-	VkDeviceCreateInfo create_info{};
-	create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-	create_info.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size());
-	create_info.pQueueCreateInfos = queue_create_infos.data();
-	create_info.pEnabledFeatures = &device_features;
-	create_info.enabledExtensionCount = static_cast<uint32_t>(device_extensions_.size());
-	create_info.ppEnabledExtensionNames = device_extensions_.data();
-	create_info.enabledLayerCount = 0;
-
-	VkDevice logical_device = VK_NULL_HANDLE;
-	if (vkCreateDevice(physical_device, &create_info, nullptr, &logical_device) != VK_SUCCESS)
-	{
-		throw std::runtime_error("Failed to create logical device");
-	}
-
-	vkGetDeviceQueue(logical_device, indices.graphics_family.value(), 0, &graphics_queue_);
-	vkGetDeviceQueue(logical_device, indices.present_family.value(), 0, &present_queue_);
-	vkGetDeviceQueue(logical_device, indices.compute_family.value(), 0, &compute_queue_);
-
-	return logical_device;
 }
 
 
 void VulkanManager::createSwapChain()
 {
-	SwapChainSupportDetails swap_chain_support = querySwapChainSupport(device_.physical);
+	Device::SwapChainSupportDetails swap_chain_support = device_.querySwapChainSupport();
 
 	VkSurfaceFormatKHR surface_format = chooseSwapSurfaceFormat(swap_chain_support.formats);
 	VkPresentModeKHR present_mode = chooseSwapPresentMode(swap_chain_support.present_modes);
@@ -386,9 +265,10 @@ void VulkanManager::createSwapChain()
 	create_info.imageColorSpace = surface_format.colorSpace;
 	create_info.imageExtent = extent;
 	create_info.imageArrayLayers = 1;
-	create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
 
-	QueueFamilyIndices indices = findQueueFamilies(device_.physical);
+	//QueueFamilyIndices indices = findQueueFamilies(device_.physical);
+	Device::QueueFamilyIndices indices = device_.getQueueFamilyIndices();
 	uint32_t queue_family_indices[] = {indices.graphics_family.value(), indices.present_family.value()};
 
 	if (indices.graphics_family != indices.present_family)
@@ -460,7 +340,8 @@ void VulkanManager::createRenderPass()
 {
 	render_pass_ = RenderPass(device_, "main");
 	render_pass_.updateSwapChain(swap_chain_);
-	render_pass_.addBuffer(raymarched_ssbo_);
+	//render_pass_.addBuffer(raymarched_ssbo_);
+	render_pass_.addImage(raymarched_image_);
 	render_pass_.init();
 }
 
@@ -501,7 +382,8 @@ void VulkanManager::createFramebuffers()
 
 void VulkanManager::createCommandPool()
 {
-	QueueFamilyIndices queue_family_indices = findQueueFamilies(device_.physical);
+	//QueueFamilyIndices queue_family_indices = findQueueFamilies(device_.physical);
+	Device::QueueFamilyIndices queue_family_indices = device_.getQueueFamilyIndices();
 	VkCommandPoolCreateInfo pool_info{};
 	pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -579,7 +461,8 @@ VkSurfaceFormatKHR VulkanManager::chooseSwapSurfaceFormat(const std::vector<VkSu
 {
 	for (const auto& available_format : available_formats)
 	{
-		if (available_format.format == VK_FORMAT_B8G8R8A8_SRGB && available_format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+		//if (available_format.format == VK_FORMAT_B8G8R8A8_SRGB && available_format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+		if (available_format.format == VK_FORMAT_B8G8R8A8_UNORM && available_format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
 		{
 			return available_format;
 		}
@@ -640,72 +523,6 @@ std::vector<const char*> VulkanManager::getRequiredInstanceExtensions()
 }
 
 
-
-VulkanManager::QueueFamilyIndices VulkanManager::findQueueFamilies(VkPhysicalDevice device)
-{
-	QueueFamilyIndices indices;
-	uint32_t queue_family_count = 0;
-	vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, nullptr);
-
-	std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
-	vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, queue_families.data());
-
-	int i = 0;
-	for (const auto& queue_family : queue_families)
-	{
-		if (queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT)
-		{
-			if (!indices.graphics_family.has_value())
-			{
-				indices.graphics_family = i;
-			}
-		}
-		VkBool32 present_support = false;
-		vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface_, &present_support);
-		if (present_support)
-		{
-			indices.present_family = i;
-		}
-		if (queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT)
-		{
-			if (!indices.graphics_family.has_value() || indices.graphics_family != i)
-			{
-				indices.compute_family = i;
-			}
-		}
-		if (indices.isComplete())
-			break;
-		i++;
-	}
-	return indices;
-}
-
-
-VulkanManager::SwapChainSupportDetails VulkanManager::querySwapChainSupport(VkPhysicalDevice device)
-{
-	SwapChainSupportDetails details;
-	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface_, &details.capabilities);
-
-	uint32_t format_count;
-	vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface_, &format_count, nullptr);
-	if (format_count != 0)
-	{
-		details.formats.resize(format_count);
-		vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface_, &format_count, details.formats.data());
-	}
-
-	uint32_t present_mode_count;
-	vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface_, &present_mode_count, nullptr);
-	if (present_mode_count != 0)
-	{
-		details.present_modes.resize(present_mode_count);
-		vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface_, &present_mode_count, details.present_modes.data());
-	}
-
-	return details;
-}
-
-
 bool VulkanManager::checkValidationLayerSupport()
 {
 	uint32_t layer_count;
@@ -737,7 +554,8 @@ void VulkanManager::createComputeShader()
 {
 	compute_shader_manager_ = ComputeShaderManager(device_, std::string(xstr(SHADER_DIRECTORY)) + "mainc.spv");
 	compute_shader_manager_.addBuffer(world_ssbo_);
-	compute_shader_manager_.addBuffer(raymarched_ssbo_);
+	//compute_shader_manager_.addBuffer(raymarched_ssbo_);
+	compute_shader_manager_.addImage(raymarched_image_);
 	compute_shader_manager_.init();
 
 	return;
@@ -746,7 +564,8 @@ void VulkanManager::createComputeShader()
 
 void VulkanManager::createComputeCommandPool()
 {
-	QueueFamilyIndices queue_family_indices = findQueueFamilies(device_.physical);
+	//QueueFamilyIndices queue_family_indices = findQueueFamilies(device_.physical);
+	Device::QueueFamilyIndices queue_family_indices = device_.getQueueFamilyIndices();
 	VkCommandPoolCreateInfo pool_info{};
 	pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -780,10 +599,18 @@ void VulkanManager::createBuffers()
 			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 			);
+	/*
 	raymarched_ssbo_ = Buffer(device_,
 			4*4,
 			Buffer::STORAGE_TYPE,
 			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+			);
+	*/
+	raymarched_image_ = Image(device_,
+			1920,
+			1080,
+			VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 			);
 }

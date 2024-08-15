@@ -22,7 +22,7 @@ ComputeShaderManager::ComputeShaderManager(Device device, std::string shadercode
 
 void ComputeShaderManager::init()
 {
-	descriptor_ = Descriptor(device_, Descriptor::ShaderStage::COMPUTE, buffers_, std::vector<Image>());
+	descriptor_ = Descriptor(device_, Descriptor::ShaderStage::COMPUTE, buffers_, images_);
 
 	// Create shader module
 	Shader shader(device_, shadercode_filename_);
@@ -54,13 +54,6 @@ void ComputeShaderManager::init()
 }
 
 
-void ComputeShaderManager::addBuffer(Buffer buffer)
-{
-	buffers_.push_back(buffer);
-	return;
-}
-
-
 ComputeShaderManager::~ComputeShaderManager()
 {
 	//destroy();
@@ -87,7 +80,7 @@ void ComputeShaderManager::destroy()
 }
 
 
-void ComputeShaderManager::recordCommandBuffer(VkCommandBuffer command_buffer)
+void ComputeShaderManager::recordCommandBuffer(VkCommandBuffer command_buffer, unsigned int x_work_groups, unsigned int y_work_groups, unsigned int z_work_groups)
 {
 	VkCommandBufferBeginInfo begin_info{};
 	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -101,7 +94,7 @@ void ComputeShaderManager::recordCommandBuffer(VkCommandBuffer command_buffer)
 
 	vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout_, 0, 1, descriptor_.getDescriptorSetPtr(), 0, nullptr);
 
-	vkCmdDispatch(command_buffer, 1, 1, 1);
+	vkCmdDispatch(command_buffer, x_work_groups, y_work_groups, z_work_groups);
 
 	if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS)
 	{

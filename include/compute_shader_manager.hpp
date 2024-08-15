@@ -36,14 +36,16 @@ public:
 	void destroy();
 
 	void init();
-	void addBuffer(Buffer buffer);
+	void addBuffer(Buffer buffer) { buffers_.push_back(buffer); }
+	void addImage(Image image) { images_.push_back(image); }
 
-	void recordCommandBuffer(VkCommandBuffer command_buffer);
+	void recordCommandBuffer(VkCommandBuffer command_buffer, unsigned int x_work_groups, unsigned int y_work_groups, unsigned int z_work_groups);
 
 private:
 	Device device_;
 
 	std::vector<Buffer> buffers_;
+	std::vector<Image> images_;
 	std::string shadercode_filename_;
 
 	Descriptor descriptor_;
