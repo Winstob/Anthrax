@@ -57,17 +57,27 @@ void VulkanManager::init()
 	createAnthraxDevice();
 	createSwapChain();
 	createImageViews();
-	createBuffers();
+	return;
+}
+
+
+void VulkanManager::start()
+{
+	//createBuffers();
 	createRenderPass();
-	//createGraphicsPipeline();
+	createComputeShader();
+	addAllBuffers();
+	render_pass_.init();
+	compute_shader_manager_.init();
+
 	createFramebuffers();
 	createCommandPool();
 	createCommandBuffer();
 	createSyncObjects();
 
-	createComputeShader();
 	createComputeCommandPool();
 	createComputeCommandBuffer();
+
 
 	return;
 }
@@ -78,7 +88,7 @@ void VulkanManager::drawFrame()
 	// Compute pass
 	//vkDeviceWaitIdle(device_.logical);
 	vkResetCommandBuffer(compute_command_buffer_, 0);
-	compute_shader_manager_.recordCommandBuffer(compute_command_buffer_, 100, 100, 1);
+	compute_shader_manager_.recordCommandBuffer(compute_command_buffer_, window_width_, window_height_, 1);
 
 	VkSubmitInfo compute_submit_info{};
 	compute_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -151,10 +161,11 @@ void VulkanManager::destroy()
 {
 	vkDeviceWaitIdle(device_.logical); // Wait for any asynchronous operations to finish
 
-	// Buffers
-	//raymarched_ssbo_.destroy();
+	// Buffers/Images
+	/*
 	raymarched_image_.destroy();
 	world_ssbo_.destroy();
+	*/
 
 	// Compute shader stuff
 	compute_shader_manager_.destroy();
@@ -340,20 +351,10 @@ void VulkanManager::createRenderPass()
 {
 	render_pass_ = RenderPass(device_, "main");
 	render_pass_.updateSwapChain(swap_chain_);
-	//render_pass_.addBuffer(raymarched_ssbo_);
-	render_pass_.addImage(raymarched_image_);
-	render_pass_.init();
-}
-
-
-void VulkanManager::createGraphicsPipeline()
-{
 	/*
-	graphics_pipeline_ = new GraphicsPipeline(device_);
-	graphics_pipeline_->linkToRenderPass(render_pass_, 0);
-	graphics_pipeline_->create();
+	render_pass_.addImage(raymarched_image_);
 	*/
-	return;
+	//render_pass_.init();
 }
 
 
@@ -553,10 +554,11 @@ bool VulkanManager::checkValidationLayerSupport()
 void VulkanManager::createComputeShader()
 {
 	compute_shader_manager_ = ComputeShaderManager(device_, std::string(xstr(SHADER_DIRECTORY)) + "mainc.spv");
+	/*
 	compute_shader_manager_.addBuffer(world_ssbo_);
-	//compute_shader_manager_.addBuffer(raymarched_ssbo_);
 	compute_shader_manager_.addImage(raymarched_image_);
-	compute_shader_manager_.init();
+	*/
+	//compute_shader_manager_.init();
 
 	return;
 }
@@ -593,26 +595,42 @@ void VulkanManager::createComputeCommandBuffer()
 
 void VulkanManager::createBuffers()
 {
+	/*
 	world_ssbo_ = Buffer(device_,
 			4,
 			Buffer::STORAGE_TYPE,
 			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 			);
-	/*
-	raymarched_ssbo_ = Buffer(device_,
-			4*4,
-			Buffer::STORAGE_TYPE,
-			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-			);
-	*/
 	raymarched_image_ = Image(device_,
 			1920,
 			1080,
 			VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 			);
+		*/
+}
+
+
+void VulkanManager::addAllBuffers()
+{
+	for (unsigned int i = 0; i < render_pass_buffers_.size(); i++)
+	{
+		render_pass_.addBuffer(render_pass_buffers_[i]);
+	}
+	for (unsigned int i = 0; i < render_pass_images_.size(); i++)
+	{
+		render_pass_.addImage(render_pass_images_[i]);
+	}
+	for (unsigned int i = 0; i < compute_pass_buffers_.size(); i++)
+	{
+		compute_shader_manager_.addBuffer(compute_pass_buffers_[i]);
+	}
+	for (unsigned int i = 0; i < compute_pass_images_.size(); i++)
+	{
+		compute_shader_manager_.addImage(compute_pass_images_[i]);
+	}
+	return;
 }
 
 

@@ -68,6 +68,7 @@ private:
 	void textFramebufferSetup();
 	void renderText(std::string text, float x, float y, float scale, glm::vec3 color);
 	void renderText(Text text) { renderText(text.text, text.x, text.y, text.scale, text.color); }
+	void createBuffers();
 
 	// Shader passes
 	/*
@@ -102,13 +103,19 @@ private:
 
 	Octree world_;
 	Camera camera_;
-	GLuint indirection_pool_ssbo_ = 0, voxel_type_pool_ssbo_ = 0, lod_pool_ssbo_ = 0;
+	//GLuint indirection_pool_ssbo_ = 0, voxel_type_pool_ssbo_ = 0, lod_pool_ssbo_ = 0;
 
 	GLuint main_pass_framebuffer_ = 0, main_pass_texture_ = 0;
 	GLuint text_pass_framebuffer_ = 0, text_pass_texture_ = 0;
 
 	std::map<GLchar, Character> character_map_;
 	IDMap<Text> texts_;
+
+	Buffer world_ssbo_;
+	Buffer indirection_pool_ssbo_, voxel_type_pool_ssbo_;
+	Image raymarched_image_;
+	Buffer octree_layers_ubo_, focal_distance_ubo_, screen_width_ubo_, screen_height_ubo_, camera_position_ubo_, camera_right_ubo_, camera_up_ubo_, camera_forward_ubo_, sunlight_ubo_;
+
 
 };
 

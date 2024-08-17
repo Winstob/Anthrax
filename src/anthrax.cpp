@@ -46,6 +46,20 @@ Anthrax::Anthrax()
 
 Anthrax::~Anthrax()
 {
+	vulkan_manager_->wait();
+	world_ssbo_.destroy();
+	raymarched_image_.destroy();
+	indirection_pool_ssbo_.destroy();
+	voxel_type_pool_ssbo_.destroy();
+	octree_layers_ubo_.destroy();
+	focal_distance_ubo_.destroy();
+	screen_width_ubo_.destroy();
+	screen_height_ubo_.destroy();
+	camera_position_ubo_.destroy();
+	camera_right_ubo_.destroy();
+	camera_up_ubo_.destroy();
+	camera_forward_ubo_.destroy();
+	sunlight_ubo_.destroy();
 	delete vulkan_manager_;
 	exit();
 }
@@ -54,81 +68,24 @@ Anthrax::~Anthrax()
 int Anthrax::init()
 {
 	vulkan_manager_->init();
-	// Initialize glfw
-	//glfwInit();
-	//glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-	//glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-	//glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	createBuffers();
+
+	vulkan_manager_->renderPassAddImage(raymarched_image_);
+
+	vulkan_manager_->computePassAddBuffer(world_ssbo_);
+	vulkan_manager_->computePassAddBuffer(octree_layers_ubo_);
+	vulkan_manager_->computePassAddBuffer(focal_distance_ubo_);
+	vulkan_manager_->computePassAddBuffer(screen_width_ubo_);
+	vulkan_manager_->computePassAddBuffer(screen_height_ubo_);
+	vulkan_manager_->computePassAddBuffer(camera_position_ubo_);
+	vulkan_manager_->computePassAddBuffer(camera_right_ubo_);
+	vulkan_manager_->computePassAddBuffer(camera_up_ubo_);
+	vulkan_manager_->computePassAddBuffer(camera_forward_ubo_);
+	vulkan_manager_->computePassAddBuffer(sunlight_ubo_);
+	vulkan_manager_->computePassAddImage(raymarched_image_);
+	vulkan_manager_->start();
 
 	/*
-#ifdef __APPLE__
-	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-#endif
-	*/
-
-	/*
-	// Create glfw window
-	window_ = glfwCreateWindow(window_width_, window_height_, xstr(WINDOW_NAME), NULL, NULL);
-	//window = glfwCreateWindow(window_width_, window_height_, x_str(WINDOW_NAME), glfwGetPrimaryMonitor(), NULL);
-	if (window_ == NULL)
-	{
-		std::cout << "Failed to create GLFW window" << std::endl;
-		glfwTerminate();
-		return -1;
-	}
-
-	VkApplicationInfo app_info{};
-	app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-	app_info.pApplicationName = xstr(WINDOW_NAME);
-	app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-	app_info.pEngineName = "Anthrax";
-	app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-	app_info.apiVersion = VK_API_VERSION_1_0;
-
-	VkInstanceCreateInfo create_info{};
-	create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-	create_info.pApplicationInfo = &app_info;
-
-	uint32_t glfw_extension_count = 0;
-	const char **glfw_extensions;
-	glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
-	create_info.enabledExtensionCount = glfw_extension_count;
-	create_info.ppEnabledExtensionNames = glfw_extensions;
-
-	create_info.enabledLayerCount = 0;
-
-	if (vkCreateInstance(&create_info, nullptr, &vulkan_instance_) != VK_SUCCESS)
-	{
-		std::runtime_error("Failed to create Vulkan instance");
-	}
-
-
-	pickPhysicalDevice();
-	*/
-
-	/*
-	glfwMakeContextCurrent(window_);
-	glfwSetFramebufferSizeCallback(window_, framebufferSizeCallback);
-	glfwSetCursorPosCallback(window_, cursorPosCallback);
-	glfwSetScrollCallback(window_, scrollCallback);
-	glfwSetKeyCallback(window_, keyCallback);
-
-	// tell GLFW to capture our mouse
-	glfwSetInputMode(window_, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-
-	// glad: load all OpenGL function pointers
-	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-	{
-		std::cout << "Failed to initialize GLAD" << std::endl;
-		return -1;
-	}
-
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	// Disable vsync
-	glfwSwapInterval(0);
-
 	initializeShaders();
 	textTexturesSetup();
 	mainFramebufferSetup();
@@ -620,6 +577,125 @@ unsigned int Anthrax::addText(std::string text, float x, float y, float scale, g
 int Anthrax::removeText(unsigned int id)
 {
 	return texts_.remove(id);
+}
+
+
+void Anthrax::createBuffers()
+{
+	// ssbos
+	world_ssbo_ = Buffer(vulkan_manager_->getDevice(),
+			4,
+			Buffer::STORAGE_TYPE,
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+			);
+
+	indirection_pool_ssbo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			8 * sizeof(uint32_t) * world_.num_indices_,
+			Buffer::STORAGE_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	voxel_type_pool_ssbo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			sizeof(uint32_t) * world_.num_indices_,
+			Buffer::STORAGE_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+
+	// ubos
+	octree_layers_ubo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			4,
+			Buffer::UNIFORM_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	focal_distance_ubo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			4,
+			Buffer::UNIFORM_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	screen_width_ubo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			4,
+			Buffer::UNIFORM_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	screen_height_ubo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			4,
+			Buffer::UNIFORM_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	camera_position_ubo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			4,
+			Buffer::UNIFORM_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	camera_right_ubo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			4,
+			Buffer::UNIFORM_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	camera_up_ubo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			4,
+			Buffer::UNIFORM_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	camera_forward_ubo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			4,
+			Buffer::UNIFORM_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	sunlight_ubo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			4,
+			Buffer::UNIFORM_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+
+	raymarched_image_ = Image(vulkan_manager_->getDevice(),
+			1920,
+			1080,
+			VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+			);
+	/*
+	glGenBuffers(1, &indirection_pool_ssbo_);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, indirection_pool_ssbo_);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, 8 * sizeof(uint32_t) * world_.num_indices_, world_.indirection_pool_, GL_DYNAMIC_DRAW);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, indirection_pool_ssbo_);
+
+	glGenBuffers(1, &voxel_type_pool_ssbo_);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, voxel_type_pool_ssbo_);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(uint32_t) * world_.num_indices_, world_.voxel_type_pool_, GL_DYNAMIC_DRAW);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, voxel_type_pool_ssbo_);
+
+	glGenBuffers(1, &lod_pool_ssbo_);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, lod_pool_ssbo_);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(uint32_t) * world_.num_indices_, world_.lod_pool_, GL_DYNAMIC_DRAW);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, lod_pool_ssbo_);
+
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+	*/
+
+	return;
 }
 
 

@@ -30,9 +30,19 @@ public:
 	VulkanManager();
 	~VulkanManager();
 	void init();
+	void start();
 	void drawFrame();
 
 	Device getDevice() { return device_; }
+
+	int getWindowWidth() { return window_width_; }
+	int getWindowHeight() { return window_height_; }
+
+	void renderPassAddBuffer(Buffer buffer) { render_pass_buffers_.push_back(buffer); }
+	void renderPassAddImage(Image image) { render_pass_images_.push_back(image); }
+	void computePassAddBuffer(Buffer buffer) { compute_pass_buffers_.push_back(buffer); }
+	void computePassAddImage(Image image) { compute_pass_images_.push_back(image); }
+	void wait() { vkDeviceWaitIdle(device_.logical); }
 
 private:
 	void destroy();
@@ -49,6 +59,7 @@ private:
 	void createCommandBuffer();
 	void createSyncObjects();
 	void createBuffers();
+	void addAllBuffers();
 
 	void destroySwapChain();
 	void recreateSwapChain();
@@ -93,25 +104,6 @@ private:
 	// Settings
 	unsigned int window_width_, window_height_;
 
-
-	class QueueFamilyIndices
-	{
-	public:
-		std::optional<uint32_t> graphics_family;
-		std::optional<uint32_t> present_family;
-		std::optional<uint32_t> compute_family;
-		bool isComplete()
-		{
-			return graphics_family.has_value() &&
-			present_family.has_value() &&
-			compute_family.has_value();
-		}
-	};
-	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
-	VkQueue graphics_queue_;
-	VkQueue present_queue_;
-	VkQueue compute_queue_;
-
 	// Validation layers
 	const std::vector<const char*> validation_layers_ = {
 		"VK_LAYER_KHRONOS_validation"
@@ -126,8 +118,14 @@ private:
 	VkCommandPool compute_command_pool_;
 	VkCommandBuffer compute_command_buffer_;
 
+	/*
 	Buffer world_ssbo_, raymarched_ssbo_;
 	Image raymarched_image_;
+	*/
+	std::vector<Buffer> render_pass_buffers_;
+	std::vector<Image> render_pass_images_;
+	std::vector<Buffer> compute_pass_buffers_;
+	std::vector<Image> compute_pass_images_;
 
 };
 

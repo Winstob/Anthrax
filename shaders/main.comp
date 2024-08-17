@@ -5,12 +5,94 @@
 \* ---------------------------------------------------------------- */
 #version 460
 
+struct WorldLocation
+{
+  ivec3 int_component;
+  vec3 dec_component;
+};
+
+
+struct uinfl
+{
+  uint int_component;
+  float dec_component;
+};
+uinfl uinflAdd(uinfl first, uinfl second);
+uinfl uinflSub(uinfl first, uinfl second);
+
+struct ufvec3
+{
+  uvec3 int_component;
+  vec3 dec_component;
+};
+
+struct DirectedLight
+{
+  vec3 direction;
+  vec3 scatter_color;
+  vec3 color;
+};
+
+struct Material
+{
+  vec3 diffuse;
+  vec3 specular;
+  float shininess;
+  float opacity;
+  float refraction_index;
+};
+
 layout (std140, binding = 0) readonly buffer ssbo0
 {
 	int world_ssbo[];
 };
 
-layout (rgba32f, binding = 1) uniform image2D out_image;
+layout (std140, binding = 1) uniform octree_layers_ubo
+{
+	int octree_layers;
+};
+
+layout (std140, binding = 2) uniform focal_distance_ubo
+{
+	float focal_distance;
+};
+
+layout (std140, binding = 3) uniform screen_width_ubo
+{
+	int screen_width;
+};
+
+layout (std140, binding = 4) uniform screen_height_ubo
+{
+	int screen_height;
+};
+
+layout (std140, binding = 5) uniform camera_position_ubo
+{
+	WorldLocation camera_position;
+};
+
+layout (std140, binding = 6) uniform camera_right_ubo
+{
+	vec3 camera_right;
+};
+
+layout (std140, binding = 7) uniform camera_up_ubo
+{
+	vec3 camera_up;
+};
+
+layout (std140, binding = 8) uniform camera_forward_ubo
+{
+	vec3 camera_forward;
+};
+
+layout (std140, binding = 9) uniform sunlight_ubo
+{
+	DirectedLight sunlight;
+};
+
+layout (rgba32f, binding = 10) uniform image2D out_image;
 
 
 void main()

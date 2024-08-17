@@ -17,12 +17,23 @@ Buffer::Buffer(Device device, size_t size, BufferType buffer_type, VkBufferUsage
 {
 	device_ = device;
 	type_ = buffer_type;
-	size_ = size_;
+	size_ = size;
+
+	VkBufferUsageFlags type_usage_flag;
+	switch (type_)
+	{
+		case STORAGE_TYPE:
+			type_usage_flag = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+			break;
+		case UNIFORM_TYPE:
+			type_usage_flag = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+			break;
+	}
 
 	VkBufferCreateInfo buffer_info{};
 	buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	buffer_info.size = (VkDeviceSize)size;
-	buffer_info.usage = usage;
+	buffer_info.usage = type_usage_flag | usage;
 	buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
 	if (vkCreateBuffer(device_.logical, &buffer_info, nullptr, &buffer_) != VK_SUCCESS)
