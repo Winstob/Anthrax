@@ -20,6 +20,12 @@ namespace Anthrax
 class Intfloat
 {
 public:
+	struct vec3
+	{
+		alignas(16) glm::ivec3 int_component;
+		alignas(16) glm::vec3 dec_component;
+	};
+
 	Intfloat() : Intfloat(0, 0.0f) {}
 	Intfloat(int32_t _int_component) : Intfloat(_int_component, 0.0) {}
 	Intfloat(int32_t _int_component, float _dec_component) : int_component(_int_component), dec_component(_dec_component) {}

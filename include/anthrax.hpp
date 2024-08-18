@@ -111,9 +111,10 @@ private:
 	std::map<GLchar, Character> character_map_;
 	IDMap<Text> texts_;
 
-	Buffer world_ssbo_;
+	// ssbos
 	Buffer indirection_pool_ssbo_, voxel_type_pool_ssbo_;
 	Image raymarched_image_;
+	// ubos
 	Buffer octree_layers_ubo_, focal_distance_ubo_, screen_width_ubo_, screen_height_ubo_, camera_position_ubo_, camera_right_ubo_, camera_up_ubo_, camera_forward_ubo_, sunlight_ubo_;
 
 

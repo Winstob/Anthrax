@@ -36,6 +36,7 @@ public:
 	BufferType type() { return type_; }
 
 	size_t size() { return size_; }
+	void* getMappedPtr();
 
 private:
 	uint32_t findMemoryType(uint32_t type_filter, VkMemoryPropertyFlags properties);
@@ -43,6 +44,7 @@ private:
 	Device device_;
 	VkBuffer buffer_ = VK_NULL_HANDLE;
 	VkDeviceMemory buffer_memory_ = VK_NULL_HANDLE;
+	void *buffer_memory_mapped_;
 	BufferType type_;
 
 	size_t size_; // The size of the buffer in bytes

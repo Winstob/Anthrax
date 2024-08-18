@@ -34,7 +34,7 @@ Anthrax::Anthrax()
 {
 	window_width_ = 800;
 	window_height_ = 600;
-	int world_size = 24;
+	int world_size = 16;
 	world_ = Octree(world_size);
 	//camera_ = Camera(glm::vec3(pow(2, world_size-3), pow(2, world_size-3), 0.0));
 	camera_ = Camera(glm::vec3(0.0, 0.0, 0.0));
@@ -47,7 +47,6 @@ Anthrax::Anthrax()
 Anthrax::~Anthrax()
 {
 	vulkan_manager_->wait();
-	world_ssbo_.destroy();
 	raymarched_image_.destroy();
 	indirection_pool_ssbo_.destroy();
 	voxel_type_pool_ssbo_.destroy();
@@ -72,7 +71,8 @@ int Anthrax::init()
 
 	vulkan_manager_->renderPassAddImage(raymarched_image_);
 
-	vulkan_manager_->computePassAddBuffer(world_ssbo_);
+	vulkan_manager_->computePassAddBuffer(indirection_pool_ssbo_);
+	vulkan_manager_->computePassAddBuffer(voxel_type_pool_ssbo_);
 	vulkan_manager_->computePassAddBuffer(octree_layers_ubo_);
 	vulkan_manager_->computePassAddBuffer(focal_distance_ubo_);
 	vulkan_manager_->computePassAddBuffer(screen_width_ubo_);
@@ -84,6 +84,8 @@ int Anthrax::init()
 	vulkan_manager_->computePassAddBuffer(sunlight_ubo_);
 	vulkan_manager_->computePassAddImage(raymarched_image_);
 	vulkan_manager_->start();
+
+	createWorld();
 
 	/*
 	initializeShaders();
@@ -133,6 +135,22 @@ void Anthrax::exit()
 
 void Anthrax::renderFrame()
 {
+	updateCamera();
+	
+	// update buffers
+	*((int*)octree_layers_ubo_.getMappedPtr()) = world_.num_layers_;
+	*((float*)focal_distance_ubo_.getMappedPtr()) = camera_.focal_distance;
+	*((int*)screen_width_ubo_.getMappedPtr()) = vulkan_manager_->getWindowWidth();
+	*((int*)screen_height_ubo_.getMappedPtr()) = vulkan_manager_->getWindowHeight();
+	// TODO: make this less bad
+	Intfloat::vec3 camera_position {
+		iComponents3(camera_.position),
+		fComponents3(camera_.position)
+	};
+	*((Intfloat::vec3*)camera_position_ubo_.getMappedPtr()) = camera_position;
+	*((glm::vec3*)camera_right_ubo_.getMappedPtr()) = camera_.getRightLookDirection();
+	*((glm::vec3*)camera_up_ubo_.getMappedPtr()) = camera_.getUpLookDirection();
+	*((glm::vec3*)camera_forward_ubo_.getMappedPtr()) = camera_.getForwardLookDirection();
 	vulkan_manager_->drawFrame();
 	/*
 	if (window_size_changed_)
@@ -256,20 +274,24 @@ void Anthrax::initializeShaders()
 void Anthrax::createWorld()
 {
 	unsigned int val, index = 0;
+	/*
 	std::ifstream indirection_file("world/indirection_pool.txt");
 	while (indirection_file >> val)
 	{
 		world_.indirection_pool_[index] = val;
 		index++;
 	}
+	*/
 	index = 0;
 	std::ifstream voxel_type_file("world/voxel_type_pool.txt");
 	while (voxel_type_file >> val)
 	{
-		world_.voxel_type_pool_[index] = val;
+		//world_.voxel_type_pool_[index] = val;
+		((int*)voxel_type_pool_ssbo_.getMappedPtr())[index] = val;
 		index++;
 	}
-	/*
+
+
 	unsigned int next_free_index = 1;
 	for (unsigned int i = 0; i < world_.num_indices_; i++)
 	{
@@ -280,11 +302,13 @@ void Anthrax::createWorld()
 			if (j == 0 || j == 3 || j == 5 || j == 6)
 			{
 				//world_.indirection_pool_[k] = next_free_index++;
-				world_.indirection_pool_[k] = 1;
+				//world_.indirection_pool_[k] = 1;
+				((int*)indirection_pool_ssbo_.getMappedPtr())[k] = 1;
 			}
 			else
 			{
-				world_.indirection_pool_[k] = 0;
+				//world_.indirection_pool_[k] = 0;
+				((int*)indirection_pool_ssbo_.getMappedPtr())[k] = 0;
 			}
 		}
 		if (i > 21844)
@@ -293,7 +317,6 @@ void Anthrax::createWorld()
 			world_.voxel_type_pool_[i] = 0;
 		world_.lod_pool_[i] = 0x000000FF; // White, opaque
 	}
-	*/
 	return;
 }
 
@@ -324,6 +347,8 @@ void Anthrax::initializeWorldSSBOs()
 
 void Anthrax::updateCamera()
 {
+	camera_.position[0] = 10.0*glm::sin(glfwGetTime()/1.0);
+	camera_.position[1] = 10.0*glm::cos(glfwGetTime()/1.0);
 	/*
 	// Update rotation
 	float sensitivity = 0.01;
@@ -583,13 +608,6 @@ int Anthrax::removeText(unsigned int id)
 void Anthrax::createBuffers()
 {
 	// ssbos
-	world_ssbo_ = Buffer(vulkan_manager_->getDevice(),
-			4,
-			Buffer::STORAGE_TYPE,
-			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-			);
-
 	indirection_pool_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			8 * sizeof(uint32_t) * world_.num_indices_,
@@ -636,35 +654,35 @@ void Anthrax::createBuffers()
 			);
 	camera_position_ubo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			4,
+			32,
 			Buffer::UNIFORM_TYPE,
 			0,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	camera_right_ubo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			4,
+			12,
 			Buffer::UNIFORM_TYPE,
 			0,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	camera_up_ubo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			4,
+			12,
 			Buffer::UNIFORM_TYPE,
 			0,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	camera_forward_ubo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			4,
+			12,
 			Buffer::UNIFORM_TYPE,
 			0,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	sunlight_ubo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			4,
+			32,
 			Buffer::UNIFORM_TYPE,
 			0,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT

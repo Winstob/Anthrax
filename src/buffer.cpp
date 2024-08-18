@@ -56,6 +56,12 @@ Buffer::Buffer(Device device, size_t size, BufferType buffer_type, VkBufferUsage
 	}
 
 	vkBindBufferMemory(device_.logical, buffer_, buffer_memory_, 0);
+
+	//if (type_ == UNIFORM_TYPE)
+	if (true)
+	{
+		vkMapMemory(device_.logical, buffer_memory_, 0, size_, 0, &buffer_memory_mapped_);
+	}
 	return;
 }
 
@@ -90,6 +96,17 @@ uint32_t Buffer::findMemoryType(uint32_t type_filter, VkMemoryPropertyFlags prop
 		}
 	}
 	throw std::runtime_error("Failed to find suitable memory type!");
+}
+
+
+void* Buffer::getMappedPtr()
+{
+	//if (type_ != UNIFORM_TYPE)
+	if (false)
+	{
+		throw std::runtime_error("getMappedPtr() was called from a non-uniform buffer");
+	}
+	return buffer_memory_mapped_;
 }
 
 

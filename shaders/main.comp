@@ -42,62 +42,70 @@ struct Material
   float refraction_index;
 };
 
-layout (std140, binding = 0) readonly buffer ssbo0
+layout (std140, binding = 0) readonly buffer indirection_pool_ssbo
 {
-	int world_ssbo[];
+	int indirection_pool[];
 };
 
-layout (std140, binding = 1) uniform octree_layers_ubo
+layout (std140, binding = 1) readonly buffer voxel_type_pool_ssbo
+{
+	int voxel_type_pool[];
+};
+
+layout (std140, binding = 2) uniform octree_layers_ubo
 {
 	int octree_layers;
 };
 
-layout (std140, binding = 2) uniform focal_distance_ubo
+layout (std140, binding = 3) uniform focal_distance_ubo
 {
 	float focal_distance;
 };
 
-layout (std140, binding = 3) uniform screen_width_ubo
+layout (std140, binding = 4) uniform screen_width_ubo
 {
 	int screen_width;
 };
 
-layout (std140, binding = 4) uniform screen_height_ubo
+layout (std140, binding = 5) uniform screen_height_ubo
 {
 	int screen_height;
 };
 
-layout (std140, binding = 5) uniform camera_position_ubo
+layout (std140, binding = 6) uniform camera_position_ubo
 {
 	WorldLocation camera_position;
 };
 
-layout (std140, binding = 6) uniform camera_right_ubo
+layout (std140, binding = 7) uniform camera_right_ubo
 {
 	vec3 camera_right;
 };
 
-layout (std140, binding = 7) uniform camera_up_ubo
+layout (std140, binding = 8) uniform camera_up_ubo
 {
 	vec3 camera_up;
 };
 
-layout (std140, binding = 8) uniform camera_forward_ubo
+layout (std140, binding = 9) uniform camera_forward_ubo
 {
 	vec3 camera_forward;
 };
 
-layout (std140, binding = 9) uniform sunlight_ubo
+layout (std140, binding = 10) uniform sunlight_ubo
 {
-	DirectedLight sunlight;
+	DirectedLight sunlight_TMP;
 };
 
-layout (rgba32f, binding = 10) uniform image2D out_image;
+layout (rgba32f, binding = 11) uniform image2D out_image;
 
 
+vec2 screen_position = vec2(gl_GlobalInvocationID.xy)/vec2(screen_width, screen_height)*2.0-1.0;
 void main()
 {
 	//out_image[0] = 0.0;
-	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec2(gl_GlobalInvocationID.xy/500.0), 0.0, 1.0));
+	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec2(gl_GlobalInvocationID.xy/500.0), 0.0, 1.0));
+	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec2(gl_GlobalInvocationID.xy/focal_distance), 0.0, 1.0));
+	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(screen_position, 0.0, 1.0));
 	return;
 }
