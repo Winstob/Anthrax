@@ -101,6 +101,9 @@ private:
 	VkSemaphore render_finished_semaphore_;
 	VkFence in_flight_fence_;
 
+	VkSemaphore compute_finished_semaphore_;
+	VkFence compute_in_flight_fence_;
+
 	// Settings
 	unsigned int window_width_, window_height_;
 

@@ -86,7 +86,9 @@ void VulkanManager::start()
 void VulkanManager::drawFrame()
 {
 	// Compute pass
-	//vkDeviceWaitIdle(device_.logical);
+	vkWaitForFences(device_.logical, 1, &compute_in_flight_fence_, VK_TRUE, UINT64_MAX);
+	// TODO: compute buffer updates should really go here. Maybe when buffers are moved away from host-visible memory, set them up for transfers normally and initiate the transfer here.
+	vkResetFences(device_.logical, 1, &compute_in_flight_fence_);
 	vkResetCommandBuffer(compute_command_buffer_, 0);
 	compute_shader_manager_.recordCommandBuffer(compute_command_buffer_, window_width_, window_height_, 1);
 
@@ -94,15 +96,14 @@ void VulkanManager::drawFrame()
 	compute_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	compute_submit_info.commandBufferCount = 1;
 	compute_submit_info.pCommandBuffers = &compute_command_buffer_;
-	compute_submit_info.signalSemaphoreCount = 0;
+	compute_submit_info.signalSemaphoreCount = 1;
+	compute_submit_info.pSignalSemaphores = &compute_finished_semaphore_;
 	//compute_submit_info.
 	
-	if (vkQueueSubmit(device_.getComputeQueue(), 1, &compute_submit_info, VK_NULL_HANDLE) != VK_SUCCESS)
+	if (vkQueueSubmit(device_.getComputeQueue(), 1, &compute_submit_info, compute_in_flight_fence_) != VK_SUCCESS)
 	{
 		throw std::runtime_error("Failed to submit dispatch command buffer");
 	}
-	vkDeviceWaitIdle(device_.logical); // TODO: add synchronization between writing to/reading from output image so we don't need to wait here
-
 
 	// Graphics pass
 	vkWaitForFences(device_.logical, 1, &in_flight_fence_, VK_TRUE, UINT64_MAX);
@@ -117,9 +118,9 @@ void VulkanManager::drawFrame()
 
 	VkSubmitInfo submit_info{};
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	VkSemaphore wait_semaphores[] = {image_available_semaphore_};
-	VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-	submit_info.waitSemaphoreCount = 1;
+	VkSemaphore wait_semaphores[] = {compute_finished_semaphore_, image_available_semaphore_};
+	VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+	submit_info.waitSemaphoreCount = 2;
 	submit_info.pWaitSemaphores = wait_semaphores;
 	submit_info.pWaitDstStageMask = wait_stages;
 	submit_info.commandBufferCount = 1;
@@ -170,6 +171,8 @@ void VulkanManager::destroy()
 	// Compute shader stuff
 	compute_shader_manager_.destroy();
 	vkDestroyCommandPool(device_.logical, compute_command_pool_, nullptr);
+	vkDestroySemaphore(device_.logical, compute_finished_semaphore_, nullptr);
+	vkDestroyFence(device_.logical, compute_in_flight_fence_, nullptr);
 
 	destroySwapChain();
 
@@ -418,11 +421,19 @@ void VulkanManager::createSyncObjects()
 	fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT; // Begin with the fence activated to avoid hang on startup
 
+	// graphics semaphores
 	if (vkCreateSemaphore(device_.logical, &semaphore_info, nullptr, &image_available_semaphore_) != VK_SUCCESS ||
 		vkCreateSemaphore(device_.logical, &semaphore_info, nullptr, &render_finished_semaphore_) != VK_SUCCESS ||
 		vkCreateFence(device_.logical, &fence_info, nullptr, &in_flight_fence_) != VK_SUCCESS)
 	{
-		throw std::runtime_error("Failed to create sync objects");
+		throw std::runtime_error("Failed to create graphics sync objects");
+	}
+
+	// compute semaphores
+	if (vkCreateSemaphore(device_.logical, &semaphore_info, nullptr, &compute_finished_semaphore_) != VK_SUCCESS ||
+		vkCreateFence(device_.logical, &fence_info, nullptr, &compute_in_flight_fence_) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to create compute sync objects");
 	}
 
 }
