@@ -5,13 +5,6 @@
 \* ---------------------------------------------------------------- */
 #version 460
 
-struct WorldLocation
-{
-  ivec3 int_component;
-  vec3 dec_component;
-};
-
-
 struct uinfl
 {
   uint int_component;
@@ -24,6 +17,17 @@ struct ufvec3
 {
   uvec3 int_component;
   vec3 dec_component;
+};
+ufvec3 uf3Add(in ufvec3 first, in ufvec3 second);
+
+struct WorldLocation
+{
+	/*
+  ivec3 int_component;
+  vec3 dec_component;
+	*/
+	ufvec3 loc;
+	uint level;
 };
 
 struct DirectedLight
@@ -42,70 +46,227 @@ struct Material
   float refraction_index;
 };
 
-layout (std140, binding = 0) readonly buffer indirection_pool_ssbo
+layout (std430, binding = 0) readonly buffer indirection_pool_ssbo
 {
 	int indirection_pool[];
 };
 
-layout (std140, binding = 1) readonly buffer voxel_type_pool_ssbo
+layout (std430, binding = 1) readonly buffer uniformity_pool_ssbo
 {
-	int voxel_type_pool[];
+	uint uniformity_pool[];
 };
 
-layout (std140, binding = 2) uniform octree_layers_ubo
+layout (std430, binding = 2) readonly buffer voxel_type_pool_ssbo
 {
-	int octree_layers;
+	uint voxel_type_pool[];
 };
 
-layout (std140, binding = 3) uniform focal_distance_ubo
+layout (std140, binding = 3) uniform num_levels_ubo
+{
+	int num_levels;
+};
+
+layout (std140, binding = 4) uniform focal_distance_ubo
 {
 	float focal_distance;
 };
 
-layout (std140, binding = 4) uniform screen_width_ubo
+layout (std140, binding = 5) uniform screen_width_ubo
 {
 	int screen_width;
 };
 
-layout (std140, binding = 5) uniform screen_height_ubo
+layout (std140, binding = 6) uniform screen_height_ubo
 {
 	int screen_height;
 };
 
-layout (std140, binding = 6) uniform camera_position_ubo
+layout (std140, binding = 7) uniform camera_position_ubo
 {
-	WorldLocation camera_position;
+	//WorldLocation camera_position;
+	ufvec3 camera_position;
 };
 
-layout (std140, binding = 7) uniform camera_right_ubo
+layout (std140, binding = 8) uniform camera_right_ubo
 {
 	vec3 camera_right;
 };
 
-layout (std140, binding = 8) uniform camera_up_ubo
+layout (std140, binding = 9) uniform camera_up_ubo
 {
 	vec3 camera_up;
 };
 
-layout (std140, binding = 9) uniform camera_forward_ubo
+layout (std140, binding = 10) uniform camera_forward_ubo
 {
 	vec3 camera_forward;
 };
 
-layout (std140, binding = 10) uniform sunlight_ubo
+layout (std140, binding = 11) uniform sunlight_ubo
 {
 	DirectedLight sunlight_TMP;
 };
 
-layout (rgba32f, binding = 11) uniform image2D out_image;
+layout (rgba32f, binding = 12) uniform image2D out_image;
 
 
-vec2 screen_position = vec2(gl_GlobalInvocationID.xy)/vec2(screen_width, screen_height)*2.0-1.0;
+struct Ray
+{
+	vec3 direction;
+	ufvec3 world_location;
+};
+
+
+vec2 screen_position = vec2(gl_GlobalInvocationID.x, -gl_GlobalInvocationID.y+screen_height)/vec2(screen_width, screen_height)*2.0-1.0;
+
+// forward function declarations
+vec3 calculateMainRayDirection();
+uint getVoxelType(ufvec3 world_position);
+void rayMarch(inout Ray ray);
+
+uint readIndirectionPool(in uint base_location, in uint node_index);
+uint readUniformityPool(in uint base_location, in uint node_index);
+uint readVoxelTypePool(in uint base_location, in uint node_index);
+
 void main()
 {
+	/*
 	//out_image[0] = 0.0;
 	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec2(gl_GlobalInvocationID.xy/500.0), 0.0, 1.0));
 	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec2(gl_GlobalInvocationID.xy/focal_distance), 0.0, 1.0));
 	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(screen_position, 0.0, 1.0));
+	int i = int(mod(gl_GlobalInvocationID.x, 512));
+	i = int(gl_GlobalInvocationID.x);
+	float val = float(indirection_pool[i]);
+	//float val = float(indirection_pool[400]);
+	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(val, 0.0, 0.0, 1.0));
+	*/
+
+	Ray ray;
+	ray.direction = calculateMainRayDirection();
+	ray.world_location = camera_position;
+	uint voxel_type = 0;
+	for (uint i = 0; i < 100; i++)
+	{
+		rayMarch(ray);
+		voxel_type = getVoxelType(ray.world_location);
+		if (voxel_type != 0)
+		{
+			break;
+		}
+	}
+	if (voxel_type == 0)
+	{
+		imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(0.0, 0.0, 0.0, 1.0));
+	}
+	else
+	{
+		imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(1.0, 1.0, 1.0, 1.0));
+	}
+	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.direction, 1.0));
 	return;
+}
+
+
+vec3 calculateMainRayDirection()
+{
+  vec3 x = camera_right * screen_position.x;
+  vec3 y = camera_up * screen_position.y * float(screen_height) / float(screen_width);
+  vec3 z = camera_forward * focal_distance;
+  return normalize(x + y + z);
+}
+
+
+uint getVoxelType(ufvec3 world_position)
+{
+	uint indirection_pointer = 0;
+	uint current_node_index = 0;
+	uint level = num_levels - 1;
+	// starting at the top level, descend until a uniform level is reached
+	for (; level > 0; level--)
+	{
+		current_node_index = 0;
+		current_node_index |= ((world_position.int_component.x >> (3*level)) & 7);
+		current_node_index |= ((world_position.int_component.y >> (3*level)) & 7) << 3; 
+		current_node_index |= ((world_position.int_component.z >> (3*level)) & 7) << 6;
+
+		if (readUniformityPool(indirection_pointer, current_node_index) == 1)
+		{
+			break;
+		}
+
+		indirection_pointer = readIndirectionPool(indirection_pointer, current_node_index);
+	}
+	return readVoxelTypePool(indirection_pointer, current_node_index);
+}
+
+
+void rayMarch(inout Ray ray)
+{
+	ufvec3 step_addition;
+	step_addition.int_component = uvec3(0);
+	step_addition.dec_component = normalize(ray.direction);
+	ray.world_location = uf3Add(ray.world_location, step_addition);
+	return;
+}
+
+
+ufvec3 uf3Add(in ufvec3 first, in ufvec3 second)
+{
+	ufvec3 result;
+	result.int_component = first.int_component + second.int_component;
+	result.dec_component = first.dec_component + second.dec_component;
+	if (result.dec_component.x >= 1.0)
+	{
+		result.dec_component.x -= 1.0;
+		result.int_component.x += 1;
+	}
+	if (result.dec_component.x < 0.0)
+	{
+		result.dec_component.x += 1.0;
+		result.int_component.x -= 1;
+	}
+	if (result.dec_component.y >= 1.0)
+	{
+		result.dec_component.y -= 1.0;
+		result.int_component.y += 1;
+	}
+	if (result.dec_component.y < 0.0)
+	{
+		result.dec_component.y += 1.0;
+		result.int_component.y -= 1;
+	}
+	if (result.dec_component.z >= 1.0)
+	{
+		result.dec_component.z -= 1.0;
+		result.int_component.z += 1;
+	}
+	if (result.dec_component.z < 0.0)
+	{
+		result.dec_component.z += 1.0;
+		result.int_component.z -= 1;
+	}
+
+	return result;
+}
+
+
+uint readIndirectionPool(in uint base_location, in uint node_index)
+{
+	return indirection_pool[(base_location << 9) | node_index];
+}
+
+
+uint readUniformityPool(in uint base_location, in uint node_index)
+{
+	uint index_preunpack = (base_location << 9) | node_index;
+	uint true_index = index_preunpack >> 5;
+	uint bit_location = index_preunpack & 0x1F;
+	return ((uniformity_pool[true_index] >> bit_location) & 1);
+}
+
+
+uint readVoxelTypePool(in uint base_location, in uint node_index)
+{
+	return voxel_type_pool[(base_location << 9) | node_index];
 }

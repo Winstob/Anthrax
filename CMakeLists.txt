@@ -49,6 +49,7 @@ set(HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/include/text.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/intfloat.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/graphics_pipeline.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/world.hpp
   )
 
 set(SRC
@@ -65,6 +66,7 @@ set(SRC
   ${CMAKE_CURRENT_SOURCE_DIR}/src/intfloat.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/shader.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics_pipeline.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/world.cpp
   )
 
 #set(SHADERS

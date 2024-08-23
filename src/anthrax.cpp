@@ -34,8 +34,8 @@ Anthrax::Anthrax()
 {
 	window_width_ = 800;
 	window_height_ = 600;
-	int world_size = 16;
-	world_ = Octree(world_size);
+	int world_size = 3;
+	world_ = new World(world_size);
 	//camera_ = Camera(glm::vec3(pow(2, world_size-3), pow(2, world_size-3), 0.0));
 	camera_ = Camera(glm::vec3(0.0, 0.0, 0.0));
 	//camera_ = Camera(glm::ivec3(0, 0, 0));
@@ -49,8 +49,9 @@ Anthrax::~Anthrax()
 	vulkan_manager_->wait();
 	raymarched_image_.destroy();
 	indirection_pool_ssbo_.destroy();
+	uniformity_pool_ssbo_.destroy();
 	voxel_type_pool_ssbo_.destroy();
-	octree_layers_ubo_.destroy();
+	num_levels_ubo_.destroy();
 	focal_distance_ubo_.destroy();
 	screen_width_ubo_.destroy();
 	screen_height_ubo_.destroy();
@@ -59,6 +60,8 @@ Anthrax::~Anthrax()
 	camera_up_ubo_.destroy();
 	camera_forward_ubo_.destroy();
 	sunlight_ubo_.destroy();
+
+	delete world_;
 	delete vulkan_manager_;
 	exit();
 }
@@ -72,8 +75,9 @@ int Anthrax::init()
 	vulkan_manager_->renderPassAddImage(raymarched_image_);
 
 	vulkan_manager_->computePassAddBuffer(indirection_pool_ssbo_);
+	vulkan_manager_->computePassAddBuffer( uniformity_pool_ssbo_);
 	vulkan_manager_->computePassAddBuffer(voxel_type_pool_ssbo_);
-	vulkan_manager_->computePassAddBuffer(octree_layers_ubo_);
+	vulkan_manager_->computePassAddBuffer(num_levels_ubo_);
 	vulkan_manager_->computePassAddBuffer(focal_distance_ubo_);
 	vulkan_manager_->computePassAddBuffer(screen_width_ubo_);
 	vulkan_manager_->computePassAddBuffer(screen_height_ubo_);
@@ -138,13 +142,13 @@ void Anthrax::renderFrame()
 	updateCamera();
 	
 	// update buffers
-	*((int*)octree_layers_ubo_.getMappedPtr()) = world_.num_layers_;
+	*((int*)num_levels_ubo_.getMappedPtr()) = world_->getNumLayers();
 	*((float*)focal_distance_ubo_.getMappedPtr()) = camera_.focal_distance;
 	*((int*)screen_width_ubo_.getMappedPtr()) = vulkan_manager_->getWindowWidth();
 	*((int*)screen_height_ubo_.getMappedPtr()) = vulkan_manager_->getWindowHeight();
 	// TODO: make this less bad
 	Intfloat::vec3 camera_position {
-		iComponents3(camera_.position),
+		iComponents3(camera_.position) + glm::ivec3(std::pow(8, world_->getNumLayers())/2),
 		fComponents3(camera_.position)
 	};
 	*((Intfloat::vec3*)camera_position_ubo_.getMappedPtr()) = camera_position;
@@ -273,49 +277,19 @@ void Anthrax::initializeShaders()
 
 void Anthrax::createWorld()
 {
-	unsigned int val, index = 0;
-	/*
-	std::ifstream indirection_file("world/indirection_pool.txt");
-	while (indirection_file >> val)
+	// TODO: memcpy instead, or maybe directly link the buffer's mapping to the world object?
+	for (unsigned int i = 0; i < 1024; i++)
 	{
-		world_.indirection_pool_[index] = val;
-		index++;
+		((int*)indirection_pool_ssbo_.getMappedPtr())[i] = (world_->getIndirectionPool())[i];
+		//((int*)indirection_pool_ssbo_.getMappedPtr())[i] = 1;
 	}
-	*/
-	index = 0;
-	std::ifstream voxel_type_file("world/voxel_type_pool.txt");
-	while (voxel_type_file >> val)
+	for (unsigned int i = 0; i < 256; i++)
 	{
-		//world_.voxel_type_pool_[index] = val;
-		((int*)voxel_type_pool_ssbo_.getMappedPtr())[index] = val;
-		index++;
+		((char*)uniformity_pool_ssbo_.getMappedPtr())[i] = (world_->getUniformityPool())[i];
 	}
-
-
-	unsigned int next_free_index = 1;
-	for (unsigned int i = 0; i < world_.num_indices_; i++)
+	for (unsigned int i = 0; i < 1024; i++)
 	{
-		if (i >= (1 << 30)) break;
-		for (unsigned int j = 0; j < 8; j++)
-		{
-			int k = i*8 + j;
-			if (j == 0 || j == 3 || j == 5 || j == 6)
-			{
-				//world_.indirection_pool_[k] = next_free_index++;
-				//world_.indirection_pool_[k] = 1;
-				((int*)indirection_pool_ssbo_.getMappedPtr())[k] = 1;
-			}
-			else
-			{
-				//world_.indirection_pool_[k] = 0;
-				((int*)indirection_pool_ssbo_.getMappedPtr())[k] = 0;
-			}
-		}
-		if (i > 21844)
-			world_.voxel_type_pool_[i] = 1;
-		else
-			world_.voxel_type_pool_[i] = 0;
-		world_.lod_pool_[i] = 0x000000FF; // White, opaque
+		((int*)voxel_type_pool_ssbo_.getMappedPtr())[i] = (world_->getVoxelTypePool())[i];
 	}
 	return;
 }
@@ -610,21 +584,28 @@ void Anthrax::createBuffers()
 	// ssbos
 	indirection_pool_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			8 * sizeof(uint32_t) * world_.num_indices_,
+			512 * sizeof(uint32_t) * world_->getNumIndices(),
+			Buffer::STORAGE_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	uniformity_pool_ssbo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			64 * world_->getNumIndices(),
 			Buffer::STORAGE_TYPE,
 			0,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	voxel_type_pool_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			sizeof(uint32_t) * world_.num_indices_,
+			sizeof(uint32_t) * world_->getNumIndices(),
 			Buffer::STORAGE_TYPE,
 			0,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 
 	// ubos
-	octree_layers_ubo_ = Buffer(
+	num_levels_ubo_= Buffer(
 			vulkan_manager_->getDevice(),
 			4,
 			Buffer::UNIFORM_TYPE,
