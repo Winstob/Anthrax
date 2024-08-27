@@ -122,7 +122,7 @@ vec2 screen_position = vec2(gl_GlobalInvocationID.x, -gl_GlobalInvocationID.y+sc
 // forward function declarations
 vec3 calculateMainRayDirection();
 uint getVoxelType(ufvec3 world_position);
-void rayMarch(inout Ray ray);
+bool rayMarch(inout Ray ray);
 
 uint readIndirectionPool(in uint base_location, in uint node_index);
 uint readUniformityPool(in uint base_location, in uint node_index);
@@ -148,10 +148,9 @@ void main()
 	uint voxel_type = 0;
 	for (uint i = 0; i < 100; i++)
 	{
-		rayMarch(ray);
-		voxel_type = getVoxelType(ray.world_location);
-		if (voxel_type != 0)
+		if (!rayMarch(ray))
 		{
+			voxel_type = getVoxelType(ray.world_location);
 			break;
 		}
 	}
@@ -161,7 +160,8 @@ void main()
 	}
 	else
 	{
-		imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(1.0, 1.0, 1.0, 1.0));
+		//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(1.0, 1.0, 1.0, 1.0));
+		imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.world_location.dec_component, 1.0));
 	}
 	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.direction, 1.0));
 	return;
@@ -183,31 +183,183 @@ uint getVoxelType(ufvec3 world_position)
 	uint current_node_index = 0;
 	uint level = num_levels - 1;
 	// starting at the top level, descend until a uniform level is reached
-	for (; level > 0; level--)
+	for (; level >= 0;)
 	{
 		current_node_index = 0;
 		current_node_index |= ((world_position.int_component.x >> (3*level)) & 7);
 		current_node_index |= ((world_position.int_component.y >> (3*level)) & 7) << 3; 
 		current_node_index |= ((world_position.int_component.z >> (3*level)) & 7) << 6;
+		if (level == 0) break;
 
 		if (readUniformityPool(indirection_pointer, current_node_index) == 1)
 		{
 			break;
 		}
 
-		indirection_pointer = readIndirectionPool(indirection_pointer, current_node_index);
+		uint next_indirection_pointer = readIndirectionPool(indirection_pointer, current_node_index);
+		if (next_indirection_pointer == 0)
+		{
+			break;
+		}
+		indirection_pointer = next_indirection_pointer;
+		level--;
 	}
 	return readVoxelTypePool(indirection_pointer, current_node_index);
 }
 
 
-void rayMarch(inout Ray ray)
+bool rayMarch(inout Ray ray)
 {
-	ufvec3 step_addition;
-	step_addition.int_component = uvec3(0);
-	step_addition.dec_component = normalize(ray.direction);
-	ray.world_location = uf3Add(ray.world_location, step_addition);
-	return;
+	uint indirection_pointer = 0;
+	uint current_node_index = 0;
+	uint level = num_levels - 1;
+	// starting at the top level, descend until a uniform level is reached
+	while (true)
+	{
+		current_node_index = 0;
+		current_node_index |= ((ray.world_location.int_component.x >> (3*level)) & 7u);
+		current_node_index |= ((ray.world_location.int_component.y >> (3*level)) & 7u) << 3; 
+		current_node_index |= ((ray.world_location.int_component.z >> (3*level)) & 7u) << 6;
+		if (level == 0) break;
+
+		if (readUniformityPool(indirection_pointer, current_node_index) == 1)
+		{
+			break;
+		}
+
+		uint new_indirection_pointer = readIndirectionPool(indirection_pointer, current_node_index);
+		if (new_indirection_pointer == 0)
+		{
+			break;
+		}
+		indirection_pointer = new_indirection_pointer;
+		level--;
+	}
+	uint voxel_type = readVoxelTypePool(indirection_pointer, current_node_index);
+	if (voxel_type != 0)
+	{
+		return false;
+	}
+
+	// find location of the corner in the general direction of the ray
+	ufvec3 edge_location = ray.world_location;
+	ufvec3 outside_edge_location;
+	ufvec3 difference;
+	uint max_value_within_level_single_axis = (0xFFFFFFFFu >> (32-(3*level)));
+	if (level == 0) max_value_within_level_single_axis = 0u; // 1 >> 1 = 1: special case
+	bvec3 axis_leaves_boundary = bvec3(false);
+	for (uint i = 0; i < 3; i++)
+	{
+		if (ray.direction[i] >= 0.0)
+		{
+			edge_location.int_component[i] |= max_value_within_level_single_axis;
+			edge_location.dec_component[i] = 1.0;
+			outside_edge_location.int_component[i] = edge_location.int_component[i] + 1;
+			outside_edge_location.dec_component[i] = 0.0;
+			difference.int_component[i] = edge_location.int_component[i] - ray.world_location.int_component[i];
+			difference.dec_component[i] = edge_location.dec_component[i] - ray.world_location.dec_component[i];
+			if (edge_location.int_component[i] == (0xFFFFFFFFu >> (32-(3*num_levels))))
+				axis_leaves_boundary[i] = true;
+		}
+		else
+		{
+			edge_location.int_component[i] &= ~(max_value_within_level_single_axis);
+			edge_location.dec_component[i] = 0.0;
+			outside_edge_location.int_component[i] = edge_location.int_component[i] - 1;
+			outside_edge_location.dec_component[i] = 1.0;
+			difference.int_component[i] = ray.world_location.int_component[i] - edge_location.int_component[i]; 
+			difference.dec_component[i] = ray.world_location.dec_component[i] - edge_location.dec_component[i];
+			if (edge_location.int_component[i] == 0u)
+				axis_leaves_boundary[i] = true;
+		}
+	}
+	// correct for difference = 0 (divide by 0) case
+	// TODO: make this better
+	for (uint i = 0; i < 3; i++)
+	{
+		if (difference.int_component[i] == 0 && difference.dec_component[i] == 0.0)
+			difference.dec_component[i] = 0.001;
+	}
+
+	// find dominant axis
+	/*
+	float tmp = float(difference.int_component) / ray.direction;
+	ufvec3 tmp_ivec3;
+	tmp_ivec3.int_component = uvec3(tmp);
+	tmp_ivec3.dec_component = tmp - vec3(tmp_vec3.int_component);
+	ufvec3 tmp_vec3;
+	tmp_vec3.int_component = uvec3(0);
+	tmp_vec3.dec_component = difference.dec_component / ray.direction;
+	ufvec3 travel_multipliers = uf3Add(tmp_ivec3, tmp_vec3);
+	*/
+	// TODO: use ufvec3 for travel_multipliers - this method is extremely lossy at higher values
+	vec3 travel_multipliers = (vec3(difference.int_component) + difference.dec_component) / abs(ray.direction);
+	//travel_multipliers *= sign(travel_multipliers);
+
+	bool out_of_bounds = false;
+
+	if (travel_multipliers.x < travel_multipliers.y && travel_multipliers.x < travel_multipliers.z)
+	{
+		// x is the dominant axis
+		if (!axis_leaves_boundary.x)
+		{
+			ray.world_location.int_component.x = outside_edge_location.int_component.x;
+			ray.world_location.dec_component.x = outside_edge_location.dec_component.x;
+		}
+		else
+		{
+			ray.world_location.int_component.x = edge_location.int_component.x;
+			ray.world_location.dec_component.x = edge_location.dec_component.x;
+			out_of_bounds = true;
+		}
+
+    vec2 tmp = vec2(ray.world_location.int_component.yz) + ray.world_location.dec_component.yz;
+    tmp += ray.direction.yz * travel_multipliers.x;
+    ray.world_location.int_component.yz = uvec2(tmp);
+    ray.world_location.dec_component.yz = tmp - vec2(ray.world_location.int_component.yz);
+	}
+	else if (travel_multipliers.y < travel_multipliers.z)
+	{
+		// y is the dominant axis
+		if (!axis_leaves_boundary.y)
+		{
+			ray.world_location.int_component.y = outside_edge_location.int_component.y;
+			ray.world_location.dec_component.y = outside_edge_location.dec_component.y;
+		}
+		else
+		{
+			ray.world_location.int_component.y = edge_location.int_component.y;
+			ray.world_location.dec_component.y = edge_location.dec_component.y;
+			out_of_bounds = true;
+		}
+
+    vec2 tmp = vec2(ray.world_location.int_component.xz) + ray.world_location.dec_component.xz;
+    tmp += ray.direction.xz * travel_multipliers.y;
+    ray.world_location.int_component.xz = uvec2(tmp);
+    ray.world_location.dec_component.xz = tmp - vec2(ray.world_location.int_component.xz);
+	}
+	else
+	{
+		// z is the dominant axis
+		if (!axis_leaves_boundary.z)
+		{
+			ray.world_location.int_component.z = outside_edge_location.int_component.z;
+			ray.world_location.dec_component.z = outside_edge_location.dec_component.z;
+		}
+		else
+		{
+			ray.world_location.int_component.z = edge_location.int_component.z;
+			ray.world_location.dec_component.z = edge_location.dec_component.z;
+			out_of_bounds = true;
+		}
+
+    vec2 tmp = vec2(ray.world_location.int_component.xy) + ray.world_location.dec_component.xy;
+    tmp += ray.direction.xy * travel_multipliers.z;
+    ray.world_location.int_component.xy = uvec2(tmp);
+    ray.world_location.dec_component.xy = tmp - vec2(ray.world_location.int_component.xy);
+	}
+	if (out_of_bounds) return false;
+	return true;
 }
 
 
