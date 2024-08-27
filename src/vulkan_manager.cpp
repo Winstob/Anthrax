@@ -11,8 +11,7 @@
 #include <limits>
 #include <cstring>
 
-#define xstr(s) str(s)
-#define str(s) #s
+#define WORKGROUP_SIZE 8
 
 namespace Anthrax
 {
@@ -90,7 +89,7 @@ void VulkanManager::drawFrame()
 	// TODO: compute buffer updates should really go here. Maybe when buffers are moved away from host-visible memory, set them up for transfers normally and initiate the transfer here.
 	vkResetFences(device_.logical, 1, &compute_in_flight_fence_);
 	vkResetCommandBuffer(compute_command_buffer_, 0);
-	compute_shader_manager_.recordCommandBuffer(compute_command_buffer_, window_width_, window_height_, 1);
+	compute_shader_manager_.recordCommandBuffer(compute_command_buffer_, ceil((float)window_width_/WORKGROUP_SIZE), ceil((float)window_height_/WORKGROUP_SIZE), 1);
 
 	VkSubmitInfo compute_submit_info{};
 	compute_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;

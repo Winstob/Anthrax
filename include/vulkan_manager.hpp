@@ -15,6 +15,7 @@
 #include <string>
 #include <optional>
 #include <fstream>
+#include <math.h>
 
 #include "device.hpp"
 #include "render_pass.hpp"
