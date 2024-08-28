@@ -21,6 +21,7 @@
 #include "render_pass.hpp"
 #include "compute_shader_manager.hpp"
 #include "swap_chain.hpp"
+#include "input_handler.hpp"
 
 namespace Anthrax
 {
@@ -44,6 +45,11 @@ public:
 	void computePassAddBuffer(Buffer buffer) { compute_pass_buffers_.push_back(buffer); }
 	void computePassAddImage(Image image) { compute_pass_images_.push_back(image); }
 	void wait() { vkDeviceWaitIdle(device_.logical); }
+
+	GLFWAPI int getKey(int key) { return input_handler_.getKey(key); }
+	float getFrameTime() { return input_handler_.getFrameTime(); }
+	float getMouseMovementX() { return input_handler_.getMouseMovementX(); }
+	float getMouseMovementY() { return input_handler_.getMouseMovementY(); }
 
 private:
 	void destroy();
@@ -130,6 +136,9 @@ private:
 	std::vector<Image> render_pass_images_;
 	std::vector<Buffer> compute_pass_buffers_;
 	std::vector<Image> compute_pass_images_;
+
+	InputHandler input_handler_;
+	float frame_time_ = 0.0;
 
 };
 

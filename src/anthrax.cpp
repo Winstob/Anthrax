@@ -22,9 +22,6 @@ namespace Anthrax
 {
 
 // Static member allocation
-GLFWwindow *Anthrax::window_;
-float Anthrax::mouse_x_;
-float Anthrax::mouse_y_;
 unsigned int Anthrax::window_width_ = 0;
 unsigned int Anthrax::window_height_ = 0;
 bool Anthrax::window_size_changed_ = false;
@@ -63,7 +60,7 @@ Anthrax::~Anthrax()
 
 	delete world_;
 	delete vulkan_manager_;
-	exit();
+	//exit();
 }
 
 
@@ -131,9 +128,12 @@ void Anthrax::exit()
 	glDeleteBuffers(1, &lod_pool_ssbo_);
 	*/
 
+	/*
 	vkDestroyInstance(vulkan_instance_, nullptr);
 	glfwDestroyWindow(window_);
 	glfwTerminate();
+	*/
+	return;
 }
 
 
@@ -156,6 +156,7 @@ void Anthrax::renderFrame()
 	*((glm::vec3*)camera_up_ubo_.getMappedPtr()) = camera_.getUpLookDirection();
 	*((glm::vec3*)camera_forward_ubo_.getMappedPtr()) = camera_.getForwardLookDirection();
 	vulkan_manager_->drawFrame();
+
 	/*
 	if (window_size_changed_)
 	{
@@ -163,18 +164,6 @@ void Anthrax::renderFrame()
 		mainFramebufferSetup();
 		textFramebufferSetup();
 	}
-
-	float current_time = static_cast<float>(glfwGetTime());
-	if (previous_frame_time_ != 0.0)
-	{
-		frame_time_difference_ = current_time - previous_frame_time_;
-	}
-	previous_frame_time_ = current_time;
-	mouse_x_difference_ = mouse_x_ - previous_mouse_x_;
-	previous_mouse_x_ = mouse_x_;
-	mouse_y_difference_ = mouse_y_ - previous_mouse_y_;
-	previous_mouse_y_ = mouse_y_;
-	updateCamera();
 
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
@@ -321,42 +310,45 @@ void Anthrax::initializeWorldSSBOs()
 
 void Anthrax::updateCamera()
 {
+	/*
 	camera_.position[0] = 10.0*glm::sin(glfwGetTime()/1.0);
 	camera_.position[1] = 10.0*glm::cos(glfwGetTime()/1.0);
-	/*
+	*/
+
 	// Update rotation
 	float sensitivity = 0.01;
-	glm::quat yaw_quaternion = glm::angleAxis(sensitivity*(-mouse_x_difference_), camera_.getUpDirection());
-	glm::quat pitch_quaternion = glm::angleAxis(sensitivity*(-mouse_y_difference_), camera_.getRightLookDirection());
+	glm::quat yaw_quaternion = glm::angleAxis(sensitivity*(-vulkan_manager_->getMouseMovementX()), camera_.getUpDirection());
+	glm::quat pitch_quaternion = glm::angleAxis(sensitivity*(-vulkan_manager_->getMouseMovementY()), camera_.getRightLookDirection());
 	camera_.rotation = glm::normalize(yaw_quaternion * pitch_quaternion * camera_.rotation);
 
 	// Update position
 	glm::vec3 motion_direction = glm::vec3(0.0, 0.0, 0.0);
 	float walking_speed = 1.5; // meters per second
 	float speed_multiplier = walking_speed * 100.0f; // Each voxel is 1cm in width
-	float motion_multiplier = frame_time_difference_ * speed_multiplier;
+	float motion_multiplier = vulkan_manager_->getFrameTime() * speed_multiplier;
 
-	if (glfwGetKey(window_, GLFW_KEY_A) == GLFW_PRESS)
+	//std::cout << vulkan_manager_->getKey(GLFW_KEY_W) << std::endl;
+	if (vulkan_manager_->getKey(GLFW_KEY_A) == GLFW_PRESS)
 	{
 		motion_direction.x += -1.0;
 	}
-	if (glfwGetKey(window_, GLFW_KEY_D) == GLFW_PRESS)
+	if (vulkan_manager_->getKey(GLFW_KEY_D) == GLFW_PRESS)
 	{
 		motion_direction.x += 1.0;
 	}
-	if (glfwGetKey(window_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+	if (vulkan_manager_->getKey(GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
 	{
 		motion_direction.y += -1.0;
 	}
-	if (glfwGetKey(window_, GLFW_KEY_SPACE) == GLFW_PRESS)
+	if (vulkan_manager_->getKey(GLFW_KEY_SPACE) == GLFW_PRESS)
 	{
 		motion_direction.y += 1.0;
 	}
-	if (glfwGetKey(window_, GLFW_KEY_W) == GLFW_PRESS)
+	if (vulkan_manager_->getKey(GLFW_KEY_W) == GLFW_PRESS)
 	{
 		motion_direction.z += -1.0;
 	}
-	if (glfwGetKey(window_, GLFW_KEY_S) == GLFW_PRESS)
+	if (vulkan_manager_->getKey(GLFW_KEY_S) == GLFW_PRESS)
 	{
 		motion_direction.z += 1.0;
 	}
@@ -368,7 +360,7 @@ void Anthrax::updateCamera()
 	camera_.position[0] += motion_direction.x;
 	camera_.position[1] += motion_direction.y;
 	camera_.position[2] += motion_direction.z;
-	*/
+
 	return;
 }
 
@@ -695,44 +687,6 @@ void Anthrax::createBuffers()
 	*/
 
 	return;
-}
-
-
-// ----------------------------------------------------------------
-// Callbacks
-// ----------------------------------------------------------------
-
-void Anthrax::framebufferSizeCallback(GLFWwindow *window, int width, int height)
-{
-	/*
-	glViewport(0, 0, width, height);
-	window_width_ = width;
-	window_height_ = height;
-	window_size_changed_ = true;
-	*/
-}
-
-
-void Anthrax::cursorPosCallback(GLFWwindow *window, double xpos, double ypos)
-{
-	mouse_x_ = static_cast<float>(xpos);
-	mouse_y_ = static_cast<float>(ypos);
-}
-
-
-void Anthrax::scrollCallback(GLFWwindow *window, double xoffset, double yoffset)
-{
-}
-
-
-void Anthrax::keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
-{
-	/*
-	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-	{
-		glfwSetWindowShouldClose(window_, GL_TRUE);
-	}
-	*/
 }
 
 } // namespace Anthrax

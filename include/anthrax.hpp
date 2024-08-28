@@ -54,6 +54,8 @@ public:
 	unsigned int addText(std::string text, float x, float y, float scale, float colorx, float colory, float colorz) { return addText(text, x, y, scale, glm::vec3(colorx, colory, colorz)); }
 	int removeText(unsigned int id);
 
+	int8_t dayna;
+
 private:
 	VulkanManager *vulkan_manager_;
 	void pickPhysicalDevice();
@@ -77,17 +79,6 @@ private:
 	Shader *screen_pass_shader_;
 	*/
 
-	static GLFWwindow* window_;
-	VkInstance vulkan_instance_;
-
-	float previous_frame_time_ = 0.0;
-	float frame_time_difference_ = 0.0;
-	static float mouse_x_;
-	static float mouse_y_;
-	float previous_mouse_x_;
-	float previous_mouse_y_;
-	float mouse_x_difference_;
-	float mouse_y_difference_;
 	// Settings
 	static unsigned int window_width_;
 	static unsigned int window_height_;
@@ -116,7 +107,6 @@ private:
 	Image raymarched_image_;
 	// ubos
 	Buffer num_levels_ubo_, focal_distance_ubo_, screen_width_ubo_, screen_height_ubo_, camera_position_ubo_, camera_right_ubo_, camera_up_ubo_, camera_forward_ubo_, sunlight_ubo_;
-
 
 };
 

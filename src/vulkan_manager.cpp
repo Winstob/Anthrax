@@ -56,6 +56,10 @@ void VulkanManager::init()
 	createAnthraxDevice();
 	createSwapChain();
 	createImageViews();
+
+	input_handler_ = InputHandler(window_);
+	input_handler_.captureMouse();
+
 	return;
 }
 
@@ -153,6 +157,12 @@ void VulkanManager::drawFrame()
 		throw std::runtime_error("Failed to acquire swap chain image");
 	}
 	glfwPollEvents();
+
+	// set up input handler for a new frame
+	input_handler_.beginNewFrame();
+	input_handler_.getMouseMovementX();
+	input_handler_.getMouseMovementY();
+
 	return;
 }
 
@@ -160,6 +170,8 @@ void VulkanManager::drawFrame()
 void VulkanManager::destroy()
 {
 	vkDeviceWaitIdle(device_.logical); // Wait for any asynchronous operations to finish
+
+	input_handler_.destroy();
 
 	// Buffers/Images
 	/*
