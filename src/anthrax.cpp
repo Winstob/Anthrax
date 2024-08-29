@@ -31,7 +31,7 @@ Anthrax::Anthrax()
 {
 	window_width_ = 800;
 	window_height_ = 600;
-	int world_size = 3;
+	int world_size = 4;
 	world_ = new World(world_size);
 	//camera_ = Camera(glm::vec3(pow(2, world_size-3), pow(2, world_size-3), 0.0));
 	camera_ = Camera(glm::vec3(0.0, 0.0, 0.0));
@@ -267,16 +267,16 @@ void Anthrax::initializeShaders()
 void Anthrax::createWorld()
 {
 	// TODO: memcpy instead, or maybe directly link the buffer's mapping to the world object?
-	for (unsigned int i = 0; i < 1024; i++)
+	for (unsigned int i = 0; i < world_->getNumIndices()*512; i++)
 	{
 		((int*)indirection_pool_ssbo_.getMappedPtr())[i] = (world_->getIndirectionPool())[i];
 		//((int*)indirection_pool_ssbo_.getMappedPtr())[i] = 1;
 	}
-	for (unsigned int i = 0; i < 256; i++)
+	for (unsigned int i = 0; i < world_->getNumIndices()*64; i++)
 	{
 		((char*)uniformity_pool_ssbo_.getMappedPtr())[i] = (world_->getUniformityPool())[i];
 	}
-	for (unsigned int i = 0; i < 1024; i++)
+	for (unsigned int i = 0; i < world_->getNumIndices()*512; i++)
 	{
 		((int*)voxel_type_pool_ssbo_.getMappedPtr())[i] = (world_->getVoxelTypePool())[i];
 	}
@@ -590,7 +590,7 @@ void Anthrax::createBuffers()
 			);
 	voxel_type_pool_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			sizeof(uint32_t) * world_->getNumIndices(),
+			512 * sizeof(uint32_t) * world_->getNumIndices(),
 			Buffer::STORAGE_TYPE,
 			0,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT

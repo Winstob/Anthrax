@@ -41,7 +41,7 @@ private:
 	int num_layers_;
 	int num_indices_;
 
-	size_t indirection_pool_size_ = MB(4); // The size of the indirection pool in bytes
+	size_t gpu_buffer_size_ = MB(1024); // The maximum size of a buffer in the GPU
 
 };
 

@@ -150,7 +150,8 @@ void main()
 	ray.direction = calculateMainRayDirection();
 	ray.world_location = camera_position;
 	uint voxel_type = 0;
-	for (uint i = 0; i < 100; i++)
+	uint max_steps = uint(pow(8, num_levels));
+	for (uint i = 0; i < max_steps; i++)
 	{
 		if (!rayMarch(ray))
 		{
