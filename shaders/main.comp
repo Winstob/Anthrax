@@ -31,7 +31,7 @@ struct WorldLocation
   vec3 dec_component;
 	*/
 	ufvec3 loc;
-	uint level;
+	uint layer;
 };
 
 struct DirectedLight
@@ -65,9 +65,9 @@ layout (std430, binding = 2) readonly buffer voxel_type_pool_ssbo
 	uint voxel_type_pool[];
 };
 
-layout (std140, binding = 3) uniform num_levels_ubo
+layout (std140, binding = 3) uniform num_layers_ubo
 {
-	int num_levels;
+	int num_layers;
 };
 
 layout (std140, binding = 4) uniform focal_distance_ubo
@@ -150,7 +150,7 @@ void main()
 	ray.direction = calculateMainRayDirection();
 	ray.world_location = camera_position;
 	uint voxel_type = 0;
-	uint max_steps = uint(pow(8, num_levels));
+	uint max_steps = uint(pow(8, num_layers));
 	for (uint i = 0; i < max_steps; i++)
 	{
 		if (!rayMarch(ray))
@@ -186,15 +186,15 @@ uint getVoxelType(ufvec3 world_position)
 {
 	uint indirection_pointer = 0;
 	uint current_node_index = 0;
-	uint level = num_levels - 1;
-	// starting at the top level, descend until a uniform level is reached
-	for (; level >= 0;)
+	uint layer = num_layers - 1;
+	// starting at the top layer, descend until a uniform layer is reached
+	for (; layer >= 0;)
 	{
 		current_node_index = 0;
-		current_node_index |= ((world_position.int_component.x >> (3*level)) & 7);
-		current_node_index |= ((world_position.int_component.y >> (3*level)) & 7) << 3; 
-		current_node_index |= ((world_position.int_component.z >> (3*level)) & 7) << 6;
-		if (level == 0) break;
+		current_node_index |= ((world_position.int_component.x >> (3*layer)) & 7);
+		current_node_index |= ((world_position.int_component.y >> (3*layer)) & 7) << 3; 
+		current_node_index |= ((world_position.int_component.z >> (3*layer)) & 7) << 6;
+		if (layer == 0) break;
 
 		if (readUniformityPool(indirection_pointer, current_node_index) == 1)
 		{
@@ -207,7 +207,7 @@ uint getVoxelType(ufvec3 world_position)
 			break;
 		}
 		indirection_pointer = next_indirection_pointer;
-		level--;
+		layer--;
 	}
 	return readVoxelTypePool(indirection_pointer, current_node_index);
 }
@@ -217,15 +217,15 @@ bool rayMarch(inout Ray ray)
 {
 	uint indirection_pointer = 0;
 	uint current_node_index = 0;
-	uint level = num_levels - 1;
-	// starting at the top level, descend until a uniform level is reached
+	uint layer = num_layers - 1;
+	// starting at the top layer, descend until a uniform layer is reached
 	while (true)
 	{
 		current_node_index = 0;
-		current_node_index |= ((ray.world_location.int_component.x >> (3*level)) & 7u);
-		current_node_index |= ((ray.world_location.int_component.y >> (3*level)) & 7u) << 3; 
-		current_node_index |= ((ray.world_location.int_component.z >> (3*level)) & 7u) << 6;
-		if (level == 0) break;
+		current_node_index |= ((ray.world_location.int_component.x >> (3*layer)) & 7u);
+		current_node_index |= ((ray.world_location.int_component.y >> (3*layer)) & 7u) << 3; 
+		current_node_index |= ((ray.world_location.int_component.z >> (3*layer)) & 7u) << 6;
+		if (layer == 0) break;
 
 		if (readUniformityPool(indirection_pointer, current_node_index) == 1)
 		{
@@ -238,7 +238,7 @@ bool rayMarch(inout Ray ray)
 			break;
 		}
 		indirection_pointer = new_indirection_pointer;
-		level--;
+		layer--;
 	}
 	uint voxel_type = readVoxelTypePool(indirection_pointer, current_node_index);
 	if (voxel_type != 0)
@@ -250,25 +250,25 @@ bool rayMarch(inout Ray ray)
 	ufvec3 edge_location = ray.world_location;
 	ufvec3 outside_edge_location;
 	ufvec3 difference;
-	uint max_value_within_level_single_axis = (0xFFFFFFFFu >> (32-(3*level)));
-	if (level == 0) max_value_within_level_single_axis = 0u; // 1 >> 1 = 1: special case
+	uint max_value_within_layer_single_axis = (0xFFFFFFFFu >> (32-(3*layer)));
+	if (layer == 0) max_value_within_layer_single_axis = 0u; // 1 >> 1 = 1: special case
 	bvec3 axis_leaves_boundary = bvec3(false);
 	for (uint i = 0; i < 3; i++)
 	{
 		if (ray.direction[i] >= 0.0)
 		{
-			edge_location.int_component[i] |= max_value_within_level_single_axis;
+			edge_location.int_component[i] |= max_value_within_layer_single_axis;
 			edge_location.dec_component[i] = 1.0;
 			outside_edge_location.int_component[i] = edge_location.int_component[i] + 1;
 			outside_edge_location.dec_component[i] = 0.0;
 			difference.int_component[i] = edge_location.int_component[i] - ray.world_location.int_component[i];
 			difference.dec_component[i] = edge_location.dec_component[i] - ray.world_location.dec_component[i];
-			if (edge_location.int_component[i] == (0xFFFFFFFFu >> (32-(3*num_levels))))
+			if (edge_location.int_component[i] == (0xFFFFFFFFu >> (32-(3*num_layers))))
 				axis_leaves_boundary[i] = true;
 		}
 		else
 		{
-			edge_location.int_component[i] &= ~(max_value_within_level_single_axis);
+			edge_location.int_component[i] &= ~(max_value_within_layer_single_axis);
 			edge_location.dec_component[i] = 0.0;
 			outside_edge_location.int_component[i] = edge_location.int_component[i] - 1;
 			outside_edge_location.dec_component[i] = 1.0;
