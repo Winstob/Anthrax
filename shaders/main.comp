@@ -118,6 +118,11 @@ struct Ray
 {
 	vec3 direction;
 	ufvec3 world_location;
+	ufvec3 next_x_intersection;
+	ufvec3 next_y_intersection;
+	ufvec3 next_z_intersection;
+	uint previous_indirection_pointer;
+	bool valid_indirection_pointer;
 };
 
 
@@ -125,8 +130,9 @@ vec2 screen_position = vec2(gl_GlobalInvocationID.x, -gl_GlobalInvocationID.y+sc
 
 // forward function declarations
 vec3 calculateMainRayDirection();
-uint getVoxelType(ufvec3 world_position);
+uint getVoxelType(in ufvec3 world_position);
 bool rayMarch(inout Ray ray);
+void findNextIntersection(inout Ray ray, in uint layer, in uint xyz_index);
 
 uint readIndirectionPool(in uint base_location, in uint node_index);
 uint readUniformityPool(in uint base_location, in uint node_index);
@@ -149,8 +155,11 @@ void main()
 	Ray ray;
 	ray.direction = calculateMainRayDirection();
 	ray.world_location = camera_position;
+	//ray.previous_layer = 0xFFFFFFFF; // There will probably never be this many layers, so this should safely invalidate the initial test
+	ray.valid_indirection_pointer = false;
 	uint voxel_type = 0;
-	uint max_steps = uint(pow(8, num_layers));
+	//uint max_steps = uint(pow(8, num_layers));
+	uint max_steps = 100;
 	for (uint i = 0; i < max_steps; i++)
 	{
 		if (!rayMarch(ray))
@@ -182,7 +191,7 @@ vec3 calculateMainRayDirection()
 }
 
 
-uint getVoxelType(ufvec3 world_position)
+uint getVoxelType(in ufvec3 world_position)
 {
 	uint indirection_pointer = 0;
 	uint current_node_index = 0;
@@ -218,6 +227,7 @@ bool rayMarch(inout Ray ray)
 	uint indirection_pointer = 0;
 	uint current_node_index = 0;
 	uint layer = num_layers - 1;
+	// discover the current layer's location within the indirection pool
 	// starting at the top layer, descend until a uniform layer is reached
 	while (true)
 	{
@@ -246,127 +256,127 @@ bool rayMarch(inout Ray ray)
 		return false;
 	}
 
-	// find location of the corner in the general direction of the ray
-	ufvec3 edge_location = ray.world_location;
-	ufvec3 outside_edge_location;
-	ufvec3 difference;
+	//bvec3 axis_leaves_boundary = bvec3(false);
+
+	if (indirection_pointer != ray.previous_indirection_pointer || !ray.valid_indirection_pointer)
+	{
+		// need to find next intersections
+		for (uint i = 0; i < 3; i++)
+		{
+			findNextIntersection(ray, layer, i);
+		}
+		ray.previous_indirection_pointer = indirection_pointer;
+		ray.valid_indirection_pointer = true;
+	}
+
+	// calculate distances to each intersection
+	// TODO: convert to ufvec3
+	vec3 distances_to_intersections;
+	distances_to_intersections.x = length((vec3(ray.next_x_intersection.int_component)+ray.next_x_intersection.dec_component) - (vec3(ray.world_location.int_component)+ray.world_location.dec_component)) / abs(ray.direction.x);
+	distances_to_intersections.y = length((vec3(ray.next_y_intersection.int_component)+ray.next_y_intersection.dec_component) - (vec3(ray.world_location.int_component)+ray.world_location.dec_component)) / abs(ray.direction.y);
+	distances_to_intersections.z = length((vec3(ray.next_z_intersection.int_component)+ray.next_z_intersection.dec_component) - (vec3(ray.world_location.int_component)+ray.world_location.dec_component)) / abs(ray.direction.z);
+
+	float min_distance = min(min(distances_to_intersections.x, distances_to_intersections.y), distances_to_intersections.z);
+	/*
+	float min_distance;
+	if (distances_to_intersections.x <= distances_to_intersections.y && distances_to_intersections.x <= distances_to_intersections.z) min_distance = distances_to_intersections.x;
+	else if (distances_to_intersections.y <= distances_to_intersections.z) min_distance = distances_to_intersections.y;
+	else min_distance = distances_to_intersections.z;
+	*/
+	uint xyz_index;
+	if (distances_to_intersections.x == min_distance)
+	{
+		ray.world_location = ray.next_x_intersection;
+		xyz_index = 0;
+	}
+	else if (distances_to_intersections.y == min_distance)
+	{
+		ray.world_location = ray.next_y_intersection;
+		xyz_index = 1;
+	}
+	else
+	{
+		ray.world_location = ray.next_z_intersection;
+		xyz_index = 2;
+	}
+
+	// find new next intersection
+	findNextIntersection(ray, layer, xyz_index);
+
+	//if (out_of_bounds) return false;
+	return true;
+}
+
+
+void findNextIntersection(inout Ray ray, in uint layer, in uint xyz_index)
+{
+	uint anti_xyz_index1 = uint(mod(xyz_index + 1, 3));
+	uint anti_xyz_index2 = uint(mod(xyz_index + 2, 3));
+
+	ufvec3 next_intersection = ray.world_location;
+
+	// find location of the outer edge in the general direction of the ray
+	uinfl outer_edge_location;
 	uint max_value_within_layer_single_axis = (0xFFFFFFFFu >> (32-(3*layer)));
 	if (layer == 0) max_value_within_layer_single_axis = 0u; // 1 >> 1 = 1: special case
 	bvec3 axis_leaves_boundary = bvec3(false);
-	for (uint i = 0; i < 3; i++)
+
+	uinfl difference;
+	if (ray.direction[xyz_index] >= 0.0)
 	{
-		if (ray.direction[i] >= 0.0)
-		{
-			edge_location.int_component[i] |= max_value_within_layer_single_axis;
-			edge_location.dec_component[i] = 1.0;
-			outside_edge_location.int_component[i] = edge_location.int_component[i] + 1;
-			outside_edge_location.dec_component[i] = 0.0;
-			difference.int_component[i] = edge_location.int_component[i] - ray.world_location.int_component[i];
-			difference.dec_component[i] = edge_location.dec_component[i] - ray.world_location.dec_component[i];
-			if (edge_location.int_component[i] == (0xFFFFFFFFu >> (32-(3*num_layers))))
-				axis_leaves_boundary[i] = true;
-		}
-		else
-		{
-			edge_location.int_component[i] &= ~(max_value_within_layer_single_axis);
-			edge_location.dec_component[i] = 0.0;
-			outside_edge_location.int_component[i] = edge_location.int_component[i] - 1;
-			outside_edge_location.dec_component[i] = 1.0;
-			difference.int_component[i] = ray.world_location.int_component[i] - edge_location.int_component[i]; 
-			difference.dec_component[i] = ray.world_location.dec_component[i] - edge_location.dec_component[i];
-			if (edge_location.int_component[i] == 0u)
-				axis_leaves_boundary[i] = true;
-		}
+		outer_edge_location.int_component = (ray.world_location.int_component[xyz_index] | max_value_within_layer_single_axis) + 1;
+		outer_edge_location.dec_component = 0.0;
+		difference.int_component = outer_edge_location.int_component - ray.world_location.int_component[xyz_index] - 1;
+		difference.dec_component = 1.0 - ray.world_location.dec_component[xyz_index];
 	}
-	// correct for difference = 0 (divide by 0) case
-	// TODO: make this better
-	for (uint i = 0; i < 3; i++)
+	else
 	{
-		if (difference.int_component[i] == 0 && difference.dec_component[i] == 0.0)
-			difference.dec_component[i] = 0.001;
+		outer_edge_location.int_component = (ray.world_location.int_component[xyz_index] & ~max_value_within_layer_single_axis) - 1;
+		outer_edge_location.dec_component = 1.0;
+		difference.int_component = ray.world_location.int_component[xyz_index] - outer_edge_location.int_component - 1;
+		difference.dec_component = ray.world_location.dec_component[xyz_index];
 	}
 
-	// find dominant axis
+
+	// solve for next intersections
 	/*
-	float tmp = float(difference.int_component) / ray.direction;
+	float tmp = float(differences.int_component) / ray.direction;
 	ufvec3 tmp_ivec3;
 	tmp_ivec3.int_component = uvec3(tmp);
 	tmp_ivec3.dec_component = tmp - vec3(tmp_vec3.int_component);
 	ufvec3 tmp_vec3;
 	tmp_vec3.int_component = uvec3(0);
-	tmp_vec3.dec_component = difference.dec_component / ray.direction;
+	tmp_vec3.dec_component = differences.dec_component / ray.direction;
 	ufvec3 travel_multipliers = uf3Add(tmp_ivec3, tmp_vec3);
 	*/
 	// TODO: use ufvec3 for travel_multipliers - this method is extremely lossy at higher values
-	vec3 travel_multipliers = (vec3(difference.int_component) + difference.dec_component) / abs(ray.direction);
-	//travel_multipliers *= sign(travel_multipliers);
 
-	bool out_of_bounds = false;
+	// solve for next intersection
+	// TODO: use uinfl for travel_multiplier - current method is lossy at higher values
+	float travel_multiplier = (float(difference.int_component) + difference.dec_component) / abs(ray.direction[xyz_index]);
 
-	if (travel_multipliers.x < travel_multipliers.y && travel_multipliers.x < travel_multipliers.z)
-	{
-		// x is the dominant axis
-		if (!axis_leaves_boundary.x)
-		{
-			ray.world_location.int_component.x = outside_edge_location.int_component.x;
-			ray.world_location.dec_component.x = outside_edge_location.dec_component.x;
-		}
-		else
-		{
-			ray.world_location.int_component.x = edge_location.int_component.x;
-			ray.world_location.dec_component.x = edge_location.dec_component.x;
-			out_of_bounds = true;
-		}
+	// solve for next intersection
+	next_intersection.int_component[xyz_index] = outer_edge_location.int_component;
+	next_intersection.dec_component[xyz_index] = outer_edge_location.dec_component;
 
-    vec2 tmp = vec2(ray.world_location.int_component.yz) + ray.world_location.dec_component.yz;
-    tmp += ray.direction.yz * travel_multipliers.x;
-    ray.world_location.int_component.yz = uvec2(tmp);
-    ray.world_location.dec_component.yz = tmp - vec2(ray.world_location.int_component.yz);
-	}
-	else if (travel_multipliers.y < travel_multipliers.z)
-	{
-		// y is the dominant axis
-		if (!axis_leaves_boundary.y)
-		{
-			ray.world_location.int_component.y = outside_edge_location.int_component.y;
-			ray.world_location.dec_component.y = outside_edge_location.dec_component.y;
-		}
-		else
-		{
-			ray.world_location.int_component.y = edge_location.int_component.y;
-			ray.world_location.dec_component.y = edge_location.dec_component.y;
-			out_of_bounds = true;
-		}
+	float tmp1 = float(next_intersection.int_component[anti_xyz_index1]) + next_intersection.dec_component[anti_xyz_index1];
+	float tmp2 = float(next_intersection.int_component[anti_xyz_index2]) + next_intersection.dec_component[anti_xyz_index2];
+	tmp1 += ray.direction[anti_xyz_index1] * travel_multiplier;
+	tmp2 += ray.direction[anti_xyz_index2] * travel_multiplier;
+	next_intersection.int_component[anti_xyz_index1] = uint(tmp1);
+	next_intersection.int_component[anti_xyz_index2] = uint(tmp2);
+	next_intersection.dec_component[anti_xyz_index1] = tmp1 - float(next_intersection.int_component[anti_xyz_index1]);
+	next_intersection.dec_component[anti_xyz_index2] = tmp2 - float(next_intersection.int_component[anti_xyz_index2]);
 
-    vec2 tmp = vec2(ray.world_location.int_component.xz) + ray.world_location.dec_component.xz;
-    tmp += ray.direction.xz * travel_multipliers.y;
-    ray.world_location.int_component.xz = uvec2(tmp);
-    ray.world_location.dec_component.xz = tmp - vec2(ray.world_location.int_component.xz);
-	}
+	if (xyz_index == 0)
+		ray.next_x_intersection = next_intersection;
+	else if (xyz_index == 1)
+		ray.next_y_intersection = next_intersection;
 	else
-	{
-		// z is the dominant axis
-		if (!axis_leaves_boundary.z)
-		{
-			ray.world_location.int_component.z = outside_edge_location.int_component.z;
-			ray.world_location.dec_component.z = outside_edge_location.dec_component.z;
-		}
-		else
-		{
-			ray.world_location.int_component.z = edge_location.int_component.z;
-			ray.world_location.dec_component.z = edge_location.dec_component.z;
-			out_of_bounds = true;
-		}
+		ray.next_z_intersection = next_intersection;
 
-    vec2 tmp = vec2(ray.world_location.int_component.xy) + ray.world_location.dec_component.xy;
-    tmp += ray.direction.xy * travel_multipliers.z;
-    ray.world_location.int_component.xy = uvec2(tmp);
-    ray.world_location.dec_component.xy = tmp - vec2(ray.world_location.int_component.xy);
-	}
-	if (out_of_bounds) return false;
-	return true;
+	return;
 }
-
 
 ufvec3 uf3Add(in ufvec3 first, in ufvec3 second)
 {
