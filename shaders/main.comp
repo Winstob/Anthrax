@@ -117,12 +117,10 @@ layout (rgba32f, binding = 12) uniform image2D out_image;
 struct Ray
 {
 	vec3 direction;
-	ufvec3 world_location;
-	ufvec3 next_x_intersection;
-	ufvec3 next_y_intersection;
-	ufvec3 next_z_intersection;
-	bvec3 next_intersection_leaves_boundary;
 	vec3 distances_to_intersections; // TODO: convert to ufvec3
+	bvec3 next_intersection_leaves_boundary;
+	ufvec3 world_location;
+	ufvec3 next_intersections[3];
 	uint previous_indirection_pointer;
 	bool valid_indirection_pointer;
 };
@@ -161,9 +159,11 @@ void main()
 	ray.next_intersection_leaves_boundary = bvec3(false);
 	ray.valid_indirection_pointer = false;
 	uint voxel_type = 0;
-	uint max_steps = uint(pow(8, num_layers));
-	//uint max_steps = 12;
-	for (uint i = 0; i < max_steps; i++)
+	uint max_steps = uint(pow(8, num_layers-1));
+	//uint max_steps = 1u << (3*(num_layers-1));
+	//uint max_steps = 32;
+	uint num_steps;
+	for (num_steps = 0; num_steps < max_steps; num_steps++)
 	{
 		if (!rayMarch(ray))
 		{
@@ -180,6 +180,7 @@ void main()
 		//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(1.0, 1.0, 1.0, 1.0));
 		imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.world_location.dec_component, 1.0));
 	}
+	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec3(float(num_steps)/float(max_steps)), 1.0));
 	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.direction, 1.0));
 	return;
 }
@@ -229,15 +230,22 @@ bool rayMarch(inout Ray ray)
 {
 	uint indirection_pointer = 0;
 	uint current_node_index = 0;
-	uint layer = num_layers - 1;
+	int layer = num_layers - 1;
 	// discover the current layer's location within the indirection pool
 	// starting at the top layer, descend until a uniform layer is reached
-	while (true)
+	for (; layer >= 0; layer--)
 	{
+		int bitfieldOffset = 3*layer;
 		current_node_index = 0;
-		current_node_index |= ((ray.world_location.int_component.x >> (3*layer)) & 7u);
-		current_node_index |= ((ray.world_location.int_component.y >> (3*layer)) & 7u) << 3; 
-		current_node_index |= ((ray.world_location.int_component.z >> (3*layer)) & 7u) << 6;
+		current_node_index |= ((ray.world_location.int_component.x >> bitfieldOffset) & 7u);
+		current_node_index |= ((ray.world_location.int_component.y >> bitfieldOffset) & 7u) << 3; 
+		current_node_index |= ((ray.world_location.int_component.z >> bitfieldOffset) & 7u) << 6;
+		/*
+		current_node_index = bitfieldInsert(current_node_index, bitfieldExtract(ray.world_location.int_component.x, bitfieldOffset, 3), 0, 3);
+		current_node_index = bitfieldInsert(current_node_index, bitfieldExtract(ray.world_location.int_component.y, bitfieldOffset, 3), 3, 3);
+		current_node_index = bitfieldInsert(current_node_index, bitfieldExtract(ray.world_location.int_component.z, bitfieldOffset, 3), 6, 3);
+		*/
+		
 		if (layer == 0) break;
 
 		if (readUniformityPool(indirection_pointer, current_node_index) == 1)
@@ -251,7 +259,6 @@ bool rayMarch(inout Ray ray)
 			break;
 		}
 		indirection_pointer = new_indirection_pointer;
-		layer--;
 	}
 	uint voxel_type = readVoxelTypePool(indirection_pointer, current_node_index);
 	if (voxel_type != 0)
@@ -290,24 +297,21 @@ bool rayMarch(inout Ray ray)
 	uint xyz_index;
 	if (ray.distances_to_intersections.x == min_distance)
 	{
-		ray.world_location = ray.next_x_intersection;
 		xyz_index = 0;
 	}
 	else if (ray.distances_to_intersections.y == min_distance)
 	{
-		ray.world_location = ray.next_y_intersection;
 		xyz_index = 1;
 	}
 	else
 	{
-		ray.world_location = ray.next_z_intersection;
 		xyz_index = 2;
 	}
-	ray.distances_to_intersections -= min_distance;
-
-	bool ret = true;
 	if (ray.next_intersection_leaves_boundary[xyz_index])
-		ret = false;
+		return false;
+
+	ray.world_location = ray.next_intersections[xyz_index];
+	ray.distances_to_intersections -= min_distance;
 
 	// find new next intersection
 	findNextIntersection(ray, layer, xyz_index);
@@ -315,7 +319,7 @@ bool rayMarch(inout Ray ray)
 	ray.previous_indirection_pointer = indirection_pointer;
 	ray.valid_indirection_pointer = true;
 
-	return ret;
+	return true;
 }
 
 
@@ -366,7 +370,7 @@ void findNextIntersection(inout Ray ray, in uint layer, in uint xyz_index)
 
 	// solve for next intersection
 	// TODO: use uinfl for travel_multiplier - current method is lossy at higher values
-	float travel_multiplier = (float(difference.int_component) + difference.dec_component) / abs(ray.direction[xyz_index]);
+	float euclidean_distance = (float(difference.int_component) + difference.dec_component) / abs(ray.direction[xyz_index]);
 
 	// solve for next intersection
 	next_intersection.int_component[xyz_index] = outer_edge_location.int_component;
@@ -376,22 +380,17 @@ void findNextIntersection(inout Ray ray, in uint layer, in uint xyz_index)
 	{
 		uint anti_xyz_index = uint(mod(xyz_index+i, 3));
 		float tmp = float(ray.world_location.int_component[anti_xyz_index]) + ray.world_location.dec_component[anti_xyz_index];
-		tmp += ray.direction[anti_xyz_index] * travel_multiplier;
+		tmp += ray.direction[anti_xyz_index] * euclidean_distance;
 		next_intersection.int_component[anti_xyz_index] = uint(tmp);
 		next_intersection.dec_component[anti_xyz_index] = tmp - float(next_intersection.int_component[anti_xyz_index]);
 	}
 
-	if (xyz_index == 0)
-		ray.next_x_intersection = next_intersection;
-	else if (xyz_index == 1)
-		ray.next_y_intersection = next_intersection;
-	else
-		ray.next_z_intersection = next_intersection;
+	ray.next_intersections[xyz_index] = next_intersection;
 
 	ray.next_intersection_leaves_boundary[xyz_index] = axis_leaves_boundary;
 	//ray.distances_to_intersections[xyz_index] = (float(difference.int_component) + difference.dec_component) / abs(ray.direction[xyz_index]);
-	//ray.distances_to_intersections[xyz_index] = travel_multiplier;
-	ray.distances_to_intersections[xyz_index] = length((vec3(next_intersection.int_component)+next_intersection.dec_component) - (vec3(ray.world_location.int_component)+ray.world_location.dec_component));
+	ray.distances_to_intersections[xyz_index] = euclidean_distance;
+	//ray.distances_to_intersections[xyz_index] = length((vec3(next_intersection.int_component)+next_intersection.dec_component) - (vec3(ray.world_location.int_component)+ray.world_location.dec_component));
 
 	return;
 }
