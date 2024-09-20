@@ -122,6 +122,7 @@ struct Ray
 	ufvec3 next_y_intersection;
 	ufvec3 next_z_intersection;
 	bvec3 next_intersection_leaves_boundary;
+	vec3 distances_to_intersections; // TODO: convert to ufvec3
 	uint previous_indirection_pointer;
 	bool valid_indirection_pointer;
 };
@@ -271,25 +272,28 @@ bool rayMarch(inout Ray ray)
 
 	// calculate distances to each intersection
 	// TODO: convert to ufvec3
+	/*
 	vec3 distances_to_intersections;
 	distances_to_intersections.x = length((vec3(ray.next_x_intersection.int_component)+ray.next_x_intersection.dec_component) - (vec3(ray.world_location.int_component)+ray.world_location.dec_component));
 	distances_to_intersections.y = length((vec3(ray.next_y_intersection.int_component)+ray.next_y_intersection.dec_component) - (vec3(ray.world_location.int_component)+ray.world_location.dec_component));
 	distances_to_intersections.z = length((vec3(ray.next_z_intersection.int_component)+ray.next_z_intersection.dec_component) - (vec3(ray.world_location.int_component)+ray.world_location.dec_component));
+	*/
 
-	float min_distance = min(min(distances_to_intersections.x, distances_to_intersections.y), distances_to_intersections.z);
+	float min_distance = min(min(ray.distances_to_intersections.x, ray.distances_to_intersections.y), ray.distances_to_intersections.z);
 	/*
 	float min_distance;
 	if (distances_to_intersections.x <= distances_to_intersections.y && distances_to_intersections.x <= distances_to_intersections.z) min_distance = distances_to_intersections.x;
 	else if (distances_to_intersections.y <= distances_to_intersections.z) min_distance = distances_to_intersections.y;
 	else min_distance = distances_to_intersections.z;
 	*/
+	// step the ray forward
 	uint xyz_index;
-	if (distances_to_intersections.x == min_distance)
+	if (ray.distances_to_intersections.x == min_distance)
 	{
 		ray.world_location = ray.next_x_intersection;
 		xyz_index = 0;
 	}
-	else if (distances_to_intersections.y == min_distance)
+	else if (ray.distances_to_intersections.y == min_distance)
 	{
 		ray.world_location = ray.next_y_intersection;
 		xyz_index = 1;
@@ -299,6 +303,8 @@ bool rayMarch(inout Ray ray)
 		ray.world_location = ray.next_z_intersection;
 		xyz_index = 2;
 	}
+	ray.distances_to_intersections -= min_distance;
+
 	bool ret = true;
 	if (ray.next_intersection_leaves_boundary[xyz_index])
 		ret = false;
@@ -383,6 +389,9 @@ void findNextIntersection(inout Ray ray, in uint layer, in uint xyz_index)
 		ray.next_z_intersection = next_intersection;
 
 	ray.next_intersection_leaves_boundary[xyz_index] = axis_leaves_boundary;
+	//ray.distances_to_intersections[xyz_index] = (float(difference.int_component) + difference.dec_component) / abs(ray.direction[xyz_index]);
+	//ray.distances_to_intersections[xyz_index] = travel_multiplier;
+	ray.distances_to_intersections[xyz_index] = length((vec3(next_intersection.int_component)+next_intersection.dec_component) - (vec3(ray.world_location.int_component)+ray.world_location.dec_component));
 
 	return;
 }
