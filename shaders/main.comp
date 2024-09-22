@@ -6,6 +6,7 @@
 #version 460
 
 #define WORKGROUP_SIZE 8
+#define LOG2K 3
 
 layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = 1) in;
 
@@ -121,8 +122,8 @@ struct Ray
 	bvec3 next_intersection_leaves_boundary;
 	ufvec3 world_location;
 	ufvec3 next_intersections[3];
-	uint previous_indirection_pointer;
-	bool valid_indirection_pointer;
+	int previous_layer;
+	float distance_traveled;
 };
 
 
@@ -157,11 +158,12 @@ void main()
 	ray.world_location = camera_position;
 	//ray.previous_layer = 0xFFFFFFFF; // There will probably never be this many layers, so this should safely invalidate the initial test
 	ray.next_intersection_leaves_boundary = bvec3(false);
-	ray.valid_indirection_pointer = false;
+	ray.previous_layer = -1;
+	ray.distance_traveled = 0.0;
 	uint voxel_type = 0;
-	uint max_steps = uint(pow(8, num_layers-1));
-	//uint max_steps = 1u << (3*(num_layers-1));
-	//uint max_steps = 32;
+	//uint max_steps = uint(pow(8, num_layers));
+	//uint max_steps = 1u << (LOG2K*(num_layers));
+	uint max_steps = 32;
 	uint num_steps;
 	for (num_steps = 0; num_steps < max_steps; num_steps++)
 	{
@@ -180,7 +182,8 @@ void main()
 		//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(1.0, 1.0, 1.0, 1.0));
 		imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.world_location.dec_component, 1.0));
 	}
-	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec3(float(num_steps)/float(max_steps)), 1.0));
+	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec3(float(num_steps)/float(max_steps)), 1.0));
+	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec3(ray.distance_traveled/float(1u<<(LOG2K*num_layers))), 1.0));
 	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.direction, 1.0));
 	return;
 }
@@ -200,13 +203,14 @@ uint getVoxelType(in ufvec3 world_position)
 	uint indirection_pointer = 0;
 	uint current_node_index = 0;
 	uint layer = num_layers - 1;
+	uint bitfield_ander = 0xFFFFFFFFu >> (32-LOG2K);
 	// starting at the top layer, descend until a uniform layer is reached
 	for (; layer >= 0;)
 	{
 		current_node_index = 0;
-		current_node_index |= ((world_position.int_component.x >> (3*layer)) & 7);
-		current_node_index |= ((world_position.int_component.y >> (3*layer)) & 7) << 3; 
-		current_node_index |= ((world_position.int_component.z >> (3*layer)) & 7) << 6;
+		current_node_index |= ((world_position.int_component.x >> (LOG2K*layer)) & bitfield_ander);
+		current_node_index |= ((world_position.int_component.y >> (LOG2K*layer)) & bitfield_ander) << LOG2K; 
+		current_node_index |= ((world_position.int_component.z >> (LOG2K*layer)) & bitfield_ander) << (2*LOG2K);
 		if (layer == 0) break;
 
 		if (readUniformityPool(indirection_pointer, current_node_index) == 1)
@@ -231,15 +235,16 @@ bool rayMarch(inout Ray ray)
 	uint indirection_pointer = 0;
 	uint current_node_index = 0;
 	int layer = num_layers - 1;
+	uint bitfield_ander = 0xFFFFFFFFu >> (32-LOG2K);
 	// discover the current layer's location within the indirection pool
 	// starting at the top layer, descend until a uniform layer is reached
 	for (; layer >= 0; layer--)
 	{
-		int bitfieldOffset = 3*layer;
+		int bitfieldOffset = LOG2K*layer;
 		current_node_index = 0;
-		current_node_index |= ((ray.world_location.int_component.x >> bitfieldOffset) & 7u);
-		current_node_index |= ((ray.world_location.int_component.y >> bitfieldOffset) & 7u) << 3; 
-		current_node_index |= ((ray.world_location.int_component.z >> bitfieldOffset) & 7u) << 6;
+		current_node_index |= ((ray.world_location.int_component.x >> bitfieldOffset) & bitfield_ander);
+		current_node_index |= ((ray.world_location.int_component.y >> bitfieldOffset) & bitfield_ander) << LOG2K; 
+		current_node_index |= ((ray.world_location.int_component.z >> bitfieldOffset) & bitfield_ander) << (2*LOG2K);
 		/*
 		current_node_index = bitfieldInsert(current_node_index, bitfieldExtract(ray.world_location.int_component.x, bitfieldOffset, 3), 0, 3);
 		current_node_index = bitfieldInsert(current_node_index, bitfieldExtract(ray.world_location.int_component.y, bitfieldOffset, 3), 3, 3);
@@ -268,7 +273,8 @@ bool rayMarch(inout Ray ray)
 
 	//bvec3 axis_leaves_boundary = bvec3(false);
 
-	if (indirection_pointer != ray.previous_indirection_pointer || !ray.valid_indirection_pointer)
+	//if (indirection_pointer != ray.previous_indirection_pointer || !ray.valid_indirection_pointer)
+	if (layer != ray.previous_layer)
 	{
 		// need to find next intersections
 		for (uint i = 0; i < 3; i++)
@@ -307,17 +313,30 @@ bool rayMarch(inout Ray ray)
 	{
 		xyz_index = 2;
 	}
-	if (ray.next_intersection_leaves_boundary[xyz_index])
-		return false;
-
+	ray.distance_traveled += min_distance;
 	ray.world_location = ray.next_intersections[xyz_index];
 	ray.distances_to_intersections -= min_distance;
+
+	if (ray.next_intersection_leaves_boundary[xyz_index])
+	{
+		//ray.world_location.int_component[xyz_index] += int(sign(ray.direction[xyz_index]));
+		if (ray.direction[xyz_index] >= 0.0)
+		{
+			ray.world_location.int_component[xyz_index]--;
+			ray.world_location.dec_component[xyz_index] = 1.0;
+		}
+		else
+		{
+			ray.world_location.int_component[xyz_index]++;
+			ray.world_location.dec_component[xyz_index] = 0.0;
+		}
+		return false;
+	}
 
 	// find new next intersection
 	findNextIntersection(ray, layer, xyz_index);
 
-	ray.previous_indirection_pointer = indirection_pointer;
-	ray.valid_indirection_pointer = true;
+	ray.previous_layer = layer;
 
 	return true;
 }
@@ -329,7 +348,7 @@ void findNextIntersection(inout Ray ray, in uint layer, in uint xyz_index)
 
 	// find location of the outer edge in the general direction of the ray
 	uinfl outer_edge_location;
-	uint max_value_within_layer_single_axis = (0xFFFFFFFFu >> (32-(3*layer)));
+	uint max_value_within_layer_single_axis = (0xFFFFFFFFu >> (32-(LOG2K*layer)));
 	if (layer == 0) max_value_within_layer_single_axis = 0u; // 1 >> 1 = 1: special case
 	bool axis_leaves_boundary = false;
 
@@ -341,7 +360,7 @@ void findNextIntersection(inout Ray ray, in uint layer, in uint xyz_index)
 		difference.int_component = (outer_edge_location.int_component - 1) - ray.world_location.int_component[xyz_index];
 		difference.dec_component = 1.0 - ray.world_location.dec_component[xyz_index];
 
-		if (outer_edge_location.int_component - 1 == (0xFFFFFFFFu >> (32-(3*num_layers))))
+		if (outer_edge_location.int_component - 1 == (0xFFFFFFFFu >> (32-(LOG2K*num_layers))))
 			axis_leaves_boundary = true;
 	}
 	else
@@ -395,6 +414,7 @@ void findNextIntersection(inout Ray ray, in uint layer, in uint xyz_index)
 	return;
 }
 
+
 ufvec3 uf3Add(in ufvec3 first, in ufvec3 second)
 {
 	ufvec3 result;
@@ -437,13 +457,13 @@ ufvec3 uf3Add(in ufvec3 first, in ufvec3 second)
 
 uint readIndirectionPool(in uint base_location, in uint node_index)
 {
-	return indirection_pool[(base_location << 9) | node_index];
+	return indirection_pool[(base_location << (3*LOG2K)) | node_index];
 }
 
 
 uint readUniformityPool(in uint base_location, in uint node_index)
 {
-	uint index_preunpack = (base_location << 9) | node_index;
+	uint index_preunpack = (base_location << (3*LOG2K)) | node_index;
 	uint true_index = index_preunpack >> 5;
 	uint bit_location = index_preunpack & 0x1F;
 	return ((uniformity_pool[true_index] >> bit_location) & 1);
@@ -452,5 +472,5 @@ uint readUniformityPool(in uint base_location, in uint node_index)
 
 uint readVoxelTypePool(in uint base_location, in uint node_index)
 {
-	return voxel_type_pool[(base_location << 9) | node_index];
+	return voxel_type_pool[(base_location << (3*LOG2K)) | node_index];
 }

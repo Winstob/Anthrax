@@ -14,6 +14,7 @@
 
 #include "tools.hpp"
 
+#define LOG2K 3
 
 namespace Anthrax
 {
@@ -41,7 +42,11 @@ private:
 	int num_layers_;
 	int num_indices_;
 
-	size_t gpu_buffer_size_ = MB(1024); // The maximum size of a buffer in the GPU
+	void generateSerpinskiPyramidNode(unsigned int index);
+	void generateSingleSerpinskiPyramidNode(unsigned int node_index, int num_layers, int layer, unsigned int x, unsigned int y, unsigned int z, bool is_air);
+
+	size_t gpu_buffer_size_ = KB(4); // The maximum size of a buffer in the GPU
+
 
 };
 

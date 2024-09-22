@@ -8,22 +8,25 @@
 #include <cstdlib>
 #include <algorithm>
 #include <iostream>
+#include <cmath>
 
 namespace Anthrax
 {
 
 World::World(int num_layers)
 {
+	std::cout << num_layers << std::endl;
 	if (num_layers < 1)
 	{
 		throw std::runtime_error("World cannot have zero levels!");
 	}
+	unsigned int num_subnodes_per_node = pow((1u<<LOG2K), 3); // 2^LOG2K (k) subnodes per dimension, 3 dimensions
 	num_layers_ = num_layers;
 	//num_indices_ = indirection_pool_size_ / (sizeof(uint32_t) * 8); // 4 byte data, 8 octants per node
-	num_indices_ = gpu_buffer_size_ / (512*4); // 512 sub-nodes per node, 4 bytes per sub-node
-	indirection_pool_ = reinterpret_cast<uint32_t*>(malloc(512*4 * num_indices_));
-	uniformity_pool_ = reinterpret_cast<char*>(calloc(1, 512*num_indices_/8));
-	voxel_type_pool_ = reinterpret_cast<uint32_t*>(calloc(sizeof(uint32_t), 512*num_indices_));
+	num_indices_ = gpu_buffer_size_ / (num_subnodes_per_node*4); // 512 sub-nodes per node, 4 bytes per sub-node
+	indirection_pool_ = reinterpret_cast<uint32_t*>(malloc(num_subnodes_per_node*4 * num_indices_));
+	uniformity_pool_ = reinterpret_cast<char*>(calloc(1, num_subnodes_per_node*num_indices_/8));
+	voxel_type_pool_ = reinterpret_cast<uint32_t*>(calloc(sizeof(uint32_t), num_subnodes_per_node*num_indices_));
 	generate();
 }
 
@@ -56,6 +59,7 @@ void World::generate()
 {
 	std::cout << "generating world... " << std::flush;
 	
+	/*
 	// Serpinski pyramid -- store all voxels individually
 	unsigned int next_index = 1;
 	unsigned int num_indices = 1;
@@ -115,6 +119,7 @@ void World::generate()
 		}
 
 	}
+	*/
 	/*
 	// Serpinski pyramid -- store only two voxel tree elements that refer to themselves
 	for (unsigned int j = 0; j < 2; j++)
@@ -169,7 +174,63 @@ void World::generate()
 
 	}
 	*/
+	for (unsigned int i = 0; i < 2; i++)
+	{
+		generateSerpinskiPyramidNode(i);
+	}
 	std::cout << "done!" << std::endl;
+	return;
+}
+
+
+void World::generateSerpinskiPyramidNode(unsigned int index)
+{
+	generateSingleSerpinskiPyramidNode(index, LOG2K, LOG2K, 0, 0, 0, false);
+	return;
+}
+
+
+void World::generateSingleSerpinskiPyramidNode(unsigned int node_index, int num_layers, int layer, unsigned int x, unsigned int y, unsigned int z, bool is_air)
+{
+	if (layer == 0)
+	{
+		unsigned int index = (node_index << (3*num_layers)) | (z << (2*num_layers)) | (y << num_layers) | x;
+		unsigned int uniformity_pool_index = index >> 3;
+		char uniformity_pool_index_bit = 1u << (index & 7);
+
+		if (is_air)
+		{
+			indirection_pool_[index] = 0;
+			uniformity_pool_[uniformity_pool_index] |= uniformity_pool_index_bit;
+			voxel_type_pool_[index] = 0;
+		}
+		else
+		{
+			indirection_pool_[index] = 1;
+			uniformity_pool_[uniformity_pool_index] &= !uniformity_pool_index_bit;
+			voxel_type_pool_[index] = 1;
+		}
+		return;
+	}
+
+	for (unsigned int i = 0; i < 8; i++)
+	{
+		unsigned int ix = (i & 1);
+		unsigned int iy = (i & 2) >> 1;
+		unsigned int iz = (i & 4) >> 2;
+		unsigned int new_x = (x << 1) | ix;
+		unsigned int new_y = (y << 1) | iy;
+		unsigned int new_z = (z << 1) | iz;
+		if (!is_air && (i == 0 || i == 3 || i == 5 || i == 6))
+		{
+			generateSingleSerpinskiPyramidNode(node_index, num_layers, layer-1, new_x, new_y, new_z, false);
+		}
+		else
+		{
+			generateSingleSerpinskiPyramidNode(node_index, num_layers, layer-1, new_x, new_y, new_z, true);
+		}
+	}
+	return;
 }
 
 

@@ -31,8 +31,12 @@ Anthrax::Anthrax()
 {
 	window_width_ = 800;
 	window_height_ = 600;
+	/*
 	int world_size = 4;
 	world_ = new World(world_size);
+	*/
+	int world_size = 4096;
+	world_ = new World(log2(world_size)/log2(1u<<LOG2K));
 	//camera_ = Camera(glm::vec3(pow(2, world_size-3), pow(2, world_size-3), 0.0));
 	camera_ = Camera(glm::vec3(0.0, 0.0, 0.0));
 	//camera_ = Camera(glm::ivec3(0, 0, 0));
@@ -148,7 +152,7 @@ void Anthrax::renderFrame()
 	*((int*)screen_height_ubo_.getMappedPtr()) = vulkan_manager_->getWindowHeight();
 	// TODO: make this less bad
 	Intfloat::vec3 camera_position {
-		iComponents3(camera_.position) + glm::ivec3(std::pow(8, world_->getNumLayers())/2),
+		iComponents3(camera_.position) + glm::ivec3(std::pow(1 << LOG2K, world_->getNumLayers())/2),
 		fComponents3(camera_.position)
 	};
 	*((Intfloat::vec3*)camera_position_ubo_.getMappedPtr()) = camera_position;
