@@ -14,7 +14,9 @@
 
 #include "tools.hpp"
 
-#define LOG2K 3
+#include "voxfile_parser.hpp"
+
+#define LOG2K 2
 
 namespace Anthrax
 {
@@ -32,8 +34,19 @@ public:
 	uint32_t* getVoxelTypePool() { return voxel_type_pool_; }
 	int getNumLayers() { return num_layers_; }
 	int getNumIndices() { return num_indices_; }
+	int getIndirectionPoolSize() { return indirection_pool_size_; }
+	int getUniformityPoolSize() { return uniformity_pool_size_; }
+	int getVoxelTypePoolSize() { return voxel_type_pool_size_; }
+
+	uint32_t readIndirectionPool(uint32_t base_location, unsigned int node_index);
+	bool readUniformityPool(uint32_t base_location, unsigned int node_index);
+	uint32_t readVoxelTypePool(uint32_t base_location, unsigned int node_index);
+	void setIndirection(uint32_t base_location, unsigned int node_index, uint32_t value);
+	void setUniformity(uint32_t base_location, unsigned int node_index, bool value);
+	void setVoxelType(uint32_t base_location, unsigned int node_index, uint32_t value);
 
 	void generate();
+	void setVoxel(uint32_t x, uint32_t y, uint32_t z, uint32_t voxel_type);
 
 private:
 	uint32_t *indirection_pool_;
@@ -41,11 +54,16 @@ private:
 	char *uniformity_pool_; // indexed by 64 bytes (512 bits)
 	int num_layers_;
 	int num_indices_;
+	size_t indirection_pool_size_;
+	size_t uniformity_pool_size_;
+	size_t voxel_type_pool_size_;
+	uint32_t next_available_pool_index_;
 
 	void generateSerpinskiPyramidNode(unsigned int index);
 	void generateSingleSerpinskiPyramidNode(unsigned int node_index, int num_layers, int layer, unsigned int x, unsigned int y, unsigned int z, bool is_air);
+	void splitNode(uint32_t base_location, unsigned int node_index);
 
-	size_t gpu_buffer_size_ = KB(4); // The maximum size of a buffer in the GPU
+	size_t gpu_buffer_size_ = MB(64); // The maximum size of a buffer in the GPU
 
 
 };

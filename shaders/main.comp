@@ -6,7 +6,7 @@
 #version 460
 
 #define WORKGROUP_SIZE 8
-#define LOG2K 3
+#define LOG2K 2
 
 layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = 1) in;
 
@@ -162,8 +162,8 @@ void main()
 	ray.distance_traveled = 0.0;
 	uint voxel_type = 0;
 	//uint max_steps = uint(pow(8, num_layers));
-	//uint max_steps = 1u << (LOG2K*(num_layers));
-	uint max_steps = 32;
+	uint max_steps = 1u << (LOG2K*(num_layers));
+	//uint max_steps = 64;
 	uint num_steps;
 	for (num_steps = 0; num_steps < max_steps; num_steps++)
 	{
@@ -182,7 +182,7 @@ void main()
 		//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(1.0, 1.0, 1.0, 1.0));
 		imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.world_location.dec_component, 1.0));
 	}
-	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec3(float(num_steps)/float(max_steps)), 1.0));
+	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec3(float(num_steps)/float(max_steps)), 1.0));
 	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec3(ray.distance_traveled/float(1u<<(LOG2K*num_layers))), 1.0));
 	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.direction, 1.0));
 	return;

@@ -3,6 +3,7 @@
  * Author: Gavin Ralston
  * Date Created: 2024-08-08
 \* ---------------------------------------------------------------- */
+// TODO: fix differences between uniformity pool types between CPU and GPU (may cause issues on big endian systems?)
 #include "world.hpp"
 
 #include <cstdlib>
@@ -20,13 +21,23 @@ World::World(int num_layers)
 	{
 		throw std::runtime_error("World cannot have zero levels!");
 	}
-	unsigned int num_subnodes_per_node = pow((1u<<LOG2K), 3); // 2^LOG2K (k) subnodes per dimension, 3 dimensions
+	unsigned int num_subnodes_per_node = 1u<<(3*LOG2K); // 2^LOG2K (k) subnodes per dimension, 3 dimensions
 	num_layers_ = num_layers;
+	num_indices_ = gpu_buffer_size_ / (num_subnodes_per_node*4); // 4 bytes per sub-node
+
+	indirection_pool_size_ = num_subnodes_per_node*4*num_indices_;
+	uniformity_pool_size_ = num_subnodes_per_node*num_indices_/8;
+	voxel_type_pool_size_ = num_subnodes_per_node*4*num_indices_;
 	//num_indices_ = indirection_pool_size_ / (sizeof(uint32_t) * 8); // 4 byte data, 8 octants per node
-	num_indices_ = gpu_buffer_size_ / (num_subnodes_per_node*4); // 512 sub-nodes per node, 4 bytes per sub-node
+	/*
 	indirection_pool_ = reinterpret_cast<uint32_t*>(malloc(num_subnodes_per_node*4 * num_indices_));
 	uniformity_pool_ = reinterpret_cast<char*>(calloc(1, num_subnodes_per_node*num_indices_/8));
 	voxel_type_pool_ = reinterpret_cast<uint32_t*>(calloc(sizeof(uint32_t), num_subnodes_per_node*num_indices_));
+	*/
+	indirection_pool_ = reinterpret_cast<uint32_t*>(malloc(indirection_pool_size_));
+	uniformity_pool_ = reinterpret_cast<char*>(malloc(uniformity_pool_size_));
+	voxel_type_pool_ = reinterpret_cast<uint32_t*>(malloc(voxel_type_pool_size_));
+	next_available_pool_index_ = 0;
 	generate();
 }
 
@@ -44,12 +55,18 @@ World& World::operator=(const World& other)
 	num_layers_ = other.num_layers_;
 	num_indices_ = other.num_indices_;
 	gpu_buffer_size_ = other.gpu_buffer_size_;
-	indirection_pool_ = reinterpret_cast<uint32_t*>(malloc(8 * sizeof(uint32_t) * num_indices_));
-	voxel_type_pool_ = reinterpret_cast<uint32_t*>(calloc(sizeof(uint32_t), num_indices_));
+	indirection_pool_size_ = other.indirection_pool_size_;
+	uniformity_pool_size_ = other.uniformity_pool_size_;
+	voxel_type_pool_size_ = other.voxel_type_pool_size_;
+	next_available_pool_index_ = other.next_available_pool_index_;
+	indirection_pool_ = reinterpret_cast<uint32_t*>(malloc(indirection_pool_size_));
+	uniformity_pool_ = reinterpret_cast<char*>(malloc(uniformity_pool_size_));
+	voxel_type_pool_ = reinterpret_cast<uint32_t*>(malloc(voxel_type_pool_size_));
 	//lod_pool_ = reinterpret_cast<uint32_t*>(calloc(sizeof(uint32_t), num_indices_));
 
-	std::copy(other.indirection_pool_, other.indirection_pool_ + (8 * num_indices_), indirection_pool_);
-	std::copy(other.voxel_type_pool_, other.voxel_type_pool_ + (num_indices_), voxel_type_pool_);
+	std::copy(other.indirection_pool_, other.indirection_pool_ + indirection_pool_size_, indirection_pool_);
+	std::copy(other.uniformity_pool_, other.uniformity_pool_ + uniformity_pool_size_, uniformity_pool_);
+	std::copy(other.voxel_type_pool_, other.voxel_type_pool_ + voxel_type_pool_size_, voxel_type_pool_);
 	//std::copy(other.lod_pool_, other.lod_pool_ + (num_indices_), lod_pool_);
 	return *this;
 }
@@ -58,6 +75,18 @@ World& World::operator=(const World& other)
 void World::generate()
 {
 	std::cout << "generating world... " << std::flush;
+
+	// set up world as empty node
+	for (unsigned int i = 0; i < (1u << (3*LOG2K)); i++)
+	{
+		setIndirection(0, i, 0);
+		setUniformity(0, i, true);
+		setVoxelType(0, i, 0);
+	}
+	next_available_pool_index_ = 1;
+	
+
+	VoxfileParser voxfile_parser(this);
 	
 	/*
 	// Serpinski pyramid -- store all voxels individually
@@ -174,10 +203,12 @@ void World::generate()
 
 	}
 	*/
+	/*
 	for (unsigned int i = 0; i < 2; i++)
 	{
 		generateSerpinskiPyramidNode(i);
 	}
+	*/
 	std::cout << "done!" << std::endl;
 	return;
 }
@@ -230,6 +261,104 @@ void World::generateSingleSerpinskiPyramidNode(unsigned int node_index, int num_
 			generateSingleSerpinskiPyramidNode(node_index, num_layers, layer-1, new_x, new_y, new_z, true);
 		}
 	}
+	return;
+}
+
+
+uint32_t World::readIndirectionPool(uint32_t base_location, unsigned int node_index)
+{
+	return indirection_pool_[(base_location << (3*LOG2K)) | node_index];
+}
+
+
+bool World::readUniformityPool(uint32_t base_location, unsigned int node_index)
+{
+	uint32_t index_preunpack = (base_location << (3*LOG2K)) | node_index;
+	uint32_t true_index = index_preunpack >> 3;
+	uint8_t bit_location = index_preunpack & 0x7u;
+	return ((uniformity_pool_[true_index] >> bit_location) & 1u) != 0;
+}
+
+
+uint32_t World::readVoxelTypePool(uint32_t base_location, unsigned int node_index)
+{
+	return voxel_type_pool_[(base_location << (3*LOG2K)) | node_index];
+}
+
+
+void World::setIndirection(uint32_t base_location, unsigned int node_index, uint32_t value)
+{
+	indirection_pool_[(base_location << (3*LOG2K)) | node_index] = value;
+	return;
+}
+
+
+void World::setUniformity(uint32_t base_location, unsigned int node_index, bool value)
+{
+	uint32_t index_preunpack = (base_location << (3*LOG2K)) | node_index;
+	uint32_t true_index = index_preunpack >> 3;
+	uint8_t bitfield = 0x1u << (index_preunpack & 7u);
+	if (value)
+		uniformity_pool_[true_index] |= bitfield;
+	else
+		uniformity_pool_[true_index] &= ~bitfield;
+	return;
+}
+
+
+void World::setVoxelType(uint32_t base_location, unsigned int node_index, uint32_t value)
+{
+	voxel_type_pool_[(base_location << (3*LOG2K)) | node_index] = value;
+}
+
+
+void World::setVoxel(uint32_t x, uint32_t y, uint32_t z, uint32_t voxel_type)
+{
+	uint32_t indirection_pointer = 0;
+	uint32_t current_node_index = 0;
+	uint32_t layer = num_layers_ - 1;
+	uint32_t bitfield_ander = 0xFFFFFFFFu >> (32-LOG2K);
+	// starting at the top layer, descend until a uniform layer is reached
+	for (; layer >= 0;)
+	{
+		current_node_index = 0;
+		current_node_index |= ((x >> (LOG2K*layer)) & bitfield_ander);
+		current_node_index |= ((y >> (LOG2K*layer)) & bitfield_ander) << LOG2K; 
+		current_node_index |= ((z >> (LOG2K*layer)) & bitfield_ander) << (2*LOG2K);
+		if (layer == 0) break;
+
+		if (readUniformityPool(indirection_pointer, current_node_index))
+		{
+			if (readVoxelTypePool(indirection_pointer, current_node_index) == voxel_type)
+			{
+				return;
+			}
+			splitNode(indirection_pointer, current_node_index);
+		}
+
+		indirection_pointer = readIndirectionPool(indirection_pointer, current_node_index);
+		layer--;
+	}
+
+	setVoxelType(indirection_pointer, current_node_index, voxel_type);
+	return;
+}
+
+
+void World::splitNode(uint32_t base_location, unsigned int node_index)
+{
+	uint32_t voxel_type = readVoxelTypePool(base_location, node_index);
+	setUniformity(base_location, node_index, false);
+	setIndirection(base_location, node_index, next_available_pool_index_);
+	// set up new node
+	for (unsigned int i = 0; i < (1u << (3*LOG2K)); i++)
+	{
+		setUniformity(next_available_pool_index_, i, true);
+		setVoxelType(next_available_pool_index_, i, voxel_type);
+		setIndirection(next_available_pool_index_, i, 0);
+	}
+
+	next_available_pool_index_++;
 	return;
 }
 

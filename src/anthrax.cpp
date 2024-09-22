@@ -270,20 +270,9 @@ void Anthrax::initializeShaders()
 
 void Anthrax::createWorld()
 {
-	// TODO: memcpy instead, or maybe directly link the buffer's mapping to the world object?
-	for (unsigned int i = 0; i < world_->getNumIndices()*512; i++)
-	{
-		((int*)indirection_pool_ssbo_.getMappedPtr())[i] = (world_->getIndirectionPool())[i];
-		//((int*)indirection_pool_ssbo_.getMappedPtr())[i] = 1;
-	}
-	for (unsigned int i = 0; i < world_->getNumIndices()*64; i++)
-	{
-		((char*)uniformity_pool_ssbo_.getMappedPtr())[i] = (world_->getUniformityPool())[i];
-	}
-	for (unsigned int i = 0; i < world_->getNumIndices()*512; i++)
-	{
-		((int*)voxel_type_pool_ssbo_.getMappedPtr())[i] = (world_->getVoxelTypePool())[i];
-	}
+	memcpy(indirection_pool_ssbo_.getMappedPtr(), world_->getIndirectionPool(), world_->getIndirectionPoolSize());
+	memcpy(uniformity_pool_ssbo_.getMappedPtr(), world_->getUniformityPool(), world_->getUniformityPoolSize());
+	memcpy(voxel_type_pool_ssbo_.getMappedPtr(), world_->getVoxelTypePool(), world_->getVoxelTypePoolSize());
 	return;
 }
 
@@ -580,21 +569,21 @@ void Anthrax::createBuffers()
 	// ssbos
 	indirection_pool_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			512 * sizeof(uint32_t) * world_->getNumIndices(),
+			world_->getIndirectionPoolSize(),
 			Buffer::STORAGE_TYPE,
 			0,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	uniformity_pool_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			64 * world_->getNumIndices(),
+			world_->getUniformityPoolSize(),
 			Buffer::STORAGE_TYPE,
 			0,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	voxel_type_pool_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			512 * sizeof(uint32_t) * world_->getNumIndices(),
+			world_->getVoxelTypePoolSize(),
 			Buffer::STORAGE_TYPE,
 			0,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
