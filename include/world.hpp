@@ -16,7 +16,7 @@
 
 #include "voxfile_parser.hpp"
 
-#define LOG2K 2
+#define LOG2K 3
 
 namespace Anthrax
 {
@@ -63,7 +63,7 @@ private:
 	void generateSingleSerpinskiPyramidNode(unsigned int node_index, int num_layers, int layer, unsigned int x, unsigned int y, unsigned int z, bool is_air);
 	void splitNode(uint32_t base_location, unsigned int node_index);
 
-	size_t gpu_buffer_size_ = MB(64); // The maximum size of a buffer in the GPU
+	size_t gpu_buffer_size_ = MB(512); // The maximum size of a buffer in the GPU
 
 
 };
