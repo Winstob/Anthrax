@@ -12,22 +12,26 @@ namespace Anthrax
 
 VoxfileParser::VoxfileParser(World *world)
 {
+	// TODO: endianness correction?
 	world_ = world;
 	//std::string filename = "vox/teapot.vox";
 	//std::string filename = "vox/dragon.vox";
-	//std::string filename = "vox/castle.vox";
+	std::string filename = "vox/castle.vox";
+	//std::string filename = "vox/sponza.vox";
+	//std::string filename = "vox/nuke.vox";
 	//std::string filename = "vox/torus.vox";
-	std::string filename = "vox/pieta.vox";
-	voxfile_ = std::ifstream(filename);
+	//std::string filename = "vox/pieta.vox";
+
+	voxfile_ = std::ifstream(filename, std::ios::binary);
 	parseFile();
 	if (scene_nodes_.size() == 0)
 	{
-		drawSingleModel(0, 2048, 2048, 2048);
+		drawSingleModel(0, 2048, 2048, 2048, RotationMatrix());
 	}
 	else
 	{
-		//traverseSceneNode(0, 0, 0, 0);
-		traverseSceneNode(0, 2048, 2048, 2048);
+		//traverseSceneNode(0, 0, 0, 0, RotationMatrix());
+		traverseSceneNode(0, 2048, 2048, 2048, RotationMatrix());
 	}
 }
 
@@ -65,9 +69,6 @@ int32_t VoxfileParser::readInt32()
 
 void VoxfileParser::parseFile()
 {
-	//std::ifstream voxfile_("filename", std::ios::binary);
-	//std::ifstream voxfile_(filename);
-
 	//std::string riff_header_string;
 	char riff_header_string[5];
 	int version_number;
@@ -80,6 +81,7 @@ void VoxfileParser::parseFile()
 		throw std::runtime_error("Invalid RIFF header!");
 	}
 	version_number = readInt32();
+	std::cout << "Version " << version_number << std::endl;
 
 	char chunk_id[5];
 	chunk_id[4] = '\0';
@@ -100,7 +102,6 @@ void VoxfileParser::parseFile()
 	int num_models = 1;
 	auto file_position = voxfile_.tellg();
 	voxfile_.read(chunk_id, 4);
-	std::cout << chunk_id << std::endl;
 	if (!strcmp(chunk_id, "PACK"))
 	{
 		std::cout << "found PACK chunk" << std::endl;
@@ -190,8 +191,8 @@ void VoxfileParser::parseSizeXyziPair()
 
 	// parse SIZE chunk
 	int32_t size_x = readInt32();
-	int32_t size_z = readInt32();
 	int32_t size_y = readInt32();
+	int32_t size_z = readInt32();
 	std::cout << "SIZE: x = [" << size_x << "], y = [" << size_y << "], z = [" << size_z << "]" << std::endl;
 
 	// parse XYZI chunk
@@ -222,26 +223,20 @@ void VoxfileParser::parseSizeXyziPair()
 	Model new_model(size_x, size_y, size_z);
 	// read in voxel data
 	uint8_t x, y, z, color_index;
-	uint8_t byte_val;
 	for (unsigned int i = 0; i < num_voxels; i++)
 	{
 		x = 0;
 		y = 0;
 		z = 0;
-		voxfile_.read(reinterpret_cast<char*>(&byte_val), 1);
-		x = byte_val;
-		voxfile_.read(reinterpret_cast<char*>(&byte_val), 1);
-		z = byte_val;
-		voxfile_.read(reinterpret_cast<char*>(&byte_val), 1);
-		y = byte_val;
-		voxfile_.read(reinterpret_cast<char*>(&byte_val), 1);
-		color_index = byte_val;
+		voxfile_.read(reinterpret_cast<char*>(&x), 1);
+		voxfile_.read(reinterpret_cast<char*>(&y), 1);
+		voxfile_.read(reinterpret_cast<char*>(&z), 1);
+		voxfile_.read(reinterpret_cast<char*>(&color_index), 1);
 		if (x >= size_x || y >= size_y || z >= size_z)
 		{
 			throw std::runtime_error("Voxel location exceeds model size!");
 		}
 		new_model.data[x][y][z] = color_index;
-		//world_->setVoxel(x, y, z, color_index);
 	}
 	models_.push_back(new_model);
 
@@ -255,28 +250,21 @@ void VoxfileParser::parsenTRN()
 	Dict node_attributes = parseDict();
 	int32_t child_node_id = readInt32();
 	int32_t reserved_id = readInt32();
+	std::cout << "reserved id: " << reserved_id << std::endl;
+	if (reserved_id != -1)
+	{
+		throw std::runtime_error("nTRN: reserved id is not -1");
+	}
 	int32_t layer_id = readInt32();
 	int32_t num_frames = readInt32();
-
-	/*
-	char tmp1[3] = "\0\0";
-	for (int i = 0; i < 10000; i++)
+	if (num_frames != 1)
 	{
-		auto file_position = voxfile_.tellg();
-		voxfile_.read(tmp1, 2);
-		if (tmp1[0] == '_')
-			std::cout << tmp1 << std::endl;
-		tmp1[0] = '\0';
-		tmp1[1] = '\0';
-		voxfile_.seekg(file_position);
-		voxfile_.ignore(1);
+		throw std::runtime_error("nTRN: num_frames is not 1");
 	}
-	exit(1);
-	*/
 
 	//Dict frame_dicts[num_frames];
 	Dict first_frame = parseDict();
-	for (int32_t i = 0; i < num_frames-1; i++)
+	for (int32_t i = 1; i < num_frames; i++)
 	{
 		//parseDict();
 		throw std::runtime_error("Haven't implemented skip for multiple frames");
@@ -290,16 +278,37 @@ void VoxfileParser::parsenTRN()
 		translation[2] = 0;
 		/*
 		if (node_id != 0)
+		{
+			std::cout << node_id << std::endl;
 			throw std::runtime_error("No [_t] key-value pair in nTRN chunk!");
+		}
 		*/
 	}
 	else
 	{
 		std::string translation_str = first_frame.data["_t"];
-		if (sscanf(translation_str.c_str(), "%i %i %i", &translation[0], &translation[2], &translation[1]) != 3)
+		if (sscanf(translation_str.c_str(), "%i %i %i", &translation[0], &translation[1], &translation[2]) != 3)
 		{
 			throw std::runtime_error("Failed to parse translation string for nTRN chunk!");
 		}
+	}
+	uint8_t rotation;
+	if (first_frame.data.find("_r") == first_frame.data.end())
+	{
+		// 0000 0100
+		// 1 0 0
+		// 0 1 0
+		// 0 0 1
+		rotation = RotationMatrix::IDENTITY;
+	}
+	else
+	{
+		unsigned int rotation_tmp;
+		if (sscanf(first_frame.data["_r"].c_str(), "%i", &rotation_tmp) != 1)
+		{
+			throw std::runtime_error("Failed to parse translation string for nTRN chunk!");
+		}
+		rotation = (uint8_t)rotation_tmp;
 	}
 	if (node_id >= scene_nodes_.size())
 	{
@@ -309,7 +318,7 @@ void VoxfileParser::parsenTRN()
 	//transform_nodes_[node_id] = TransformNode(child_node_id, layer_id, translation);
 	if (scene_nodes_[node_id].type() == SceneNode::UNASSIGNED)
 	{
-		scene_nodes_[node_id] = SceneNode(TransformNode(child_node_id, layer_id, translation));
+		scene_nodes_[node_id] = SceneNode(TransformNode(child_node_id, layer_id, translation, rotation));
 	}
 	else
 	{
@@ -431,6 +440,7 @@ VoxfileParser::Dict VoxfileParser::parseDict()
 {
 	int32_t num_pairs = readInt32();
 	Dict dict(num_pairs);
+	std::cout << num_pairs << std::endl;
 	for (int32_t i = 0; i < num_pairs; i++)
 	{
 		std::string key = parseString();
@@ -451,7 +461,7 @@ std::string VoxfileParser::parseString()
 }
 
 
-void VoxfileParser::traverseSceneNode(int32_t scene_node_id, int32_t x_translation, int32_t y_translation, int32_t z_translation)
+void VoxfileParser::traverseSceneNode(int32_t scene_node_id, int32_t x_translation, int32_t y_translation, int32_t z_translation, RotationMatrix rotation)
 {
 	SceneNode scene_node = scene_nodes_[scene_node_id];
 
@@ -464,10 +474,19 @@ void VoxfileParser::traverseSceneNode(int32_t scene_node_id, int32_t x_translati
 		}
 		case SceneNode::TRANSFORM_NODE:
 		{
+			int32_t current_translation[3] = { x_translation, y_translation, z_translation };
+			int32_t next_translation[3] = { scene_node.getTranslationX(), scene_node.getTranslationY(), scene_node.getTranslationZ() };
+			rotation.transformVec3(next_translation);
+			//rotation = scene_node.getRotationMatrix();
+			x_translation = current_translation[0] + next_translation[0];
+			y_translation = current_translation[1] + next_translation[1];
+			z_translation = current_translation[2] + next_translation[2];
+			rotation = scene_node.getRotationMatrix() * rotation;
 			traverseSceneNode(scene_node.getChildNodeID(),
-					x_translation+scene_node.getTranslationX(),
-					y_translation+scene_node.getTranslationY(),
-					z_translation+scene_node.getTranslationZ());
+					x_translation,
+					y_translation,
+					z_translation,
+					rotation);
 			break;
 		}
 		case SceneNode::GROUP_NODE:
@@ -475,7 +494,7 @@ void VoxfileParser::traverseSceneNode(int32_t scene_node_id, int32_t x_translati
 			std::vector<int32_t> children_node_ids = scene_node.getChildrenNodes();
 			for (unsigned int i = 0; i < children_node_ids.size(); i++)
 			{
-				traverseSceneNode(children_node_ids[i], x_translation, y_translation, z_translation);
+				traverseSceneNode(children_node_ids[i], x_translation, y_translation, z_translation, rotation);
 			}
 			break;
 		}
@@ -484,7 +503,7 @@ void VoxfileParser::traverseSceneNode(int32_t scene_node_id, int32_t x_translati
 			std::vector<int32_t> model_ids = scene_node.getModels();
 			for (unsigned int i = 0; i < model_ids.size(); i++)
 			{
-				drawSingleModel(model_ids[i], x_translation, y_translation, z_translation);
+				drawSingleModel(model_ids[i], x_translation, y_translation, z_translation, rotation);
 			}
 			break;
 		}
@@ -497,9 +516,17 @@ void VoxfileParser::traverseSceneNode(int32_t scene_node_id, int32_t x_translati
 }
 
 
-void VoxfileParser::drawSingleModel(int32_t model_id, int32_t x_translation, int32_t y_translation, int32_t z_translation)
+void VoxfileParser::drawSingleModel(int32_t model_id, int32_t x_translation, int32_t y_translation, int32_t z_translation, RotationMatrix rotation)
 {
 	Model model = models_[model_id];
+
+	int32_t extent[3] = { model.size_x, model.size_y, model.size_z };
+	int32_t offset[3] = {0, 0, 0};
+	for (unsigned int i = 0; i < 3; i++)
+	{
+		offset[i] = (rotation.columnSign(i) == -1) ? 1 : 0;
+	}
+
 	for (int x = 0; x < model.size_x; x++)
 	{
 		for (int y = 0; y < model.size_y; y++)
@@ -507,12 +534,39 @@ void VoxfileParser::drawSingleModel(int32_t model_id, int32_t x_translation, int
 			for (int z = 0; z < model.size_z; z++)
 			{
 				uint8_t voxel_value = model.data[x][y][z];
+				int32_t current_translation[3] = { x-extent[0]/2, y-extent[1]/2, z-extent[2]/2 };
+				rotation.transformVec3(current_translation);
+				current_translation[0] -= offset[0];
+				current_translation[1] -= offset[1];
+				current_translation[2] -= offset[2];
+				int32_t global_position[3] = { x_translation+current_translation[0], y_translation+current_translation[1], z_translation+current_translation[2] };
+
 				if (voxel_value != 0)
-					world_->setVoxel(x+x_translation, y+y_translation, z+z_translation, voxel_value);
+				{
+					world_->setVoxel(global_position[1], global_position[2], global_position[0], voxel_value);
+				}
 			}
 		}
 	}
 	return;
+}
+
+
+VoxfileParser::RotationMatrix operator*(const VoxfileParser::RotationMatrix &left, const VoxfileParser::RotationMatrix &right)
+{
+	VoxfileParser::RotationMatrix return_matrix;
+	for (unsigned int row = 0; row < 3; row++)
+	{
+		for (unsigned int col = 0; col < 3; col++)
+		{
+			return_matrix.matrix_[col][row] = 0;
+			for (unsigned int i = 0; i < 3; i++)
+			{
+				return_matrix.matrix_[col][row] += left.matrix_[i][row] * right.matrix_[col][i];
+			}
+		}
+	}
+	return return_matrix;
 }
 
 } // namespace Anthrax

@@ -2,6 +2,10 @@
  * voxfile_parser.hpp
  * Author: Gavin Ralston
  * Date Created: 2024-09-21
+ *
+ * VOX files store coordinates in a right-hand system, but with the
+ * y and z axes swapped. The VoxfileParser object holds information
+ * in the same way, so be aware of this when using.
 \* ---------------------------------------------------------------- */
 
 #ifndef VOXFILE_PARSER
@@ -35,6 +39,110 @@ public:
 	VoxfileParser() {};
 	VoxfileParser(World *world);
 	~VoxfileParser();
+
+	class RotationMatrix
+	{
+		// Stored as a column-major 3x3 matrix
+	public:
+		static const uint8_t IDENTITY = 0x4u;
+		//static const uint8_t IDENTITY = 0x34u;
+		RotationMatrix(uint8_t packed_matrix)
+		{
+			unsigned int first_row_index = packed_matrix & 0x3u;
+			unsigned int second_row_index = (packed_matrix >> 2) & 0x3u;
+			unsigned int third_row_index = ~(first_row_index | second_row_index) & 0x3u;
+			if (first_row_index == 0x3u || second_row_index == 0x3u || first_row_index == second_row_index)
+			{
+				std::cout << (first_row_index == 0x3u) << std::endl;
+				std::cout << (second_row_index == 0x3u) << std::endl;
+				std::cout << (first_row_index == second_row_index) << std::endl;
+				std::cout << first_row_index << std::endl;
+				throw std::runtime_error("Invalid rotation matrix initializer!");
+			}
+			int first_row_value = ((packed_matrix & 0x10u) == 0x10u) ? -1 : 1;
+			int second_row_value = ((packed_matrix & 0x20u) == 0x20u) ? -1 : 1;
+			int third_row_value = ((packed_matrix & 0x40u) == 0x40u) ? -1 : 1;
+			/*
+			matrix_[first_row_index][0] = first_row_value;
+			matrix_[second_row_index][1] = second_row_value;
+			matrix_[third_row_index][2] = third_row_value;
+			*/
+			matrix_[0][first_row_index] = first_row_value;
+			matrix_[1][second_row_index] = second_row_value;
+			matrix_[2][third_row_index] = third_row_value;
+		}
+		RotationMatrix() : RotationMatrix(IDENTITY) {}
+		RotationMatrix(const RotationMatrix &other) { copy(other); }
+		RotationMatrix &operator=(const RotationMatrix &other) { copy(other); return *this; }
+		friend RotationMatrix operator*(const RotationMatrix &left, const RotationMatrix &right);
+
+		RotationMatrix transpose()
+		{
+			RotationMatrix new_matrix;
+			for (unsigned int i = 0; i < 3; i++)
+			{
+				for (unsigned int j = 0; j < 3; j++)
+				{
+					new_matrix.matrix_[i][j] = matrix_[j][i];
+				}
+			}
+			return new_matrix;
+		}
+		RotationMatrix inverse()
+		{
+			// Fun fact! .vox rotation matrices are always orthogonal, so the inverse is equal to the transpose.
+			return transpose();
+		}
+
+		void copy(const RotationMatrix &other)
+		{
+			for (unsigned int i = 0; i < 3; i++)
+			{
+				for (unsigned int j = 0; j < 3; j++)
+				{
+					matrix_[i][j] = other.matrix_[i][j];
+				}
+			}
+		}
+		void transformVec3(int32_t *vec3)
+		{
+			int32_t return_vec3[3];
+			for (unsigned int mat_col = 0; mat_col < 3; mat_col++)
+			{
+				return_vec3[mat_col] = 0;
+				for (unsigned int i = 0; i < 3; i++)
+				{
+					return_vec3[mat_col] += vec3[i]*matrix_[mat_col][i];
+				}
+			}
+			vec3[0] = return_vec3[0];
+			vec3[1] = return_vec3[1];
+			vec3[2] = return_vec3[2];
+			return;
+		}
+		int columnSign(int col)
+		{
+			for (unsigned int i = 0; i < 3; i++)
+			{
+				if (matrix_[col][i] != 0) return matrix_[col][i];
+			}
+			throw std::runtime_error("Encountered invalid rotation matrix!");
+		}
+		void print()
+		{
+			for (unsigned int row = 0; row < 3; row++)
+			{
+				std::cout << "| ";
+				for (unsigned int col = 0; col < 3; col++)
+				{
+					std::cout << matrix_[col][row] << " ";
+				}
+				std::cout << "|" << std::endl;
+			}
+		}
+	private:
+		int matrix_[3][3] = { {0, 0, 0}, {0, 0, 0}, {0, 0, 0} };
+	};
 private:
 	std::ifstream voxfile_;
 	void skipData(size_t num_bytes);
@@ -52,13 +160,16 @@ private:
 	void parseNOTE();
 	Dict parseDict();
 	std::string parseString();
-	void traverseSceneNode(int32_t id, int32_t x_translation, int32_t y_translation, int32_t z_translation);
-	void drawSingleModel(int32_t model_id, int32_t x_translation, int32_t y_translation, int32_t z_translation);
+	void traverseSceneNode(int32_t id, int32_t x_translation, int32_t y_translation, int32_t z_translation, RotationMatrix rotation);
+	void drawSingleModel(int32_t model_id, int32_t x_translation, int32_t y_translation, int32_t z_translation, RotationMatrix rotation);
 
 	std::vector<Model> models_;
 	std::vector<SceneNode> scene_nodes_;
 
 	World *world_;
+
+
+
 
 	class Model
 	{
@@ -116,7 +227,7 @@ private:
 
 		}
 		uint8_t ***data;
-		uint8_t size_x, size_y, size_z;
+		int32_t size_x, size_y, size_z;
 	};
 
 	class Dict
@@ -143,7 +254,7 @@ private:
 	class TransformNode
 	{
 	public:
-		TransformNode(int32_t child_node_id, int32_t layer_id, int32_t *translation)
+		TransformNode(int32_t child_node_id, int32_t layer_id, int32_t *translation, uint8_t rotation)
 		{
 			child_node_id_ = child_node_id;
 			layer_id_ = layer_id;
@@ -159,8 +270,9 @@ private:
 				translation_[1] = 0;
 				translation_[2] = 0;
 			}
+			rotation_ = RotationMatrix(rotation);
 		}
-		TransformNode() : TransformNode(0, 0, nullptr) {}
+		TransformNode() : TransformNode(0, 0, nullptr, RotationMatrix::IDENTITY) {}
 		TransformNode(const TransformNode &other) { copy(other); }
 		TransformNode &operator=(const TransformNode &other) { copy(other); return *this; }
 		void copy(const TransformNode &other)
@@ -170,15 +282,18 @@ private:
 			translation_[0] = other.translation_[0];
 			translation_[1] = other.translation_[1];
 			translation_[2] = other.translation_[2];
+			rotation_ = other.rotation_;
 		}
 		int32_t getChildNodeID() { return child_node_id_; }
 		int32_t getTranslationX() { return translation_[0]; }
 		int32_t getTranslationY() { return translation_[1]; }
 		int32_t getTranslationZ() { return translation_[2]; }
+		RotationMatrix getRotationMatrix() { return rotation_; }
 	private:
 		int32_t child_node_id_;
 		int32_t layer_id_;
-		int32_t translation_[3];
+		int32_t translation_[3] = { 0, 0, 0 };
+		RotationMatrix rotation_;
 	};
 
 	class GroupNode
@@ -288,6 +403,14 @@ private:
 			else
 				throw std::runtime_error("Not a valid SceneNode type - no z translation value exists!");
 		}
+		RotationMatrix getRotationMatrix()
+		{
+			if (type_ == TRANSFORM_NODE)
+				return t_node_.getRotationMatrix();
+			else
+				throw std::runtime_error("Not a valid SceneNode type - no rotation matrix exists!");
+		}
+
 		std::vector<int32_t> getChildrenNodes()
 		{
 			if (type_ == GROUP_NODE)
@@ -309,7 +432,28 @@ private:
 		ShapeNode s_node_;
 	};
 
+
 };
+
+
+/*
+VoxfileParser::RotationMatrix operator*(const VoxfileParser::RotationMatrix &left, VoxfileParser::RotationMatrix &right)
+{
+	VoxfileParser::RotationMatrix return_matrix;
+	for (unsigned int row = 0; row < 3; row++)
+	{
+		for (unsigned int col = 0; col < 3; col++)
+		{
+			return_matrix.matrix_[row][col] = 0;
+			for (unsigned int i = 0; i < 3; i++)
+			{
+				return_matrix.matrix_[row][col] += left.matrix_[row][i] * right.matrix_[i][col];
+			}
+		}
+	}
+	return return_matrix;
+}
+*/
 
 } // namespace Anthrax
 

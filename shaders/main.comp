@@ -163,7 +163,7 @@ void main()
 	uint voxel_type = 0;
 	//uint max_steps = uint(pow(8, num_layers));
 	uint max_steps = 1u << (LOG2K*(num_layers));
-	//uint max_steps = 32;
+	//uint max_steps = 64;
 	uint num_steps;
 	for (num_steps = 0; num_steps < max_steps; num_steps++)
 	{

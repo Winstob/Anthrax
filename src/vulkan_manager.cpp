@@ -111,6 +111,7 @@ void VulkanManager::drawFrame()
 	// Graphics pass
 	vkWaitForFences(device_.logical, 1, &in_flight_fence_, VK_TRUE, UINT64_MAX);
 	vkResetFences(device_.logical, 1, &in_flight_fence_);
+	//vkDeviceWaitIdle(device_.logical);
 
 	uint32_t image_index;
 	vkAcquireNextImageKHR(device_.logical, swap_chain_.data(), UINT64_MAX, image_available_semaphore_, VK_NULL_HANDLE, &image_index);
