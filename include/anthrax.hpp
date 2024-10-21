@@ -35,6 +35,7 @@
 #include "idmap.hpp"
 #include "text.hpp"
 #include "intfloat.hpp"
+#include "material.hpp"
 
 namespace Anthrax
 {
@@ -62,6 +63,7 @@ private:
 	bool isDeviceSuitable(VkPhysicalDevice device);
 	void renderFullscreenQuad();
 	void initializeShaders();
+	void loadMaterials();
 	void createWorld();
 	void initializeWorldSSBOs();
 	void updateCamera();
@@ -92,6 +94,7 @@ private:
 	unsigned int quad_vao_ = 0, quad_vbo_ = 0;
 	unsigned int text_vao_ = 0, text_vbo_ = 0;
 
+	std::vector<Material> materials_;
 	World *world_;
 	Camera camera_;
 	//GLuint indirection_pool_ssbo_ = 0, voxel_type_pool_ssbo_ = 0, lod_pool_ssbo_ = 0;
@@ -103,7 +106,7 @@ private:
 	IDMap<Text> texts_;
 
 	// ssbos
-	Buffer indirection_pool_ssbo_, uniformity_pool_ssbo_, voxel_type_pool_ssbo_;
+	Buffer materials_ssbo_, indirection_pool_ssbo_, uniformity_pool_ssbo_, voxel_type_pool_ssbo_;
 	Image raymarched_image_;
 	// ubos
 	Buffer num_levels_ubo_, focal_distance_ubo_, screen_width_ubo_, screen_height_ubo_, camera_position_ubo_, camera_right_ubo_, camera_up_ubo_, camera_forward_ubo_, sunlight_ubo_;

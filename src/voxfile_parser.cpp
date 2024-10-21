@@ -16,22 +16,25 @@ VoxfileParser::VoxfileParser(World *world)
 	world_ = world;
 	//std::string filename = "vox/teapot.vox";
 	//std::string filename = "vox/dragon.vox";
-	std::string filename = "vox/castle.vox";
-	//std::string filename = "vox/sponza.vox";
+	//std::string filename = "vox/castle.vox";
+	std::string filename = "vox/sponza.vox";
 	//std::string filename = "vox/nuke.vox";
+	//std::string filename = "vox/Church_Of_St_Sophia.vox";
+	//std::string filename = "vox/custom.vox";
 	//std::string filename = "vox/torus.vox";
 	//std::string filename = "vox/pieta.vox";
 
 	voxfile_ = std::ifstream(filename, std::ios::binary);
 	parseFile();
+	//unsigned int offset[3] = { 0, 0, 0 };
+	unsigned int offset[3] = { 2048, 2048, 2048 };
 	if (scene_nodes_.size() == 0)
 	{
-		drawSingleModel(0, 2048, 2048, 2048, RotationMatrix());
+		drawSingleModel(0, offset[0], offset[1], offset[2], RotationMatrix());
 	}
 	else
 	{
-		//traverseSceneNode(0, 0, 0, 0, RotationMatrix());
-		traverseSceneNode(0, 2048, 2048, 2048, RotationMatrix());
+		traverseSceneNode(0, offset[0], offset[1], offset[2], RotationMatrix());
 	}
 }
 
@@ -138,7 +141,7 @@ void VoxfileParser::parseFile()
 		}
 		else if (!strcmp(chunk_id, "RGBA"))
 		{
-			skipData(n+m);
+			parseRGBA();
 		}
 		else if (!strcmp(chunk_id, "nTRN"))
 		{
@@ -172,11 +175,20 @@ void VoxfileParser::parseFile()
 		{
 			parseNOTE();
 		}
+		else if (!strcmp(chunk_id, "IMAP"))
+		{
+			parseIMAP();
+		}
 		else
 		{
 			std::cout << "Error: encountered unknown chunk id [" << chunk_id << "]" << std::endl;
 			exit(1);
 		}
+	}
+
+	if (!encountered_rgba_chunk_)
+	{
+		throw std::runtime_error("RGBA chunk not encountered!");
 	}
 
 	return;
@@ -240,6 +252,36 @@ void VoxfileParser::parseSizeXyziPair()
 	}
 	models_.push_back(new_model);
 
+	return;
+}
+
+
+void VoxfileParser::parseRGBA()
+{
+	uint8_t r_int, g_int, b_int, a_int;
+	float red, green, blue, alpha;
+	for (unsigned int i = 0; i < 255; i++)
+	{
+		voxfile_.read(reinterpret_cast<char*>(&r_int), 1);
+		voxfile_.read(reinterpret_cast<char*>(&g_int), 1);
+		voxfile_.read(reinterpret_cast<char*>(&b_int), 1);
+		voxfile_.read(reinterpret_cast<char*>(&a_int), 1);
+		red = float(r_int) / 255.0;
+		green = float(g_int) / 255.0;
+		blue = float(b_int) / 255.0;
+		alpha = float(a_int) / 255.0;
+		/*
+		if (i == 255)
+		{
+			std::cout << red << " " << green << " " << blue << " " << alpha << std::endl;
+		}
+		*/
+
+		materials_[i+1] = Material(red, green, blue, alpha);
+	}
+	materials_[0] = Material(0.0, 0.0, 0.0, 0.0);
+	skipData(4);
+	encountered_rgba_chunk_ = true;
 	return;
 }
 
@@ -432,6 +474,18 @@ void VoxfileParser::parseNOTE()
 		parseString();
 	}
 	// TODO: do something with this NOTE object. can we use it now? store it?
+	return;
+}
+
+
+void VoxfileParser::parseIMAP()
+{
+	for (int32_t i = 0; i < 256; i++)
+	{
+		// TODO: do something with these
+		skipData(1);
+	}
+	// TODO: do something with this IMAP object. can we use it now? store it?
 	return;
 }
 

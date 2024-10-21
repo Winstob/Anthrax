@@ -8,8 +8,8 @@
  * in the same way, so be aware of this when using.
 \* ---------------------------------------------------------------- */
 
-#ifndef VOXFILE_PARSER
-#define VOXFILE_PARSER
+#ifndef VOXFILE_PARSER_HPP
+#define VOXFILE_PARSER_HPP
 
 #include <fstream>
 #include <iostream>
@@ -20,6 +20,7 @@
 
 #include "tools.hpp"
 
+#include "material.hpp"
 #include "world.hpp"
 
 namespace Anthrax
@@ -39,6 +40,8 @@ public:
 	VoxfileParser() {};
 	VoxfileParser(World *world);
 	~VoxfileParser();
+
+	Material *getMaterialsPtr() { return materials_; }
 
 	class RotationMatrix
 	{
@@ -150,6 +153,7 @@ private:
 	int32_t readInt32();
 	void parseFile();
 	void parseSizeXyziPair();
+	void parseRGBA();
 	void parsenTRN();
 	void parsenGRP();
 	void parsenSHP();
@@ -158,6 +162,7 @@ private:
 	void parserOBJ();
 	void parserCAM();
 	void parseNOTE();
+	void parseIMAP();
 	Dict parseDict();
 	std::string parseString();
 	void traverseSceneNode(int32_t id, int32_t x_translation, int32_t y_translation, int32_t z_translation, RotationMatrix rotation);
@@ -166,7 +171,10 @@ private:
 	std::vector<Model> models_;
 	std::vector<SceneNode> scene_nodes_;
 
+	Material materials_[256];
 	World *world_;
+
+	bool encountered_rgba_chunk_ = false;
 
 
 
@@ -457,4 +465,4 @@ VoxfileParser::RotationMatrix operator*(const VoxfileParser::RotationMatrix &lef
 
 } // namespace Anthrax
 
-#endif // VOXFILE_PARSER
+#endif // VOXFILE_PARSER_HPP

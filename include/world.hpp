@@ -16,7 +16,7 @@
 
 #include "voxfile_parser.hpp"
 
-#define LOG2K 3
+#define LOG2K 1
 
 namespace Anthrax
 {
@@ -34,6 +34,7 @@ public:
 	uint32_t* getVoxelTypePool() { return voxel_type_pool_; }
 	int getNumLayers() { return num_layers_; }
 	int getNumIndices() { return num_indices_; }
+	Material* getMaterialsPtr() { return materials_; }
 	int getIndirectionPoolSize() { return indirection_pool_size_; }
 	int getUniformityPoolSize() { return uniformity_pool_size_; }
 	int getVoxelTypePoolSize() { return voxel_type_pool_size_; }
@@ -49,6 +50,7 @@ public:
 	void setVoxel(uint32_t x, uint32_t y, uint32_t z, uint32_t voxel_type);
 
 private:
+	Material materials_[256];
 	uint32_t *indirection_pool_;
 	uint32_t *voxel_type_pool_;
 	char *uniformity_pool_; // indexed by 64 bytes (512 bits)

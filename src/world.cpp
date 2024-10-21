@@ -87,6 +87,11 @@ void World::generate()
 	
 
 	VoxfileParser voxfile_parser(this);
+	Material *materials_ptr = voxfile_parser.getMaterialsPtr();
+	for (unsigned int i = 0; i < 256; i++)
+	{
+		materials_[i] = materials_ptr[i];
+	}
 	
 	/*
 	// Serpinski pyramid -- store all voxels individually

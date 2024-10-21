@@ -37,6 +37,14 @@ Anthrax::Anthrax()
 	*/
 	int world_size = 4096;
 	world_ = new World(log2(world_size)/log2(1u<<LOG2K));
+
+	// Load materials
+	// TODO: make this less horrible
+	materials_.clear();
+	Material *tmp_ptr = world_->getMaterialsPtr();
+	for (unsigned int i = 0; i < 256; i++)
+		materials_.push_back(tmp_ptr[i]);
+
 	//camera_ = Camera(glm::vec3(pow(2, world_size-3), pow(2, world_size-3), 0.0));
 	camera_ = Camera(glm::vec3(0.0, 0.0, 0.0));
 	//camera_ = Camera(glm::ivec3(0, 0, 0));
@@ -49,6 +57,7 @@ Anthrax::~Anthrax()
 {
 	vulkan_manager_->wait();
 	raymarched_image_.destroy();
+	materials_ssbo_.destroy();
 	indirection_pool_ssbo_.destroy();
 	uniformity_pool_ssbo_.destroy();
 	voxel_type_pool_ssbo_.destroy();
@@ -75,6 +84,7 @@ int Anthrax::init()
 
 	vulkan_manager_->renderPassAddImage(raymarched_image_);
 
+	vulkan_manager_->computePassAddBuffer(materials_ssbo_);
 	vulkan_manager_->computePassAddBuffer(indirection_pool_ssbo_);
 	vulkan_manager_->computePassAddBuffer( uniformity_pool_ssbo_);
 	vulkan_manager_->computePassAddBuffer(voxel_type_pool_ssbo_);
@@ -90,6 +100,7 @@ int Anthrax::init()
 	vulkan_manager_->computePassAddImage(raymarched_image_);
 	vulkan_manager_->start();
 
+	loadMaterials();
 	createWorld();
 
 	/*
@@ -264,6 +275,16 @@ void Anthrax::initializeShaders()
 	screen_pass_shader_ = new Shader(Shader::ShaderInputType::FILEPATH, (shader_directory + "screen_pass_shaderv.glsl").c_str(), (shader_directory + "screen_pass_shaderf.glsl").c_str());
 	*/
 
+	return;
+}
+
+
+void Anthrax::loadMaterials()
+{
+	for (unsigned int i = 0; i < materials_.size(); i++)
+	{
+		((Material::PackedMaterial*)materials_ssbo_.getMappedPtr())[i] = (materials_[i].pack());
+	}
 	return;
 }
 
@@ -567,6 +588,13 @@ int Anthrax::removeText(unsigned int id)
 void Anthrax::createBuffers()
 {
 	// ssbos
+	materials_ssbo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			materials_.size() * sizeof(Material::PackedMaterial),
+			Buffer::STORAGE_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
 	indirection_pool_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			world_->getIndirectionPoolSize(),

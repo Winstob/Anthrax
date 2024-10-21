@@ -44,6 +44,7 @@ set(HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/include/image.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/input_handler.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/intfloat.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/material.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/octree.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/render_pass.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/shader.hpp
@@ -64,6 +65,7 @@ set(SRC
   ${CMAKE_CURRENT_SOURCE_DIR}/src/image.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/input_handler.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/intfloat.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/material.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/octree.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/render_pass.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/shader.cpp
