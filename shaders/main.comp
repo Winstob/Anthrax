@@ -7,7 +7,7 @@
 
 #define WORKGROUP_SIZE 8
 #define LOG2K 1
-#define MAX_NUM_LAYERS 1
+#define MAX_NUM_LAYERS 16
 
 layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = 1) in;
 
@@ -319,54 +319,6 @@ uvec3 generateMasklist(in vec3 s_mid)
 }
 
 
-uvec3 generateInvertedMasklist(in vec3 s_mid)
-{
-	uvec3 masklist;
-	if (s_mid.x > s_mid.y && s_mid.x > s_mid.z)
-	{
-		masklist[0] = 1u;
-		if (s_mid.y > s_mid.z)
-		{
-			masklist[1] = 2u;
-			masklist[2] = 4u;
-		}
-		else
-		{
-			masklist[1] = 4u;
-			masklist[2] = 2u;
-		}
-	}
-	else if (s_mid.y > s_mid.x && s_mid.y > s_mid.z)
-	{
-		masklist[0] = 2u;
-		if (s_mid.x > s_mid.z)
-		{
-			masklist[1] = 1u;
-			masklist[2] = 4u;
-		}
-		else
-		{
-			masklist[1] = 4u;
-			masklist[2] = 1u;
-		}
-	}
-	else
-	{
-		masklist[0] = 4u;
-		if (s_mid.x > s_mid.y)
-		{
-			masklist[1] = 1u;
-			masklist[2] = 2u;
-		}
-		else
-		{
-			masklist[1] = 2u;
-			masklist[2] = 1u;
-		}
-	}
-	return masklist;
-}
-
 uint rayMarch(in Ray ray)
 {
 	uint indirection_pointers[MAX_NUM_LAYERS];
@@ -375,12 +327,14 @@ uint rayMarch(in Ray ray)
 	// TODO: node_max and everything that follows has overflow issues when the world has 32 layers
 	vec3 v = ray.direction;
 	vec3 E = vec3(ray.world_location.int_component) + vec3(ray.world_location.dec_component);
+	//E = vec3(1);
 	//v = normalize(vec3(1.0, 1.0, 1.0));
 	//E = vec3(0.0, 0.0, 0.0);
 	float eps = 0.001;
 	if (abs(v.x) < eps) v.x = (v.x == 0.0) ? eps : eps*sign(v.x);
 	if (abs(v.y) < eps) v.y = (v.y == 0.0) ? eps : eps*sign(v.y);
 	if (abs(v.z) < eps) v.z = (v.z == 0.0) ? eps : eps*sign(v.z);
+	v = normalize(v);
 	vec3 v_reciprocal = vec3(1.0)/v;
 
 	uint vmask = 0u;
@@ -403,7 +357,8 @@ uint rayMarch(in Ray ray)
 
 	// find initial ray location information
 	node_mins[0] = uvec3(0);
-	node_maxes[0] = uvec3((0xFFFFFFFFu >> (32-(num_layers*LOG2K))) + 1u);
+	//node_maxes[0] = uvec3((0xFFFFFFFFu >> (32-(num_layers*LOG2K))) + 1u);
+	node_maxes[0] = uvec3(0x1u << num_layers); // TODO: bad!!! check above. better, only slightly. overflow!
 	node_mids[0] = ((node_maxes[0] - node_mins[0]) >> 1) + node_mins[0];
 
 	vec3 s_min1 = (vec3(node_mins[0]) - E) * v_reciprocal;
@@ -428,9 +383,9 @@ uint rayMarch(in Ray ray)
 	childmasks[0] |= (s_mids[0].y < s_l_maxes[0]) ? 2u : 0u;
 	childmasks[0] |= (s_mids[0].z < s_l_maxes[0]) ? 4u : 0u;
 	lastmasks[0] = 0u;
-	lastmasks[0] |= (s_mids[0].x < s_u_mins[0]) ? 0u : 1u;
-	lastmasks[0] |= (s_mids[0].y < s_u_mins[0]) ? 0u : 2u;
-	lastmasks[0] |= (s_mids[0].z < s_u_mins[0]) ? 0u : 4u;
+	lastmasks[0] |= (s_mids[0].x < s_u_mins[0]) ? 1u : 0u;
+	lastmasks[0] |= (s_mids[0].y < s_u_mins[0]) ? 2u : 0u;
+	lastmasks[0] |= (s_mids[0].z < s_u_mins[0]) ? 4u : 0u;
 
 
 	masklist_indices[0] = 0;
@@ -441,57 +396,17 @@ uint rayMarch(in Ray ray)
 	uint layer = num_layers - 1;
 
 	// main loop
-	bool is_terminal;
 	bool entered_new_node = true;
 	for (uint i = 0; i < 100; i++)
 	{
-		if (layer >= num_layers) return 0; // we must have reached the end of the world. exit
-		// loop through masklist
+		if (layer >= num_layers) break; // we must have reached the end of the world. exit
 
 		uint idx = num_layers-layer;
-		if (layer == num_layers) break;
 
 		uint this_child_index = childmasks[idx-1] ^ vmask;
-		//uint this_child_index = ~(childmasks[idx-1] ^ vmask) & 3u;
+		//uint this_child_index = ~(childmasks[idx-1] ^ vmask) & 7u;
 
-		is_terminal = (layer == 0) || (readUniformityPool(indirection_pointers[idx-1], this_child_index) == 1);
-		if (is_terminal)
-		{
-			uint voxel_type = readVoxelTypePool(indirection_pointers[idx-1], this_child_index);
-			if (voxel_type != 0)
-			{
-				return voxel_type;
-			}
-			// if air, check if this is the last node to be searched within its parent
-			if (childmasks[idx-1] == lastmasks[idx-1])
-			{
-				layer++;
-				entered_new_node = false;
-				if (layer >= num_layers-1) return 0;
-				continue;
-			}
 
-			// if air and not the last node to be searched within its parent, find the next sister node
-			while ((masklists[idx-1][masklist_indices[idx-1]] & childmasks[idx-1]) != 0u)
-			{
-				if (masklist_indices[idx-1] == 2)
-				{
-					layer++;
-					entered_new_node = false;
-					if (layer >= num_layers-1) return 0;
-					continue;
-				}
-				// find next valid masklist element
-				masklist_indices[idx-1]++;
-			}
-			// now re-generate childmask
-			childmasks[idx-1] |= masklists[idx-1][masklist_indices[idx-1]];
-			entered_new_node = true;
-			continue;
-		}
-
-		// this node has children - search them if we haven't already
-		indirection_pointers[idx] = readIndirectionPool(indirection_pointers[idx-1], this_child_index);
 		if (entered_new_node)
 		{
 			node_mins[idx].x = ((this_child_index & 1u) == 1u) ? node_mids[idx-1].x : node_mins[idx-1].x;
@@ -528,34 +443,73 @@ uint rayMarch(in Ray ray)
 			lastmasks[idx] |= (s_mids[idx].y < s_u_mins[idx]) ? 2u : 0u;
 			lastmasks[idx] |= (s_mids[idx].z < s_u_mins[idx]) ? 4u : 0u;
 
-
 			masklist_indices[idx] = 0;
 
-			/*
 			// if this node is behind the ray's origin, skip it
-			if (s_l_maxes[idx] < 0.0)
+			//if (s_u_mins[idx] < 0.0) // TODO: s_u_min is always negative??????
+			if (s_u_mins[idx] < s_l_maxes[idx] || s_u_mins[idx] < 0.0)
 			{
+				if (childmasks[idx-1] == lastmasks[idx-1])
+				{
+					layer++;
+					entered_new_node = false;
+					continue;
+				}
+
+				bool continue_main_loop = false;
 				while ((masklists[idx-1][masklist_indices[idx-1]] & childmasks[idx-1]) != 0u)
 				{
 					if (masklist_indices[idx-1] == 2)
 					{
 						layer++;
 						entered_new_node = false;
-						if (layer >= num_layers-1) return 0;
-						continue;
+						continue_main_loop = true;
+						break;
 					}
 					// find next valid masklist element
 					masklist_indices[idx-1]++;
 				}
+				if (continue_main_loop) continue;
 				// now re-generate childmask
 				childmasks[idx-1] |= masklists[idx-1][masklist_indices[idx-1]];
 				entered_new_node = true;
 				continue;
 			}
-			*/
+		}
+	
 
+		bool is_terminal = (layer == 0) || (readUniformityPool(indirection_pointers[idx-1], this_child_index) == 1);
+		if (is_terminal)
+		{
+			uint voxel_type = readVoxelTypePool(indirection_pointers[idx-1], this_child_index);
+			if (voxel_type != 0)
+			{
+				return voxel_type;
+			}
+			// if air, check if this is the last node to be searched within its parent
+			if (childmasks[idx-1] == lastmasks[idx-1])
+			{
+				layer++;
+				entered_new_node = false;
+				continue;
+			}
 
-			// this node is not terminal, so go to the first child
+			// if air and not the last node to be searched within its parent, find the next sister node
+			while ((masklists[idx-1][masklist_indices[idx-1]] & childmasks[idx-1]) != 0u)
+			{
+				// find next valid masklist element
+				masklist_indices[idx-1]++;
+			}
+			// now re-generate childmask
+			childmasks[idx-1] |= masklists[idx-1][masklist_indices[idx-1]];
+			entered_new_node = true;
+			continue;
+		}
+
+		// this node has children - search them if we haven't already
+		if (entered_new_node)
+		{
+			indirection_pointers[idx] = readIndirectionPool(indirection_pointers[idx-1], this_child_index);
 			layer--;
 			entered_new_node = true;
 			continue;
@@ -569,19 +523,12 @@ uint rayMarch(in Ray ray)
 			// returning to a parent, which inherently cannot be a new node
 			entered_new_node = false;
 			layer++;
-			if (layer >= num_layers-1) return 0;
 			continue;
 		}
 
 		// the node we just finished searching was not the last hit node within its parent - find the next hit sister node.
 		while ((masklists[idx-1][masklist_indices[idx-1]] & childmasks[idx-1]) != 0u)
 		{
-			if (masklist_indices[idx-1] == 2)
-			{
-				layer++;
-				entered_new_node = false;
-				continue;
-			}
 			// find next valid masklist element
 			masklist_indices[idx-1]++;
 		}
