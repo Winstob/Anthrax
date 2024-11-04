@@ -83,6 +83,7 @@ void World::generate()
 		setUniformity(0, i, true);
 		setVoxelType(0, i, 0);
 	}
+	materials_[0] = Material(0.0, 0.0, 0.0, 0.0);
 	next_available_pool_index_ = 1;
 	
 
@@ -213,6 +214,7 @@ void World::generate()
 	{
 		generateSerpinskiPyramidNode(i);
 	}
+	materials_[1] = Material(1.0, 0.4, 0.8);
 	*/
 	std::cout << "done!" << std::endl;
 	return;
@@ -230,21 +232,19 @@ void World::generateSingleSerpinskiPyramidNode(unsigned int node_index, int num_
 {
 	if (layer == 0)
 	{
-		unsigned int index = (node_index << (3*num_layers)) | (z << (2*num_layers)) | (y << num_layers) | x;
-		unsigned int uniformity_pool_index = index >> 3;
-		char uniformity_pool_index_bit = 1u << (index & 7);
+		unsigned int secondary_index = (z << (2*num_layers)) | (y << num_layers) | x;
 
 		if (is_air)
 		{
-			indirection_pool_[index] = 0;
-			uniformity_pool_[uniformity_pool_index] |= uniformity_pool_index_bit;
-			voxel_type_pool_[index] = 0;
+			setIndirection(node_index, secondary_index, 0);
+			setUniformity(node_index, secondary_index, 1);
+			setVoxelType(node_index, secondary_index, 0);
 		}
 		else
 		{
-			indirection_pool_[index] = 1;
-			uniformity_pool_[uniformity_pool_index] &= !uniformity_pool_index_bit;
-			voxel_type_pool_[index] = 1;
+			setIndirection(node_index, secondary_index, 1);
+			setUniformity(node_index, secondary_index, 0);
+			setVoxelType(node_index, secondary_index, 1);
 		}
 		return;
 	}
