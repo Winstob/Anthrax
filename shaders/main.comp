@@ -8,7 +8,12 @@
 #define WORKGROUP_SIZE 8
 #define LOG2K 1
 #define MAX_NUM_LAYERS 32
+
 #define MASK_LIST_SIZE 3 // assuming 3-bit masks and 32-bit integers, this should always be <ceil(MAX_NUM_LAYERS*3/32)>
+#define MASKLIST_INDICES_LIST_SIZE 2 // assuming 2-bit masklist index and 32-bit integers, this should alwasy be <ceil(MAX_NUM_LAYERS*2/32)>
+#define NUM_MASKS_PER_ELEMENT 10 // assuming 3-bit masks and 32-bit integers, this should always be <ceil(32/3)>
+#define NUM_MLI_PER_ELEMENT 16 // assuming 2-bit mli (masklist_indices) and 32-bit integers, this should always be <ceil(32/2)>
+
 
 layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = 1) in;
 
@@ -352,8 +357,6 @@ uint rayMarch(in Ray ray)
 	vmask |= ((v.y < 0.0) ? 2u : 0u);
 	vmask |= ((v.z < 0.0) ? 4u : 0u);
 
-	uint num_masks_per_element = 32/3;
-
 	uint indirection_pointers[MAX_NUM_LAYERS];
 
 	float s_l_maxes[MAX_NUM_LAYERS];
@@ -362,7 +365,7 @@ uint rayMarch(in Ray ray)
 	uint childmasks[MASK_LIST_SIZE];
 	uint lastmasks[MASK_LIST_SIZE];
 	uvec3 masklists[MASK_LIST_SIZE];
-	uint masklist_indices[MAX_NUM_LAYERS];
+	uint masklist_indices[MASKLIST_INDICES_LIST_SIZE];
 
 	uvec3 node_mids[MAX_NUM_LAYERS];
 
@@ -408,7 +411,11 @@ uint rayMarch(in Ray ray)
 	childmasks[mask_index] = bitfieldInsert(childmasks[mask_index], childmask, mask_bitfield_offset, 3);
 	lastmasks[mask_index] = bitfieldInsert(lastmasks[mask_index], lastmask, mask_bitfield_offset, 3);
 
-	masklist_indices[0] = 0;
+	//masklist_indices[0] = 0;
+	//NOTE: mli = masklist_indices
+	uint last_mli_index, mli_index = 0;
+	int last_mli_bitfield_offset, mli_bitfield_offset = 0;
+	masklist_indices[mli_index] = bitfieldInsert(masklist_indices[mli_index], 0, mli_bitfield_offset, 2);
 
 
 	indirection_pointers[0] = 0;
@@ -425,10 +432,15 @@ uint rayMarch(in Ray ray)
 		//uint this_child_index = childmasks[idx-1] ^ vmask;
 
 		// set up bitfield helpers
-		mask_index = idx / num_masks_per_element;
-		mask_bitfield_offset = 3*int(idx - (mask_index * num_masks_per_element));
-		last_mask_index = (idx-1) / num_masks_per_element;
-		last_mask_bitfield_offset = 3*int((idx-1) - (last_mask_index * num_masks_per_element));
+		mask_index = idx / NUM_MASKS_PER_ELEMENT;
+		mask_bitfield_offset = 3*int(idx - (mask_index * NUM_MASKS_PER_ELEMENT));
+		last_mask_index = (idx-1) / NUM_MASKS_PER_ELEMENT;
+		last_mask_bitfield_offset = 3*int((idx-1) - (last_mask_index * NUM_MASKS_PER_ELEMENT));
+		mli_index = idx / NUM_MLI_PER_ELEMENT;
+		mli_bitfield_offset = 2*int(idx - (mli_index * NUM_MLI_PER_ELEMENT));
+		last_mli_index = (idx-1) / NUM_MLI_PER_ELEMENT;
+		last_mli_bitfield_offset = 2*int((idx-1) - (last_mli_index * NUM_MLI_PER_ELEMENT));
+
 		last_childmask = bitfieldExtract(childmasks[last_mask_index], last_mask_bitfield_offset, 3);
 		last_lastmask = bitfieldExtract(lastmasks[last_mask_index], last_mask_bitfield_offset, 3);
 		masklist = bitfieldExtract(masklists[mask_index], mask_bitfield_offset, 3);
@@ -485,7 +497,8 @@ uint rayMarch(in Ray ray)
 			childmasks[mask_index] = bitfieldInsert(childmasks[mask_index], childmask, mask_bitfield_offset, 3);
 			lastmasks[mask_index] = bitfieldInsert(lastmasks[mask_index], lastmask, mask_bitfield_offset, 3);
 
-			masklist_indices[idx] = 0;
+			//masklist_indices[idx] = 0;
+			masklist_indices[mli_index] = bitfieldInsert(masklist_indices[mli_index], 0, mli_bitfield_offset, 2);
 
 
 			// if this node is behind the ray's origin, skip it
@@ -502,9 +515,12 @@ uint rayMarch(in Ray ray)
 
 				bool continue_main_loop = false;
 				//while ((masklists[idx-1][masklist_indices[idx-1]] & last_childmask) != 0u)
-				while ((last_masklist[masklist_indices[idx-1]] & last_childmask) != 0u)
+				//while ((last_masklist[masklist_indices[idx-1]] & last_childmask) != 0u)
+				uint last_masklist_index = bitfieldExtract(masklist_indices[last_mli_index], last_mli_bitfield_offset, 2);
+				while ((last_masklist[last_masklist_index] & last_childmask) != 0u)
 				{
-					if (masklist_indices[idx-1] == 2)
+					//if (masklist_indices[idx-1] == 2)
+					if (last_masklist_index == 2)
 					{
 						layer++;
 						entered_new_node = false;
@@ -512,12 +528,14 @@ uint rayMarch(in Ray ray)
 						break;
 					}
 					// find next valid masklist element
-					masklist_indices[idx-1]++;
+					//masklist_indices[idx-1]++;
+					last_masklist_index++;
+					masklist_indices[last_mli_index] = bitfieldInsert(masklist_indices[last_mli_index], last_masklist_index, last_mli_bitfield_offset, 2);
 				}
 				if (continue_main_loop) continue;
 				// now re-generate childmask
 				//childmasks[idx-1] |= masklists[idx-1][masklist_indices[idx-1]];
-				childmasks[last_mask_index] = bitfieldInsert(childmasks[last_mask_index], last_childmask | last_masklist[masklist_indices[idx-1]], last_mask_bitfield_offset, 3);
+				childmasks[last_mask_index] = bitfieldInsert(childmasks[last_mask_index], last_childmask | last_masklist[last_masklist_index], last_mask_bitfield_offset, 3);
 				entered_new_node = true;
 				continue;
 			}
@@ -542,10 +560,11 @@ uint rayMarch(in Ray ray)
 
 			// if air and not the last node to be searched within its parent, find the next sister node
 			bool continue_main_loop = false;
-			//while ((masklists[idx-1][masklist_indices[idx-1]] & last_childmask) != 0u)
-			while ((last_masklist[masklist_indices[idx-1]] & last_childmask) != 0u)
+			uint last_masklist_index = bitfieldExtract(masklist_indices[last_mli_index], last_mli_bitfield_offset, 2);
+			while ((last_masklist[last_masklist_index] & last_childmask) != 0u)
 			{
-				if (masklist_indices[idx-1] == 2)
+				//if (masklist_indices[idx-1] == 2)
+				if (last_masklist_index == 2)
 				{
 					layer++;
 					entered_new_node = false;
@@ -553,12 +572,14 @@ uint rayMarch(in Ray ray)
 					break;
 				}
 				// find next valid masklist element
-				masklist_indices[idx-1]++;
+				//masklist_indices[idx-1]++;
+				last_masklist_index++;
+				masklist_indices[last_mli_index] = bitfieldInsert(masklist_indices[last_mli_index], last_masklist_index, last_mli_bitfield_offset, 2);
 			}
 			if (continue_main_loop) continue;
 			// now re-generate childmask
 			//childmasks[idx-1] |= masklists[idx-1][masklist_indices[idx-1]];
-			childmasks[last_mask_index] = bitfieldInsert(childmasks[last_mask_index], last_childmask | last_masklist[masklist_indices[idx-1]], last_mask_bitfield_offset, 3);
+			childmasks[last_mask_index] = bitfieldInsert(childmasks[last_mask_index], last_childmask | last_masklist[last_masklist_index], last_mask_bitfield_offset, 3);
 			entered_new_node = true;
 			continue;
 		}
@@ -585,9 +606,11 @@ uint rayMarch(in Ray ray)
 
 		// the node we just finished searching was not the last hit node within its parent - find the next hit sister node.
 		bool continue_main_loop = false;
-		while ((last_masklist[masklist_indices[idx-1]] & last_childmask) != 0u)
+		uint last_masklist_index = bitfieldExtract(masklist_indices[last_mli_index], last_mli_bitfield_offset, 2);
+		while ((last_masklist[last_masklist_index] & last_childmask) != 0u)
 		{
-			if (masklist_indices[idx-1] == 2)
+			//if (masklist_indices[idx-1] == 2)
+			if (last_masklist_index == 2)
 			{
 				layer++;
 				entered_new_node = false;
@@ -595,13 +618,16 @@ uint rayMarch(in Ray ray)
 				break;
 			}
 			// find next valid masklist element
-			masklist_indices[idx-1]++;
+			//masklist_indices[idx-1]++;
+			last_masklist_index++;
+			masklist_indices[last_mli_index] = bitfieldInsert(masklist_indices[last_mli_index], last_masklist_index, last_mli_bitfield_offset, 2);
 		}
 		if (continue_main_loop) continue;
 		// now re-generate childmask
 		//childmasks[idx-1] |= masklists[idx-1][masklist_indices[idx-1]];
-		childmasks[last_mask_index] = bitfieldInsert(childmasks[last_mask_index], last_childmask | last_masklist[masklist_indices[idx-1]], last_mask_bitfield_offset, 3);
+		childmasks[last_mask_index] = bitfieldInsert(childmasks[last_mask_index], last_childmask | last_masklist[last_masklist_index], last_mask_bitfield_offset, 3);
 		entered_new_node = true;
+		continue;
 	}
 
 	return 0;
