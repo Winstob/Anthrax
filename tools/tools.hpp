@@ -8,8 +8,8 @@
 #define ANTHRAX_TOOLS_HPP
 
 
-#define xstr(s) str(s)
-#define str(s) #s
+#define xstr(s) istr(s)
+#define istr(s) #s
 
 #define KB(x) ((size_t) (x) << 10)
 #define MB(x) ((size_t) (x) << 20)

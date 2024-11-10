@@ -28,6 +28,8 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+#include "tools.hpp"
+
 //#include "shader.hpp"
 #include "world.hpp"
 #include "camera.hpp"

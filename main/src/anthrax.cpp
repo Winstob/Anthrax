@@ -14,9 +14,6 @@
 #define FONT_DIRECTORY fonts
 #endif
 
-#define xstr(s) str(s)
-#define str(s) #s
-
 
 namespace Anthrax
 {
