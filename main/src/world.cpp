@@ -87,7 +87,7 @@ void World::generate()
 	next_available_pool_index_ = 1;
 	
 
-	VoxfileParser voxfile_parser(this);
+	VoxHandler voxfile_parser(this);
 	Material *materials_ptr = voxfile_parser.getMaterialsPtr();
 	for (unsigned int i = 0; i < 256; i++)
 	{

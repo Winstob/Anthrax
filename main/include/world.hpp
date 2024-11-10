@@ -14,7 +14,7 @@
 
 #include "tools.hpp"
 
-#include "voxfile_parser.hpp"
+#include "vox_handler.hpp"
 
 #define LOG2K 1
 

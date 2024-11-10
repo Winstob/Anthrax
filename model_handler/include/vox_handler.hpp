@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------- *\
- * voxfile_parser.hpp
+ * vox_handler.hpp
  * Author: Gavin Ralston
  * Date Created: 2024-09-21
  *
@@ -8,8 +8,8 @@
  * in the same way, so be aware of this when using.
 \* ---------------------------------------------------------------- */
 
-#ifndef VOXFILE_PARSER_HPP
-#define VOXFILE_PARSER_HPP
+#ifndef VOX_HANDLER_HPP
+#define VOX_HANDLER_HPP
 
 #include <fstream>
 #include <iostream>
@@ -28,7 +28,7 @@ namespace Anthrax
 
 class World;
 
-class VoxfileParser
+class VoxHandler
 {
 	class Model;
 	class Dict;
@@ -37,9 +37,9 @@ class VoxfileParser
 	class ShapeNode;
 	class SceneNode;
 public:
-	VoxfileParser() {};
-	VoxfileParser(World *world);
-	~VoxfileParser();
+	VoxHandler() {};
+	VoxHandler(World *world);
+	~VoxHandler();
 
 	Material *getMaterialsPtr() { return materials_; }
 
@@ -445,9 +445,9 @@ private:
 
 
 /*
-VoxfileParser::RotationMatrix operator*(const VoxfileParser::RotationMatrix &left, VoxfileParser::RotationMatrix &right)
+VoxHandler::RotationMatrix operator*(const VoxHandler::RotationMatrix &left, VoxHandler::RotationMatrix &right)
 {
-	VoxfileParser::RotationMatrix return_matrix;
+	VoxHandler::RotationMatrix return_matrix;
 	for (unsigned int row = 0; row < 3; row++)
 	{
 		for (unsigned int col = 0; col < 3; col++)
@@ -465,4 +465,4 @@ VoxfileParser::RotationMatrix operator*(const VoxfileParser::RotationMatrix &lef
 
 } // namespace Anthrax
 
-#endif // VOXFILE_PARSER_HPP
+#endif // VOX_HANDLER_HPP

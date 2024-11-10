@@ -1,16 +1,16 @@
 /* ---------------------------------------------------------------- *\
- * voxfile__parser.cpp
+ * vox_handler.cpp
  * Author: Gavin Ralston
  * Date Created: 2024-09-21
 \* ---------------------------------------------------------------- */
 #include <sstream> 
 
-#include "voxfile_parser.hpp"
+#include "vox_handler.hpp"
 
 namespace Anthrax
 {
 
-VoxfileParser::VoxfileParser(World *world)
+VoxHandler::VoxHandler(World *world)
 {
 	// TODO: endianness correction?
 	world_ = world;
@@ -39,13 +39,13 @@ VoxfileParser::VoxfileParser(World *world)
 }
 
 
-VoxfileParser::~VoxfileParser()
+VoxHandler::~VoxHandler()
 {
 	voxfile_.close();
 }
 
 
-void VoxfileParser::skipData(size_t num_bytes)
+void VoxHandler::skipData(size_t num_bytes)
 {
 	char garbage;
 	for (int i = 0; i < num_bytes; i++)
@@ -55,14 +55,14 @@ void VoxfileParser::skipData(size_t num_bytes)
 	return;
 }
 
-void VoxfileParser::readData(void *data, size_t num_bytes)
+void VoxHandler::readData(void *data, size_t num_bytes)
 {
 	voxfile_.read(reinterpret_cast<char*>(data), num_bytes);
 	return;
 }
 
 
-int32_t VoxfileParser::readInt32()
+int32_t VoxHandler::readInt32()
 {
 	int32_t return_data;
 	readData(&return_data, sizeof(int32_t));
@@ -70,7 +70,7 @@ int32_t VoxfileParser::readInt32()
 }
 
 
-void VoxfileParser::parseFile()
+void VoxHandler::parseFile()
 {
 	//std::string riff_header_string;
 	char riff_header_string[5];
@@ -195,7 +195,7 @@ void VoxfileParser::parseFile()
 }
 
 
-void VoxfileParser::parseSizeXyziPair()
+void VoxHandler::parseSizeXyziPair()
 {
 	char chunk_id[5];
 	chunk_id[4] = '\0';
@@ -256,7 +256,7 @@ void VoxfileParser::parseSizeXyziPair()
 }
 
 
-void VoxfileParser::parseRGBA()
+void VoxHandler::parseRGBA()
 {
 	uint8_t r_int, g_int, b_int, a_int;
 	float red, green, blue, alpha;
@@ -286,7 +286,7 @@ void VoxfileParser::parseRGBA()
 }
 
 
-void VoxfileParser::parsenTRN()
+void VoxHandler::parsenTRN()
 {
 	int32_t node_id = readInt32();
 	Dict node_attributes = parseDict();
@@ -371,7 +371,7 @@ void VoxfileParser::parsenTRN()
 }
 
 
-void VoxfileParser::parsenGRP()
+void VoxHandler::parsenGRP()
 {
 	int32_t node_id = readInt32();
 	Dict node_attributes = parseDict();
@@ -399,7 +399,7 @@ void VoxfileParser::parsenGRP()
 }
 
 
-void VoxfileParser::parsenSHP()
+void VoxHandler::parsenSHP()
 {
 	int32_t node_id = readInt32();
 	Dict node_attributes = parseDict();
@@ -429,7 +429,7 @@ void VoxfileParser::parsenSHP()
 }
 
 
-void VoxfileParser::parseLAYR()
+void VoxHandler::parseLAYR()
 {
 	int32_t layer_id = readInt32();
 	Dict layer_attribute = parseDict();
@@ -439,7 +439,7 @@ void VoxfileParser::parseLAYR()
 }
 
 
-void VoxfileParser::parseMATL()
+void VoxHandler::parseMATL()
 {
 	int32_t material_id = readInt32();
 	Dict material_properties = parseDict();
@@ -448,7 +448,7 @@ void VoxfileParser::parseMATL()
 }
 
 
-void VoxfileParser::parserOBJ()
+void VoxHandler::parserOBJ()
 {
 	Dict rendering_attributes = parseDict();
 	// TODO: do something with this rOBJ object. can we use it now? store it?
@@ -456,7 +456,7 @@ void VoxfileParser::parserOBJ()
 }
 
 
-void VoxfileParser::parserCAM()
+void VoxHandler::parserCAM()
 {
 	int32_t camera_id = readInt32();
 	Dict camera_attribute = parseDict();
@@ -465,7 +465,7 @@ void VoxfileParser::parserCAM()
 }
 
 
-void VoxfileParser::parseNOTE()
+void VoxHandler::parseNOTE()
 {
 	int32_t num_color_names = readInt32();
 	for (int32_t i = 0; i < num_color_names; i++)
@@ -478,7 +478,7 @@ void VoxfileParser::parseNOTE()
 }
 
 
-void VoxfileParser::parseIMAP()
+void VoxHandler::parseIMAP()
 {
 	for (int32_t i = 0; i < 256; i++)
 	{
@@ -490,7 +490,7 @@ void VoxfileParser::parseIMAP()
 }
 
 
-VoxfileParser::Dict VoxfileParser::parseDict()
+VoxHandler::Dict VoxHandler::parseDict()
 {
 	int32_t num_pairs = readInt32();
 	Dict dict(num_pairs);
@@ -505,7 +505,7 @@ VoxfileParser::Dict VoxfileParser::parseDict()
 }
 
 
-std::string VoxfileParser::parseString()
+std::string VoxHandler::parseString()
 {
 	int32_t size = readInt32();
 	char return_str[size+1];
@@ -515,7 +515,7 @@ std::string VoxfileParser::parseString()
 }
 
 
-void VoxfileParser::traverseSceneNode(int32_t scene_node_id, int32_t x_translation, int32_t y_translation, int32_t z_translation, RotationMatrix rotation)
+void VoxHandler::traverseSceneNode(int32_t scene_node_id, int32_t x_translation, int32_t y_translation, int32_t z_translation, RotationMatrix rotation)
 {
 	SceneNode scene_node = scene_nodes_[scene_node_id];
 
@@ -570,7 +570,7 @@ void VoxfileParser::traverseSceneNode(int32_t scene_node_id, int32_t x_translati
 }
 
 
-void VoxfileParser::drawSingleModel(int32_t model_id, int32_t x_translation, int32_t y_translation, int32_t z_translation, RotationMatrix rotation)
+void VoxHandler::drawSingleModel(int32_t model_id, int32_t x_translation, int32_t y_translation, int32_t z_translation, RotationMatrix rotation)
 {
 	Model model = models_[model_id];
 
@@ -606,9 +606,9 @@ void VoxfileParser::drawSingleModel(int32_t model_id, int32_t x_translation, int
 }
 
 
-VoxfileParser::RotationMatrix operator*(const VoxfileParser::RotationMatrix &left, const VoxfileParser::RotationMatrix &right)
+VoxHandler::RotationMatrix operator*(const VoxHandler::RotationMatrix &left, const VoxHandler::RotationMatrix &right)
 {
-	VoxfileParser::RotationMatrix return_matrix;
+	VoxHandler::RotationMatrix return_matrix;
 	for (unsigned int row = 0; row < 3; row++)
 	{
 		for (unsigned int col = 0; col < 3; col++)
