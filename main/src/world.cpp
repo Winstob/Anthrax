@@ -87,12 +87,27 @@ void World::generate()
 	next_available_pool_index_ = 1;
 	
 
+	/*
+	// vox file
 	VoxHandler voxfile_parser(this);
 	Material *materials_ptr = voxfile_parser.getMaterialsPtr();
 	for (unsigned int i = 0; i < 256; i++)
 	{
 		materials_[i] = materials_ptr[i];
 	}
+	*/
+
+	// glb file
+	GlbHandler glb_hander(this);
+	/*
+	Material *materials_ptr = glb_handler.getMaterialsPtr();
+	for (unsigned int i = 0; i < 256; i++)
+	{
+		materials_[i] = materials_ptr[i];
+	}
+	*/
+
+
 	std::cout << "World size: " << (next_available_pool_index_>>(18-(LOG2K*3))) << "MB" << std::endl; // *4(four bytes per 32-bit word), <<(LOG2K*3)(2^(log2k*3) children per index), >>20(B->MB)
 	
 	/*
