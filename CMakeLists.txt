@@ -23,6 +23,7 @@ set(GLAD_DIR ${LIB_DIR}/glad)
 set(GLM_DIR ${LIB_DIR}/glm)
 set(FREETYPE_DIR ${LIB_DIR}/freetype)
 set(JSONCPP_DIR ${LIB_DIR}/jsoncpp)
+set(STB_DIR ${LIB_DIR}/stb)
 
 add_subdirectory(${GLFW_DIR})
 add_subdirectory(${GLAD_DIR})
@@ -60,5 +61,6 @@ target_include_directories(${PROJECT_NAME}
   PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/tools
 	${JSONCPP_DIR}/include
+	${STB_DIR}
 	${INCLUDE_DIRS}
   )
