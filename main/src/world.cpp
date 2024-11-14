@@ -98,7 +98,7 @@ void World::generate()
 	*/
 
 	// glb file
-	GlbHandler glb_hander(this);
+	GltfHandler gltf_hander(this);
 	/*
 	Material *materials_ptr = glb_handler.getMaterialsPtr();
 	for (unsigned int i = 0; i < 256; i++)
