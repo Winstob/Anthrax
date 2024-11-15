@@ -27,6 +27,7 @@
 #include "json/json.h"
 #include "material.hpp"
 #include "world.hpp"
+#include "transform.hpp"
 
 namespace Anthrax
 {

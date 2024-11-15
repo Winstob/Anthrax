@@ -65,6 +65,12 @@ GltfHandler::GltfHandler(World *world)
 	loadFile();
 	//unsigned int offset[3] = { 0, 0, 0 };
 	unsigned int offset[3] = { 2048, 2048, 2048 };
+
+	float t[3] = {10.0, 20.0, 30.0};
+	float r[4] = {0.259, 0.0, 0.0, 0.966};
+	float s[3] = {2.0, 1.0, 0.5};
+	Transform transform(t, r, s);
+	transform.print();
 	exit(0);
 }
 
