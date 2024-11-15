@@ -63,14 +63,20 @@ GltfHandler::GltfHandler(World *world)
 
 	gltffile_ = std::ifstream(filename, std::ios::binary);
 	loadFile();
+
+	loadBuffers();
+	loadBufferViews();
+	loadAccessors();
 	//unsigned int offset[3] = { 0, 0, 0 };
 	unsigned int offset[3] = { 2048, 2048, 2048 };
 
+	/*
 	float t[3] = {10.0, 20.0, 30.0};
 	float r[4] = {0.259, 0.0, 0.0, 0.966};
 	float s[3] = {2.0, 1.0, 0.5};
 	Transform transform(t, r, s);
 	transform.print();
+	*/
 	exit(0);
 }
 
@@ -132,6 +138,7 @@ void GltfHandler::loadGltf()
 		throw std::runtime_error("Failed to parse json file!");
 	}
 	// need to find and load .bin file too
+	/*
 	std::string bin_filename = json_["buffers"][0]["uri"].asString();
 	std::string bin_filepath = gltfdir_ + "/" + bin_filename;
 	if (!std::filesystem::exists(bin_filepath))
@@ -143,6 +150,7 @@ void GltfHandler::loadGltf()
 	std::ifstream bin_filestream = std::ifstream(bin_filepath, std::ios::binary);
 	bin_filestream.read(bin_.data(), bin_file_length);
 	bin_filestream.close();
+	*/
 	return;
 }
 
@@ -215,6 +223,140 @@ void GltfHandler::loadBinChunk(uint32_t chunk_length)
 {
 	// TODO: unfinished (glb only)
 	skipData(chunk_length);
+	return;
+}
+
+
+void GltfHandler::loadBuffers()
+{
+	// load all buffers into memory
+	unsigned int i = 0;
+	while (Json::Value current_buffer = json_["buffers"][i])
+	{
+		buffers_.push_back(Buffer(this, current_buffer));
+		i++;
+	}
+	std::cout << "Loaded " << i << " buffer(s)" << std::endl;
+	return;
+}
+
+
+void GltfHandler::loadBufferViews()
+{
+	// load all bufferviews into memory
+	unsigned int i = 0;
+	while (Json::Value current_buffer_view = json_["bufferViews"][i])
+	{
+		buffer_views_.push_back(BufferView(this, current_buffer_view));
+		i++;
+	}
+	std::cout << "Loaded " << i << " bufferView(s)" << std::endl;
+	return;
+}
+
+
+void GltfHandler::loadAccessors()
+{
+	// load all bufferviews into memory
+	unsigned int i = 0;
+	while (Json::Value current_accessor = json_["accessors"][i])
+	{
+		accessors_.push_back(Accessor(this, current_accessor));
+		i++;
+	}
+	std::cout << "Loaded " << i << " accessor(s)" << std::endl;
+	return;
+}
+
+
+/* ---------------------------------------------------------------- *\
+ * Buffer implementation
+\* ---------------------------------------------------------------- */
+
+GltfHandler::Buffer::Buffer(GltfHandler *parent, Json::Value json_entry)
+{
+	std::string uri = json_entry["uri"].asString();
+	int buffer_size = json_entry["byteLength"].asInt();
+
+	if (initialized_)
+	{
+		throw std::runtime_error("Buffer already filled!");
+	}
+	data_ = (unsigned char*)malloc(buffer_size);
+	// TODO: currently this assumes non-embedded data URI's. Need to support data URI's as well.
+	// TODO: also assumes gltf (not glb). May not be an issue anyway? who knows
+	std::string full_filepath = parent->gltfdir_ + "/" + uri;
+	if (!(std::filesystem::exists(full_filepath) && std::filesystem::is_regular_file(full_filepath)))
+	{
+		throw std::runtime_error("Couldn't resolve URI!");
+	}
+
+	std::ifstream file(full_filepath, std::ios::binary);
+	if (!file.read(reinterpret_cast<char*>(data_), buffer_size))
+	{
+		throw std::runtime_error("Failed to read binary file!");
+	}
+	file.close();
+
+	initialized_ = true;
+	return;
+}
+
+
+GltfHandler::Buffer::~Buffer()
+{
+	free(data_);
+	return;
+}
+
+/* ---------------------------------------------------------------- *\
+ * BufferView implementation
+\* ---------------------------------------------------------------- */
+
+GltfHandler::BufferView::BufferView(GltfHandler *parent, Json::Value json_entry)
+{
+	int buffer_index = json_entry["buffer"].asInt();
+	buffer_ = &(parent->buffers_[buffer_index]);
+	byte_offset_ = json_entry["bufferOffset"].asInt();
+	byte_length_ = json_entry["byteLength"].asInt();
+	if (json_entry["byteStride"])
+	{
+		byte_stride_ = json_entry["byteStride"].asInt();
+	}
+	target_ = json_entry["target"].asInt();
+	return;
+}
+
+
+GltfHandler::BufferView::~BufferView()
+{
+	return;
+}
+
+/* ---------------------------------------------------------------- *\
+ * Accessor implementation
+\* ---------------------------------------------------------------- */
+
+GltfHandler::Accessor::Accessor(GltfHandler *parent, Json::Value json_entry)
+{
+	int buffer_view_index = json_entry["bufferView"].asInt();
+	buffer_view_ = &(parent->buffer_views_[buffer_view_index]);
+	byte_offset_ = json_entry["byteOffset"].asInt();
+	component_type_ = json_entry["componentType"].asInt();
+	count_ = json_entry["count"].asInt();
+	type_ = json_entry["type"].asString();
+	// optional min/max
+	min_ = json_entry["min"];
+	max_ = json_entry["max"];
+	if (json_entry["values"])
+	{
+		throw std::runtime_error("glTF sparse accessors not yet implemented!");
+	}
+}
+
+
+GltfHandler::Accessor::~Accessor()
+{
 	return;
 }
 

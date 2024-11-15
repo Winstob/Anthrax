@@ -48,14 +48,53 @@ private:
 		GLB
 	};
 	Type file_type_;
-	enum AccessorDataType
+
+	class Buffer
 	{
-		SIGNED_BYTE = 5120,
-		UNSIGNED_BYTE = 5121,
-		SIGNED_SHORT = 5122,
-		UNSIGNED_SHORT = 5123,
-		UNSIGNED_INT = 5125,
-		FLOAT = 5126
+	public:
+		Buffer() {}
+		Buffer(GltfHandler *parent, Json::Value json_entry);
+		~Buffer();
+		unsigned char *data() { return data_; }
+	private:
+		unsigned char *data_ = nullptr;
+		bool initialized_ = false;
+	};
+	class BufferView
+	{
+	public:
+		BufferView() {}
+		BufferView(GltfHandler *parent, Json::Value json_entry);
+		~BufferView();
+	private:
+		Buffer *buffer_ = nullptr;
+		int byte_offset_ = 0;
+		int byte_length_ = 0;
+		int byte_stride_ = 0;
+		int target_ = 0;
+	};
+	class Accessor
+	{
+	public:
+		Accessor() {}
+		Accessor(GltfHandler *parent, Json::Value json_entry);
+		~Accessor();
+		enum ComponentType
+		{
+			SIGNED_BYTE = 5120,
+			UNSIGNED_BYTE = 5121,
+			SIGNED_SHORT = 5122,
+			UNSIGNED_SHORT = 5123,
+			UNSIGNED_INT = 5125,
+			FLOAT = 5126
+		};
+	private:
+		BufferView *buffer_view_ = nullptr;
+		int byte_offset_ = 0;
+		int component_type_;
+		int count_ = 0;
+		std::string type_ = "";
+		Json::Value min_, max_;
 	};
 	std::ifstream gltffile_;
 	std::string gltfdir_;
@@ -67,9 +106,15 @@ private:
 	void loadGlb();
 	void loadJsonChunk(uint32_t chunk_length);
 	void loadBinChunk(uint32_t chunk_length);
+	void loadBuffers();
+	void loadBufferViews();
+	void loadAccessors();
 
 	Json::Value json_;
-	std::vector<char> bin_;
+	//std::vector<char> bin_;
+	std::vector<Buffer> buffers_;
+	std::vector<BufferView> buffer_views_;
+	std::vector<Accessor> accessors_;
 
 	World *world_;
 	float unit_length_mm_ = 1000.0; // glTF standard unit length is 1 meter (1000 millimeters)
