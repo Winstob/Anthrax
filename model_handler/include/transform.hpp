@@ -27,9 +27,9 @@ class Transform
 // Stored as a column-major 4x4 matrix
 public:
 	Transform(float *translation, float *rotation, float *scale);
-	Transform(float matrix[4][4]);
+	Transform(float matrix[4][4]); // input should be column-major
 	Transform() {}
-	Transform (const Transform &other) { copy(other); }
+	Transform(const Transform &other) { copy(other); }
 	Transform &operator=(const Transform &other) { copy(other); return *this; }
 	friend Transform operator*(const Transform &left, const Transform &right);
 
@@ -55,9 +55,16 @@ public:
 			}
 		}
 	}
+	void transformVec3(float *vec3);
 	void print();
 private:
-	float matrix_[4][4] = { {1.0, 0.0, 0.0, 0.0}, {0.0, 1.0, 0.0, 0.0}, {0.0, 0.0, 1.0, 0.0}, {0.0, 0.0, 0.0, 1.0} };
+	float matrix_[4][4] =
+	{
+		{1.0, 0.0, 0.0, 0.0},
+		{0.0, 1.0, 0.0, 0.0},
+		{0.0, 0.0, 1.0, 0.0},
+		{0.0, 0.0, 0.0, 1.0}
+	};
 };
 
 } // namespace Anthrax

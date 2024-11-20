@@ -25,6 +25,7 @@ class Mesh
 public:
 	Mesh();
 	~Mesh();
+	int addTriangle(float vertices[3][3]);
 	int addTexture(std::string image_name);
 	int addTextureFromBuffer(unsigned char *image_data, size_t image_buffer_size);
 private:
@@ -46,6 +47,9 @@ private:
 		Triangle();
 		Triangle(float vtx0[], float vtx1[], float vtx2[], int texture_id);
 		~Triangle() {};
+		Triangle(const Triangle &other) { copy(other); }
+		Triangle &operator=(const Triangle &other) { copy(other); return *this; }
+		void copy(const Triangle &other);
 	private:
 		float vertices_[3][3];
 		int texture_id_;

@@ -25,6 +25,19 @@ Mesh::~Mesh()
 
 
 /*
+ * Return: the triangle ID
+ */
+int Mesh::addTriangle(float vertices[3][3])
+{
+	int initial_num_triangles = triangles_.size();
+	triangles_.push_back(Triangle(vertices[0], vertices[1], vertices[2], 0));
+	if (triangles_.size() == initial_num_triangles+1)
+		return initial_num_triangles;
+	return -1;
+}
+
+
+/*
  * Return: the texture ID
  */
 int Mesh::addTexture(std::string image_name)
@@ -112,5 +125,18 @@ Mesh::Triangle::Triangle(float vtx0[], float vtx1[], float vtx2[], int texture_i
 	texture_id_ = texture_id;
 	return;
 }
+
+
+void Mesh::Triangle::copy(const Mesh::Triangle &other)
+{
+	for (unsigned int i = 0; i < 3; i++)
+	{
+		for (unsigned int j = 0; j < 3; j++)
+		{
+			vertices_[i][j] = other.vertices_[i][j];
+		}
+	}
+}
+
 
 } // namespace Anthrax

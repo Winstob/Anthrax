@@ -77,13 +77,225 @@ GltfHandler::GltfHandler(World *world)
 	Transform transform(t, r, s);
 	transform.print();
 	*/
+	constructMesh();
 	exit(0);
+	return;
 }
 
 
 GltfHandler::~GltfHandler()
 {
 	gltffile_.close();
+}
+
+
+void GltfHandler::constructMesh()
+{
+	int scene_index = json_["scene"].asInt();
+	Json::Value scene = json_["scenes"][scene_index];
+	for (unsigned int i = 0; scene["nodes"][i]; i++)
+	{
+		int node_index = scene["nodes"][i].asInt();
+		Json::Value node = json_["nodes"][node_index];
+		processNode(Node(this, node));
+	}
+
+	return;
+}
+
+
+void GltfHandler::processNode(Node node)
+{
+	// extract node elements
+	Transform new_transform;
+	if (node.json_["matrix"])
+	{
+		float matrix[4][4];
+		for (unsigned int col; col < 4; col++)
+		{
+			for (unsigned int row; row < 4; row++)
+				matrix[col][row] = node.json_["matrix"][col*4+row].asFloat();
+		}
+		new_transform = Transform(matrix);
+	}
+	else
+	{
+		float translation[3] = {0.0, 0.0, 0.0};
+		float rotation[4] = {0.0, 0.0, 0.0, 1.0};
+		float scale[3] = {1.0, 1.0, 1.0};
+		if (node.json_["translation"])
+		{
+			for (unsigned int i = 0; i < 3; i++)
+				translation[i] = node.json_["translation"][i].asFloat();
+		}
+		if (node.json_["rotation"])
+		{
+			for (unsigned int i = 0; i < 4; i++)
+				rotation[i] = node.json_["rotation"][i].asFloat();
+		}
+		if (node.json_["scale"])
+		{
+			for (unsigned int i = 0; i < 3; i++)
+				scale[i] = node.json_["scale"][i].asFloat();
+		}
+		new_transform = Transform(translation, rotation, scale);
+	}
+	node.applyTransform(new_transform);
+
+	// then loop throgh all children, processNode(child)
+	for (unsigned int i = 0; node.json_["children"][i]; i++)
+	{
+		processNode(node.getChild(i));
+	}
+
+	// now actually process this node
+	if (node.json_["mesh"])
+	{
+		insertMesh(node);
+	}
+	return;
+}
+
+
+void GltfHandler::insertMesh(Node node)
+{
+	Json::Value mesh_json = json_["meshes"][node.json_["mesh"].asInt()];
+	for (unsigned int i = 0; mesh_json["primitives"][i]; i++)
+	{
+		Json::Value primitive = mesh_json["primitives"][i];
+		if (!primitive["attributes"]["POSITION"])
+		{
+			throw std::runtime_error("Encountered mesh primitive with no POSITION attribute!");
+		}
+		Accessor *positions_accessor = &(accessors_[primitive["attributes"]["POSITION"].asInt()]);
+		if (positions_accessor->getType().first != Accessor::FLOAT)
+		{
+			throw std::runtime_error("POSITION attribute should be a FLOAT!");
+		}
+
+		// TODO: do this
+		int mode = TRIANGLES;
+		if (primitive["mode"]) mode = primitive["mode"].asInt();
+		if (mode != TRIANGLES)
+		{
+			throw std::runtime_error("Non-triangular primitive modes not yet implemented!");
+		}
+
+		if (primitive["indices"])
+		{
+			// use indexed geometry
+			Accessor *indices_accessor = &(accessors_[primitive["indices"].asInt()]);
+			if (indices_accessor->getType().second != "SCALAR")
+			{
+				throw std::runtime_error("indices accessor is not a SCALAR!");
+			}
+			for (unsigned int j = 0; j < indices_accessor->size()/3; j++)
+			{
+				// obtain the vertex indices for the next 3 vertices (triangle)
+				unsigned int vertex_indices[3];
+				for (unsigned int current_vertex_index = 0; current_vertex_index < 3; current_vertex_index++)
+				{
+					switch (indices_accessor->getType().first)
+					{
+						case Accessor::SIGNED_SHORT:
+							vertex_indices[current_vertex_index] = static_cast<unsigned int>(std::any_cast<signed short>((*indices_accessor)[j*3+current_vertex_index]));
+							break;
+						case Accessor::UNSIGNED_SHORT:
+							vertex_indices[current_vertex_index] = static_cast<unsigned int>(std::any_cast<unsigned short>((*indices_accessor)[j*3+current_vertex_index]));
+							break;
+						case Accessor::UNSIGNED_INT:
+							vertex_indices[current_vertex_index] = std::any_cast<unsigned int>((*indices_accessor)[j*3+current_vertex_index]);
+							break;
+						default:
+							throw std::runtime_error("Invalid incides accessor component_type!");
+					}
+				}
+				// find the vertex positions
+				if (positions_accessor->getType().second != "VEC3")
+				{
+					throw std::runtime_error("POSITION attribute should be a VEC3!");
+				}
+				// positions_accessor must be a FLOAT VEC3 - this should have already been verified.
+				float vertex_positions[3][3];
+				for (unsigned int current_vertex_index = 0; current_vertex_index < 3; current_vertex_index++)
+				{
+					std::vector<float> vertex = std::any_cast<std::vector<float>>((*positions_accessor)[vertex_indices[current_vertex_index]]);
+					vertex = node.transform(vertex); // don't forget to apply the transform!
+					memcpy(vertex_positions[current_vertex_index], vertex.data(), sizeof(float)*3);
+				}
+				std::cout << std::endl << vertex_positions[0][0] << ", " << vertex_positions[0][1] << ", " << vertex_positions[0][2];
+				std::cout << std::endl << vertex_positions[1][0] << ", " << vertex_positions[1][1] << ", " << vertex_positions[1][2];
+				std::cout << std::endl << vertex_positions[2][0] << ", " << vertex_positions[2][1] << ", " << vertex_positions[2][2] << std::endl;
+				mesh_.addTriangle(vertex_positions);
+			}
+		}
+		else
+		{
+			throw std::runtime_error("Non-indexed geometry not yet implemented!");
+		}
+	}
+	/*
+	Json::Value mesh_json = json_["meshes"][node.json_["mesh"].asInt()];
+	for (unsigned int i = 0; mesh_json["primitives"][i]; i++)
+	{
+		Json::Value primitive = mesh_json["primitives"][i];
+		float *positions = nullptr;
+		int *indices = nullptr;
+		size_t positions_num_bytes = 0;
+		size_t indices_num_bytes = 0;
+		size_t positions_size = 0;
+		size_t indices_size = 0;
+		bool indexed_geometry = false;
+		if (primitive["indices"])
+		{
+			indexed_geometry = true;
+			indices_num_bytes = accessors_[primitive["indices"].asInt()].retrieve(reinterpret_cast<void*>(indices));
+			indices_size = indices_num_bytes / sizeof(int);
+		}
+		if (!primitive["attributes"]["POSITION"])
+		{
+			std::cout << i << std::endl;
+			throw std::runtime_error("Encountered mesh primitive with no POSITION attribute!");
+		}
+		positions_num_bytes = accessors_[primitive["attributes"]["POSITION"].asFloat()].retrieve(reinterpret_cast<void*>(positions)); // positions is treated as a flat array here? maybe not the best idea
+		positions_size = positions_num_bytes / sizeof(float);
+
+		if (indexed_geometry)
+		{
+			for (unsigned int j = 0; j < indices_size/3; j++)
+			{
+				// loop through set of indices (set of 3 ints)
+				float vertices[3][3];
+				for (unsigned int k = 0; k < 3; k++)
+				{
+					// get each 3-dimensional vertex
+					vertices[k][0] = positions[indices[j*3+k]*3+0];
+					vertices[k][1] = positions[indices[j*3+k]*3+1];
+					vertices[k][2] = positions[indices[j*3+k]*3+2];
+				}
+				mesh_.addTriangle(vertices);
+			}
+		}
+		else
+		{
+			for (unsigned int j = 0; j < positions_size/9; j++)
+			{
+				float vertices[3][3];
+				for (unsigned int k = 0; k < 3; k++)
+				{
+					vertices[k][0] = positions[j*9+k*3+0];
+					vertices[k][1] = positions[j*9+k*3+1];
+					vertices[k][2] = positions[j*9+k*3+2];
+				}
+				mesh_.addTriangle(vertices);
+			}
+		}
+
+
+		free(positions);
+		if (indexed_geometry) free(indices);
+	}
+	*/
 }
 
 
@@ -276,13 +488,13 @@ void GltfHandler::loadAccessors()
 GltfHandler::Buffer::Buffer(GltfHandler *parent, Json::Value json_entry)
 {
 	std::string uri = json_entry["uri"].asString();
-	int buffer_size = json_entry["byteLength"].asInt();
 
 	if (initialized_)
 	{
 		throw std::runtime_error("Buffer already filled!");
 	}
-	data_ = (unsigned char*)malloc(buffer_size);
+	size_ = json_entry["byteLength"].asInt();
+	data_ = reinterpret_cast<unsigned char*>(malloc(size_));
 	// TODO: currently this assumes non-embedded data URI's. Need to support data URI's as well.
 	// TODO: also assumes gltf (not glb). May not be an issue anyway? who knows
 	std::string full_filepath = parent->gltfdir_ + "/" + uri;
@@ -292,7 +504,7 @@ GltfHandler::Buffer::Buffer(GltfHandler *parent, Json::Value json_entry)
 	}
 
 	std::ifstream file(full_filepath, std::ios::binary);
-	if (!file.read(reinterpret_cast<char*>(data_), buffer_size))
+	if (!file.read(reinterpret_cast<char*>(data_), size_))
 	{
 		throw std::runtime_error("Failed to read binary file!");
 	}
@@ -306,6 +518,25 @@ GltfHandler::Buffer::Buffer(GltfHandler *parent, Json::Value json_entry)
 GltfHandler::Buffer::~Buffer()
 {
 	free(data_);
+	size_ = 0;
+	initialized_ = false;
+	return;
+}
+
+
+void GltfHandler::Buffer::copy(const Buffer &other)
+{
+	initialized_ = other.initialized_;
+	size_ = other.size_;
+	data_ = (unsigned char*)malloc(size_);
+	memcpy(data_, other.data_, size_);
+	return;
+}
+
+
+void GltfHandler::Buffer::read(void *memory, int offset, int num_bytes)
+{
+	memcpy(memory, &(data_[offset]), num_bytes);
 	return;
 }
 
@@ -317,11 +548,14 @@ GltfHandler::BufferView::BufferView(GltfHandler *parent, Json::Value json_entry)
 {
 	int buffer_index = json_entry["buffer"].asInt();
 	buffer_ = &(parent->buffers_[buffer_index]);
-	byte_offset_ = json_entry["bufferOffset"].asInt();
+	byte_offset_ = json_entry["byteOffset"].asInt();
 	byte_length_ = json_entry["byteLength"].asInt();
+	mode_ = SIMPLE;
 	if (json_entry["byteStride"])
 	{
 		byte_stride_ = json_entry["byteStride"].asInt();
+		if (byte_stride_ > 0)
+			mode_ = INTERLEAVED;
 	}
 	target_ = json_entry["target"].asInt();
 	return;
@@ -330,6 +564,22 @@ GltfHandler::BufferView::BufferView(GltfHandler *parent, Json::Value json_entry)
 
 GltfHandler::BufferView::~BufferView()
 {
+	return;
+}
+
+
+void GltfHandler::BufferView::read(void* memory, int element_index, int accessor_offset, size_t element_size)
+{
+	int buffer_offset;
+	if (mode_ == INTERLEAVED)
+	{
+		buffer_offset = element_index*byte_stride_ + accessor_offset;
+	}
+	else
+	{
+		buffer_offset = element_size*element_index + accessor_offset;
+	}
+	buffer_->read(memory, buffer_offset+byte_offset_, element_size);
 	return;
 }
 
@@ -342,13 +592,15 @@ GltfHandler::Accessor::Accessor(GltfHandler *parent, Json::Value json_entry)
 	int buffer_view_index = json_entry["bufferView"].asInt();
 	buffer_view_ = &(parent->buffer_views_[buffer_view_index]);
 	byte_offset_ = json_entry["byteOffset"].asInt();
-	component_type_ = json_entry["componentType"].asInt();
 	count_ = json_entry["count"].asInt();
-	type_ = json_entry["type"].asString();
+
+	int component_type = json_entry["componentType"].asInt();
+	std::string type = json_entry["type"].asString();
+	type_ = Type(component_type, type);
 	// optional min/max
 	min_ = json_entry["min"];
 	max_ = json_entry["max"];
-	if (json_entry["values"])
+	if (json_entry["sparse"])
 	{
 		throw std::runtime_error("glTF sparse accessors not yet implemented!");
 	}
@@ -358,6 +610,153 @@ GltfHandler::Accessor::Accessor(GltfHandler *parent, Json::Value json_entry)
 GltfHandler::Accessor::~Accessor()
 {
 	return;
+}
+
+
+std::any GltfHandler::Accessor::operator[](size_t index)
+{
+	switch(type_.first)
+	{
+		case SIGNED_BYTE:
+			return readDynamicType<signed char>(index);
+		case UNSIGNED_BYTE:
+			return readDynamicType<unsigned char>(index);
+		case SIGNED_SHORT:
+			return readDynamicType<signed short>(index);
+		case UNSIGNED_SHORT:
+			return readDynamicType<unsigned short>(index);
+		case UNSIGNED_INT:
+			return readDynamicType<unsigned int>(index);
+		case FLOAT:
+			return readDynamicType<float>(index);
+		default:
+			throw std::runtime_error("Unknown accessor type!");
+	}
+}
+
+
+template <typename T>
+std::any GltfHandler::Accessor::readDynamicType(int index)
+{
+	if (type_.second == "SCALAR")
+	{
+		T ret;
+		buffer_view_->read(&ret, index, byte_offset_, sizeof(T));
+		return ret;
+	}
+	else if (type_.second == "VEC3")
+	{
+		std::vector<T> ret(3);
+		buffer_view_->read(ret.data(), index, byte_offset_, 3*sizeof(T));
+		return ret;
+	}
+	else
+	{
+		throw std::runtime_error("Unknown accessor type!");
+	}
+	return NULL;
+}
+
+
+
+size_t GltfHandler::Accessor::retrieve(void *memory)
+{
+	return 0;
+	/*
+	// NOTE: the allocated memory must be freed by the caller!
+	if (memory) throw std::runtime_error("Memory to allocate is not null!");
+	int num_bytes_per_component;
+	int num_components_per_element;
+	switch(component_type_)
+	{
+		case SIGNED_BYTE:
+		case UNSIGNED_BYTE:
+			num_bytes_per_component = 1;
+			break;
+		case SIGNED_SHORT:
+		case UNSIGNED_SHORT:
+			num_bytes_per_component = 2;
+			break;
+		case UNSIGNED_INT:
+		case FLOAT:
+			num_bytes_per_component = 4;
+			break;
+		default:
+			std::cout << component_type_ << std::endl;
+			throw std::runtime_error("Unknown component type!");
+	}
+	if (type_ == "SCALAR")
+		num_components_per_element = 1;
+	else if (type_ == "VEC3")
+		num_components_per_element = 3;
+	else
+		throw std::runtime_error("Unknown accessor type!");
+
+	// allocate memory
+	unsigned char* mem_ptr = reinterpret_cast<unsigned char*>(malloc(num_bytes_per_component*num_components_per_element*count_));
+
+	// fill memory
+	for (int i = 0; i < count_; i++)
+	{
+		int offset = i*num_bytes_per_component*num_components_per_element;
+		buffer_view_->read(&(mem_ptr[offset]), i, byte_offset_, num_bytes_per_component*num_components_per_element, num_bytes_per_component*num_components_per_element);
+		//read(&(mem_ptr[i*num_bytes_per_component*num_components_per_element]), num_bytes_per_component*num_components_per_element)
+	}
+
+	memory = mem_ptr;
+	return count_*num_bytes_per_component*num_components_per_element;
+	*/
+}
+
+
+void GltfHandler::Accessor::copy(const Accessor &other)
+{
+	buffer_view_ = other.buffer_view_;
+	byte_offset_ = other.byte_offset_;
+	count_ = other.count_;
+	type_ = other.type_;
+	min_ = other.min_;
+	max_ = other.max_;
+	return;
+}
+
+
+/* ---------------------------------------------------------------- *\
+ * Node implementation
+\* ---------------------------------------------------------------- */
+
+GltfHandler::Node::~Node()
+{
+	return;
+}
+
+
+void GltfHandler::Node::copy(const Node &other)
+{
+	parent_ = other.parent_;
+	json_ = other.json_;
+	transform_ = other.transform_;
+	return;
+}
+
+
+GltfHandler::Node GltfHandler::Node::getChild(int child_index)
+{
+	Node child_node;
+	child_node.copy(*this);
+	child_node.json_ = parent_->json_["nodes"][json_["children"][child_index].asInt()];
+	return child_node;
+}
+
+
+std::vector<float> GltfHandler::Node::transform(std::vector<float> vec)
+{
+	if (vec.size() != 3)
+	{
+		throw std::runtime_error("Tried to transform vector of invalid dimensions!");
+	}
+	transform_.transformVec3(vec.data());
+	return vec;
 }
 
 } // namespace Anthrax

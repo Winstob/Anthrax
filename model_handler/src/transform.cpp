@@ -17,6 +17,12 @@ Transform::Transform(float *translation, float *rotation, float *scale)
 	// translation is given as a vec3
 	// rotation is given as a vec4 (quaternion)
 	// scale is given as a vec3
+	float translation_tmp[3] = {0.0, 0.0, 0.0};
+	float rotation_tmp[4] = {0.0, 0.0, 0.0, 1.0};
+	float scale_tmp[3] = {1.0, 1.0, 1.0};
+	if (!translation) translation = translation_tmp;
+	if (!rotation) rotation = rotation_tmp;
+	if (!scale) scale = scale_tmp;
 	float translation_matrix[4][4] =
 	{
 		{1.0, 0.0, 0.0, 0.0},
@@ -70,6 +76,26 @@ Transform::Transform(float matrix[4][4])
 		{
 			matrix_[i][j] = matrix[i][j];
 		}
+	}
+	return;
+}
+
+
+void Transform::transformVec3(float *vec3)
+{
+	float vec4[4] = { vec3[0], vec3[1], vec3[2], 1.0 };
+	float ret[3];
+	for (unsigned int col = 0; col < 3; col++)
+	{
+		ret[col] = 0.0;
+		for (unsigned int row = 0; row < 4; row++)
+		{
+			ret[col] += vec4[row]*matrix_[col][row];
+		}
+	}
+	for (unsigned int i = 0; i < 3; i++)
+	{
+		vec3[i] = ret[i];
 	}
 	return;
 }
