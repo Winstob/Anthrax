@@ -97,6 +97,11 @@ Mesh::Texture::~Texture()
 }
 
 
+Mesh::Triangle Mesh::operator[](size_t index)
+{
+	return triangles_[index];
+}
+
 /* ---------------------------------------------------------------- *\
  * Triangle implementation
 \* ---------------------------------------------------------------- */
@@ -136,6 +141,16 @@ void Mesh::Triangle::copy(const Mesh::Triangle &other)
 			vertices_[i][j] = other.vertices_[i][j];
 		}
 	}
+}
+
+
+float *Mesh::Triangle::operator[](size_t index)
+{
+	if (index > 2)
+	{
+		throw std::runtime_error("Triangle operator[] index out of bounds!");
+	}
+	return vertices_[index];
 }
 
 

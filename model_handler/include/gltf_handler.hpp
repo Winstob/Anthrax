@@ -30,6 +30,7 @@
 #include "world.hpp"
 #include "transform.hpp"
 #include "mesh.hpp"
+#include "voxelizer.hpp"
 
 namespace Anthrax
 {
@@ -43,6 +44,7 @@ public:
 	GltfHandler(World *world);
 	~GltfHandler();
 	void constructMesh();
+	Mesh *getMeshPtr() { return &mesh_; }
 private:
 	enum Type
 	{

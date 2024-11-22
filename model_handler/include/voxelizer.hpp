@@ -22,6 +22,7 @@
 
 #include "material.hpp"
 #include "mesh.hpp"
+#include "world.hpp"
 
 namespace Anthrax
 {
@@ -30,8 +31,18 @@ class Voxelizer
 {
 public:
 	Voxelizer();
+	Voxelizer(Mesh *mesh) : mesh_(mesh) {}
+	Voxelizer(const Voxelizer &other) { copy(other); }
+	Voxelizer &operator=(const Voxelizer &other) { copy(other); return *this; }
+	void copy(const Voxelizer &other);
 	~Voxelizer();
+	void addToWorld(World *world);
 private:
+	bool intersectionCheck(float vertices[3][3], int x, int y, int z);
+	void cross(float *result, float vec1[3], float vec2[3]);
+	float magnitude(float vec3[3]);
+	float dot(float vec1[3], float vec2[3]);
+	Mesh *mesh_;
 };
 
 } // namespace Anthrax
