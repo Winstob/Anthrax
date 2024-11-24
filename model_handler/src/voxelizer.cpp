@@ -31,7 +31,7 @@ Voxelizer::~Voxelizer()
 void Voxelizer::addToWorld(World *world)
 {
 	unsigned int offset[3] = { 2048, 2048, 2048 };
-	float multiplier = 75.0;
+	float multiplier = 1.0;
 	for (unsigned int i = 0; i < mesh_->size(); i++)
 	{
 		Mesh::Triangle triangle = (*mesh_)[i];
@@ -42,6 +42,8 @@ void Voxelizer::addToWorld(World *world)
 			world_locations[vertex][0] = triangle[vertex][0]*multiplier;
 			world_locations[vertex][1] = triangle[vertex][1]*multiplier;
 			world_locations[vertex][2] = triangle[vertex][2]*multiplier;
+
+			triangle.scale(multiplier);
 		}
 		// find min/max for each axis
 		int mins[3];
@@ -65,7 +67,9 @@ void Voxelizer::addToWorld(World *world)
 				{
 					if (intersectionCheck(world_locations, x, y, z))
 					{
-						world->setVoxel(x+offset[0], y+offset[1], z+offset[2], 1);
+						float test_point[3] = { static_cast<float>(x), static_cast<float>(y), static_cast<float>(z) };
+						int material = getMaterial(triangle, test_point);
+						world->setVoxel(x+offset[0], y+offset[1], z+offset[2], material);
 					}
 				}
 			}
@@ -134,6 +138,12 @@ bool Voxelizer::intersectionCheck(float vertices[3][3], int x, int y, int z)
 		}
 	}
 	return false;
+}
+
+
+int Voxelizer::getMaterial(Mesh::Triangle triangle, float test_point[3])
+{
+	return 1;
 }
 
 

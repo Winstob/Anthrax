@@ -149,6 +149,24 @@ private:
 		GltfHandler *parent_;
 		Transform transform_;
 	};
+	class GltfMaterial
+	{
+	public:
+		GltfMaterial() {}
+		GltfMaterial(GltfHandler *parent, Json::Value json);
+		~GltfMaterial();
+		enum Mode
+		{
+			COLORED,
+			TEXTURED
+		};
+		//int getTextureId() { return parent->texture_ids_[base_color_texture_id_]; }
+		int getTextureId() { return base_color_texture_id_; }
+	private:
+		GltfHandler *parent_;
+		int base_color_texture_id_ = -1;
+		int mode_;
+	};
 	std::ifstream gltffile_;
 	std::string gltfdir_;
 	void processNode(Node node);
@@ -164,12 +182,17 @@ private:
 	void loadBuffers();
 	void loadBufferViews();
 	void loadAccessors();
+	void loadMaterials();
+	void loadTextures();
 
 	Json::Value json_;
 	//std::vector<char> bin_;
 	std::vector<Buffer> buffers_;
 	std::vector<BufferView> buffer_views_;
 	std::vector<Accessor> accessors_;
+	std::vector<int> image_ids_;
+	std::vector<int> texture_ids_;
+	std::vector<GltfMaterial> gltf_materials_;
 
 	Mesh mesh_;
 	World *world_;

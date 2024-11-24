@@ -67,6 +67,8 @@ GltfHandler::GltfHandler(World *world)
 	loadBuffers();
 	loadBufferViews();
 	loadAccessors();
+	loadTextures();
+	loadMaterials();
 	constructMesh();
 	return;
 }
@@ -217,7 +219,23 @@ void GltfHandler::insertMesh(Node node)
 				std::cout << std::endl << vertex_positions[1][0] << ", " << vertex_positions[1][1] << ", " << vertex_positions[1][2];
 				std::cout << std::endl << vertex_positions[2][0] << ", " << vertex_positions[2][1] << ", " << vertex_positions[2][2] << std::endl;
 				*/
-				mesh_.addTriangle(vertex_positions);
+				// get texture information
+				int texture_id = (gltf_materials_[primitive["material"].asInt()]).getTextureId();
+				Accessor *texcoord_accessor = &(accessors_[primitive["attributes"]["TEXCOORD_0"].asInt()]);
+				// TODO: check that texcoord accessor type is float/VEC2
+				float texcoords[3][2];
+				for (unsigned int current_vertex_index = 0; current_vertex_index < 3; current_vertex_index++)
+				{
+					std::vector<float> texcoord = std::any_cast<std::vector<float>>((*texcoord_accessor)[vertex_indices[current_vertex_index]]);
+					memcpy(texcoords[current_vertex_index], texcoord.data(), sizeof(float)*2);
+				}
+				/*
+				std::cout << std::endl << texcoords[0][0] << ", " << texcoords[0][1];
+				std::cout << std::endl << texcoords[1][0] << ", " << texcoords[1][1];
+				std::cout << std::endl << texcoords[2][0] << ", " << texcoords[2][1] << std::endl;;
+				*/
+				// add the triangle to the mesh
+				mesh_.addTriangle(vertex_positions, texture_id, texcoords);
 			}
 		}
 		else
@@ -472,6 +490,62 @@ void GltfHandler::loadAccessors()
 }
 
 
+void GltfHandler::loadMaterials()
+{
+	// load all materials into memory
+	unsigned int i = 0;
+	while (Json::Value current_material = json_["materials"][i])
+	{
+		gltf_materials_.push_back(GltfMaterial(this, current_material));
+		i++;
+	}
+	std::cout << "Loaded " << i << " material(s)" << std::endl;
+	return;
+}
+
+
+void GltfHandler::loadTextures()
+{
+	// load all textures into the Mesh object
+	// first load all images
+	if (image_ids_.size() != 0)
+	{
+		throw std::runtime_error("Images are already loaded!");
+	}
+	if (texture_ids_.size() != 0)
+	{
+		throw std::runtime_error("Textures are already loaded!");
+	}
+	unsigned int i = 0;
+	while (Json::Value current_image = json_["images"][i])
+	{
+		std::string uri = current_image["uri"].asString();
+		std::string full_filepath = gltfdir_ + "/" + uri;
+		int image_id = mesh_.addImage(full_filepath);
+		image_ids_.push_back(image_id);
+		i++;
+	}
+	// load samplers
+	i = 0;
+	while (Json::Value current_sampler = json_["samplesrs"][i])
+	{
+		// TODO: do samplers
+		i++;
+	}
+	// load textures
+	i = 0;
+	while (Json::Value current_texture = json_["textures"][i])
+	{
+		int image_index = current_texture["source"].asInt();
+		int sampler = current_texture["sampler"].asInt();
+		texture_ids_.push_back(mesh_.addTexture(image_ids_[image_index]));
+		i++;
+	}
+	std::cout << "Loaded " << i << " texture(s)" << std::endl;
+	return;
+}
+
+
 /* ---------------------------------------------------------------- *\
  * Buffer implementation
 \* ---------------------------------------------------------------- */
@@ -635,6 +709,12 @@ std::any GltfHandler::Accessor::readDynamicType(int index)
 		buffer_view_->read(&ret, index, byte_offset_, sizeof(T));
 		return ret;
 	}
+	else if (type_.second == "VEC2")
+	{
+		std::vector<T> ret(2);
+		buffer_view_->read(ret.data(), index, byte_offset_, 2*sizeof(T));
+		return ret;
+	}
 	else if (type_.second == "VEC3")
 	{
 		std::vector<T> ret(3);
@@ -748,6 +828,33 @@ std::vector<float> GltfHandler::Node::transform(std::vector<float> vec)
 	}
 	transform_.transformVec3(vec.data());
 	return vec;
+}
+
+/* ---------------------------------------------------------------- *\
+ * GltfMaterial implementation
+\* ---------------------------------------------------------------- */
+
+GltfHandler::GltfMaterial::GltfMaterial(GltfHandler *parent, Json::Value json)
+{
+	parent_ = parent;
+	if (json["pbrMetallicRoughness"])
+	{
+		if (json["pbrMetallicRoughness"]["baseColorTexture"])
+		{
+			base_color_texture_id_ = parent->texture_ids_[json["pbrMetallicRoughness"]["baseColorTexture"]["index"].asInt()];
+			mode_ = TEXTURED;
+		}
+	}
+	if (base_color_texture_id_ == -1)
+	{
+		throw std::runtime_error("Non-textured materials not yet implemented!");
+	}
+	return;
+}
+
+
+GltfHandler::GltfMaterial::~GltfMaterial()
+{
 }
 
 } // namespace Anthrax

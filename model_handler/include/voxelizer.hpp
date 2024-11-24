@@ -39,6 +39,7 @@ public:
 	void addToWorld(World *world);
 private:
 	bool intersectionCheck(float vertices[3][3], int x, int y, int z);
+	int getMaterial(Mesh::Triangle triangle, float test_point[3]);
 	void cross(float *result, float vec1[3], float vec2[3]);
 	float magnitude(float vec3[3]);
 	float dot(float vec1[3], float vec2[3]);
