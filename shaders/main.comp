@@ -165,11 +165,11 @@ void main()
 	ray.previous_layer = -1;
 	ray.distance_traveled = 0.0;
 	uint voxel_type = 0;
-	voxel_type = rayMarch(ray);
-	//voxel_type = rayMarchHero(ray);
+	//voxel_type = rayMarch(ray);
+	voxel_type = rayMarchHero(ray);
 	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), materials[voxel_type].color);
 	//if (voxel_type == 1) imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(0.5, 0.5, 0.5, 1.0));
-	if (voxel_type == 1) imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.world_location.dec_component, 1.0));
+	//if (voxel_type == 1) imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.world_location.dec_component, 1.0));
 	//max_steps = 32;
 	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec3(float(num_steps)/float(max_steps)), 1.0));
 	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec3(ray.distance_traveled/float(1u<<(LOG2K*num_layers))), 1.0));

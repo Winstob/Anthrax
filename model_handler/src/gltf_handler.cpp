@@ -19,6 +19,7 @@ GltfHandler::GltfHandler(World *world)
 	std::string input_file_location = "";
 	//input_file_location = "models/glb/sponza.glb";
 	input_file_location = "models/gltf/sponza";
+	//input_file_location = "models/gltf/suzanne";
 
 	file_type_ = Type::UNKNOWN;
 	std::string filename = "";
@@ -222,7 +223,11 @@ void GltfHandler::insertMesh(Node node)
 				// get texture information
 				int texture_id = (gltf_materials_[primitive["material"].asInt()]).getTextureId();
 				Accessor *texcoord_accessor = &(accessors_[primitive["attributes"]["TEXCOORD_0"].asInt()]);
-				// TODO: check that texcoord accessor type is float/VEC2
+				if (texcoord_accessor->getType().first != Accessor::FLOAT
+						|| texcoord_accessor->getType().second != "VEC2")
+				{
+					throw std::runtime_error("TEXCOORD accessor has incorrect type!");
+				}
 				float texcoords[3][2];
 				for (unsigned int current_vertex_index = 0; current_vertex_index < 3; current_vertex_index++)
 				{
@@ -235,6 +240,7 @@ void GltfHandler::insertMesh(Node node)
 				std::cout << std::endl << texcoords[2][0] << ", " << texcoords[2][1] << std::endl;;
 				*/
 				// add the triangle to the mesh
+				//mesh_.addTriangle(vertex_positions);
 				mesh_.addTriangle(vertex_positions, texture_id, texcoords);
 			}
 		}
@@ -490,6 +496,74 @@ void GltfHandler::loadAccessors()
 }
 
 
+void GltfHandler::loadTextures()
+{
+	// load all textures into the Mesh object
+	// first load all images
+	if (texture_ids_.size() != 0)
+	{
+		throw std::runtime_error("Textures are already loaded!");
+	}
+	unsigned int i = 0;
+	std::vector<int> image_ids;
+	while (Json::Value current_image = json_["images"][i])
+	{
+		std::string uri = current_image["uri"].asString();
+		std::string full_filepath = gltfdir_ + "/" + uri;
+		int image_id = mesh_.addImage(full_filepath);
+		image_ids.push_back(image_id);
+		i++;
+	}
+	// load samplers
+	i = 0;
+	std::vector<int> sampler_ids;
+	while (Json::Value current_sampler = json_["samplers"][i])
+	{
+		// TODO: do samplers
+		int wrap_s = current_sampler["wrapS"].asInt();
+		int wrap_t = current_sampler["wrapT"].asInt();
+		int sampler_wrap_s, sampler_wrap_t;
+		switch(wrap_s)
+		{
+			case CLAMP_TO_EDGE:
+				sampler_wrap_s = Mesh::Sampler::CLAMP_TO_EDGE;
+				break;
+			case REPEAT:
+				sampler_wrap_s = Mesh::Sampler::REPEAT;
+				break;
+			case MIRRORED_REPEAT:
+				sampler_wrap_s = Mesh::Sampler::MIRRORED_REPEAT;
+				break;
+		}
+		switch(wrap_t)
+		{
+			case CLAMP_TO_EDGE:
+				sampler_wrap_t = Mesh::Sampler::CLAMP_TO_EDGE;
+				break;
+			case REPEAT:
+				sampler_wrap_t = Mesh::Sampler::REPEAT;
+				break;
+			case MIRRORED_REPEAT:
+				sampler_wrap_t = Mesh::Sampler::MIRRORED_REPEAT;
+				break;
+		}
+		sampler_ids.push_back(mesh_.addSampler(sampler_wrap_s, sampler_wrap_t));
+		i++;
+	}
+	// load textures
+	i = 0;
+	while (Json::Value current_texture = json_["textures"][i])
+	{
+		int image_index = current_texture["source"].asInt();
+		int sampler_index = current_texture["sampler"].asInt();
+		texture_ids_.push_back(mesh_.addTexture(image_ids[image_index], sampler_ids[sampler_index]));
+		i++;
+	}
+	std::cout << "Loaded " << i << " texture(s)" << std::endl;
+	return;
+}
+
+
 void GltfHandler::loadMaterials()
 {
 	// load all materials into memory
@@ -502,49 +576,6 @@ void GltfHandler::loadMaterials()
 	std::cout << "Loaded " << i << " material(s)" << std::endl;
 	return;
 }
-
-
-void GltfHandler::loadTextures()
-{
-	// load all textures into the Mesh object
-	// first load all images
-	if (image_ids_.size() != 0)
-	{
-		throw std::runtime_error("Images are already loaded!");
-	}
-	if (texture_ids_.size() != 0)
-	{
-		throw std::runtime_error("Textures are already loaded!");
-	}
-	unsigned int i = 0;
-	while (Json::Value current_image = json_["images"][i])
-	{
-		std::string uri = current_image["uri"].asString();
-		std::string full_filepath = gltfdir_ + "/" + uri;
-		int image_id = mesh_.addImage(full_filepath);
-		image_ids_.push_back(image_id);
-		i++;
-	}
-	// load samplers
-	i = 0;
-	while (Json::Value current_sampler = json_["samplesrs"][i])
-	{
-		// TODO: do samplers
-		i++;
-	}
-	// load textures
-	i = 0;
-	while (Json::Value current_texture = json_["textures"][i])
-	{
-		int image_index = current_texture["source"].asInt();
-		int sampler = current_texture["sampler"].asInt();
-		texture_ids_.push_back(mesh_.addTexture(image_ids_[image_index]));
-		i++;
-	}
-	std::cout << "Loaded " << i << " texture(s)" << std::endl;
-	return;
-}
-
 
 /* ---------------------------------------------------------------- *\
  * Buffer implementation
@@ -837,6 +868,7 @@ std::vector<float> GltfHandler::Node::transform(std::vector<float> vec)
 GltfHandler::GltfMaterial::GltfMaterial(GltfHandler *parent, Json::Value json)
 {
 	parent_ = parent;
+	base_color_texture_id_ = -1;
 	if (json["pbrMetallicRoughness"])
 	{
 		if (json["pbrMetallicRoughness"]["baseColorTexture"])

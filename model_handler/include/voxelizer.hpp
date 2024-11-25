@@ -30,20 +30,27 @@ namespace Anthrax
 class Voxelizer
 {
 public:
-	Voxelizer();
-	Voxelizer(Mesh *mesh) : mesh_(mesh) {}
+	Voxelizer(Mesh *mesh);
+	Voxelizer() : Voxelizer(nullptr) {}
 	Voxelizer(const Voxelizer &other) { copy(other); }
 	Voxelizer &operator=(const Voxelizer &other) { copy(other); return *this; }
 	void copy(const Voxelizer &other);
 	~Voxelizer();
 	void addToWorld(World *world);
+	unsigned int getNumMaterials() { return num_materials_; }
+	Material *getMaterials() { return materials_; }
 private:
 	bool intersectionCheck(float vertices[3][3], int x, int y, int z);
+	void projectOntoTrianglePlane(float *point, Mesh::Triangle triangle);
 	int getMaterial(Mesh::Triangle triangle, float test_point[3]);
+	float lerp(float a, float b, float t);
+	void normalize(float *vec3);
 	void cross(float *result, float vec1[3], float vec2[3]);
 	float magnitude(float vec3[3]);
 	float dot(float vec1[3], float vec2[3]);
 	Mesh *mesh_;
+	Material *materials_;
+	unsigned int num_materials_ = 4096;
 };
 
 } // namespace Anthrax

@@ -167,6 +167,12 @@ private:
 		int base_color_texture_id_ = -1;
 		int mode_;
 	};
+	enum SamplerWrapMode
+	{
+		CLAMP_TO_EDGE = 33701,
+		REPEAT = 10497,
+		MIRRORED_REPEAT = 33648
+	};
 	std::ifstream gltffile_;
 	std::string gltfdir_;
 	void processNode(Node node);
@@ -182,15 +188,14 @@ private:
 	void loadBuffers();
 	void loadBufferViews();
 	void loadAccessors();
-	void loadMaterials();
 	void loadTextures();
+	void loadMaterials();
 
 	Json::Value json_;
 	//std::vector<char> bin_;
 	std::vector<Buffer> buffers_;
 	std::vector<BufferView> buffer_views_;
 	std::vector<Accessor> accessors_;
-	std::vector<int> image_ids_;
 	std::vector<int> texture_ids_;
 	std::vector<GltfMaterial> gltf_materials_;
 

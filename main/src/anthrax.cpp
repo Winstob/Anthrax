@@ -39,7 +39,7 @@ Anthrax::Anthrax()
 	// TODO: make this less horrible
 	materials_.clear();
 	Material *tmp_ptr = world_->getMaterialsPtr();
-	for (unsigned int i = 0; i < 256; i++)
+	for (unsigned int i = 0; i < world_->getNumMaterials(); i++)
 		materials_.push_back(tmp_ptr[i]);
 
 	//camera_ = Camera(glm::vec3(pow(2, world_size-3), pow(2, world_size-3), 0.0));
