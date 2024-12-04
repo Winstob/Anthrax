@@ -139,6 +139,7 @@ struct Ray
 	ufvec3 next_intersections[3];
 	int previous_layer;
 	float distance_traveled;
+	uint num_intersections;
 };
 
 
@@ -147,7 +148,7 @@ vec2 screen_position = vec2(gl_GlobalInvocationID.x, -gl_GlobalInvocationID.y+sc
 // forward function declarations
 vec3 calculateMainRayDirection();
 uint getVoxelType(in ufvec3 world_position);
-uint rayMarchHero(in Ray ray);
+uint rayMarchHero(inout Ray ray);
 uint rayMarch(inout Ray ray);
 bool rayMarchSingleStep(inout Ray ray);
 void findNextIntersection(inout Ray ray, in uint layer, in uint xyz_index);
@@ -164,12 +165,23 @@ void main()
 	ray.next_intersection_leaves_boundary = bvec3(false);
 	ray.previous_layer = -1;
 	ray.distance_traveled = 0.0;
+	ray.num_intersections = 0;
 	uint voxel_type = 0;
+	vec4 color = vec4(0.0);
 	//voxel_type = rayMarch(ray);
 	voxel_type = rayMarchHero(ray);
-	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), materials[voxel_type].color);
-	//if (voxel_type == 1) imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(0.5, 0.5, 0.5, 1.0));
-	//if (voxel_type == 1) imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.world_location.dec_component, 1.0));
+	color = materials[voxel_type].color;
+	vec4 intersections_visualization = vec4(vec3(float(ray.num_intersections)/150), 1.0);
+
+	ray.direction = normalize(vec3(0.1, 1.0, 0.2));
+	uint bounce1_voxel_type = rayMarchHero(ray);
+	if (bounce1_voxel_type != 0)
+	{
+		color *= 0.5;
+		color.w = 1.0;
+	}
+	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), color);
+	//if (voxel_type != 0) imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.world_location.dec_component, 1.0));
 	//max_steps = 32;
 	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec3(float(num_steps)/float(max_steps)), 1.0));
 	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec3(ray.distance_traveled/float(1u<<(LOG2K*num_layers))), 1.0));
@@ -222,50 +234,6 @@ uint getVoxelType(in ufvec3 world_position)
 uvec3 generateMasklist(in vec3 s_mid)
 {
 	uvec3 masklist = uvec3(0);
-	/*
-	if (s_mid.x < s_mid.y && s_mid.x < s_mid.z)
-	{
-		masklist[0] = 1u;
-		if (s_mid.y < s_mid.z)
-		{
-			masklist[1] = 2u;
-			masklist[2] = 4u;
-		}
-		else
-		{
-			masklist[1] = 4u;
-			masklist[2] = 2u;
-		}
-	}
-	else if (s_mid.y < s_mid.x && s_mid.y < s_mid.z)
-	{
-		masklist[0] = 2u;
-		if (s_mid.x < s_mid.z)
-		{
-			masklist[1] = 1u;
-			masklist[2] = 4u;
-		}
-		else
-		{
-			masklist[1] = 4u;
-			masklist[2] = 1u;
-		}
-	}
-	else
-	{
-		masklist[0] = 4u;
-		if (s_mid.x < s_mid.y)
-		{
-			masklist[1] = 1u;
-			masklist[2] = 2u;
-		}
-		else
-		{
-			masklist[1] = 2u;
-			masklist[2] = 1u;
-		}
-	}
-	*/
 	uint A = (s_mid.x < s_mid.y) ? 1 : 0;
 	uint B = (s_mid.x < s_mid.z) ? 1 : 0;
 	uint C = (s_mid.y < s_mid.z) ? 1 : 0;
@@ -282,10 +250,11 @@ uvec3 generateMasklist(in vec3 s_mid)
 }
 
 
-uint rayMarchHero(in Ray ray)
+uint rayMarchHero(inout Ray ray)
 {
 	// HERO!!!!
 	// TODO: node_max and everything that follows has overflow issues when the world has 32 layers
+	uint voxel_type = 0;
 	vec3 v = ray.direction;
 	vec3 E = vec3(ray.world_location.int_component) + vec3(ray.world_location.dec_component);
 	float eps = 0.001;
@@ -311,7 +280,6 @@ uint rayMarchHero(in Ray ray)
 	uint masklist_indices[MASKLIST_INDICES_LIST_SIZE];
 
 	uvec3 node_mids[MAX_NUM_LAYERS];
-
 
 	// find initial ray location information
 	uvec3 node_min = uvec3(0);
@@ -363,9 +331,11 @@ uint rayMarchHero(in Ray ray)
 
 	indirection_pointers[0] = 0;
 	uint layer = num_layers - 1;
+	uint slmask = 0u;
 
 	// main loop
 	bool entered_new_node = true;
+	bool in_first_child = true;
 	for (uint i = 0; i < 100000000; i++)
 	{
 		if (layer >= num_layers) break; // we must have reached the end of the world. exit
@@ -391,64 +361,43 @@ uint rayMarchHero(in Ray ray)
 
 		uint this_child_index = last_childmask ^ vmask;
 
-		// TODO: this shouldn't need to happen if layer == 0
-		if (layer != 0 && entered_new_node)
+		if (entered_new_node)
 		{
-			uint distance_from_last_node_mid = 1u << (layer-1);
-			// Take the last node midplanes, find the distance from that layer's midplane to this layer's midplane, and compute the new midplanes
-			for (uint j = 0; j < 3; j++)
+			ray.num_intersections++;
+			// if the ray has reached a terminal octree node, get the material index (voxel type)
+			if ((layer == 0) || (readUniformityPool(indirection_pointers[idx-1], this_child_index) == 1))
 			{
-				if ((this_child_index & (1u << j)) != 0)
-					node_mids[idx][j] = node_mids[idx-1][j] + distance_from_last_node_mid;
-				else
-					node_mids[idx][j] = node_mids[idx-1][j] - distance_from_last_node_mid;
-			}
-			node_min = node_mids[idx] - distance_from_last_node_mid;
-			node_max = node_mids[idx] + distance_from_last_node_mid;
-
-			s_min = (vec3(node_min) - E) * v_reciprocal;
-			s_max = (vec3(node_max) - E) * v_reciprocal;
-			s_mids[idx] = (vec3(node_mids[idx]) - E) * v_reciprocal;
-			//masklists[idx] = generateMasklist(s_mids[idx]);
-			masklists[mask_index] = bitfieldInsert(masklists[mask_index], generateMasklist(s_mids[idx]), mask_bitfield_offset, MASK_SIZE);
-
-			for (uint j = 0; j < 3; j++)
-			{
-				if ((vmask & (1u << j)) == 0)
+				voxel_type = readVoxelTypePool(indirection_pointers[idx-1], this_child_index);
+				if (voxel_type != 0)
 				{
-					s_lower[j] = s_min[j];
-					s_upper[j] = s_max[j];
+					uint child_axis_size = 1u << layer;
+					for (uint j = 0; j < 3; j++)
+					{
+						if ((this_child_index & (1u << j)) != 0)
+						{
+							node_min[j] = node_mids[idx-1][j];
+							node_max[j] = node_mids[idx-1][j] + child_axis_size;
+						}
+						else
+						{
+							node_min[j] = node_mids[idx-1][j] - child_axis_size;
+							node_max[j] = node_mids[idx-1][j];
+						}
+					}
+					s_min = (vec3(node_min) - E) * v_reciprocal;
+					s_max = (vec3(node_max) - E) * v_reciprocal;
+					for (uint j = 0; j < 3; j++)
+					{
+						if ((vmask & (1u << j)) == 0)
+							s_lower[j] = s_min[j];
+						else
+							s_lower[j] = s_max[j];
+					}
+					ray.distance_traveled = max(max(s_lower.x, s_lower.y), s_lower.z);
+					break;
 				}
-				else
-				{
-					s_lower[j] = s_max[j];
-					s_upper[j] = s_min[j];
-				}
-			}
 
-			s_l_maxes[idx] = max(max(s_lower.x, s_lower.y), s_lower.z);
-			s_u_mins[idx] = min(min(s_upper.x, s_upper.y), s_upper.z);
-
-			childmask = 0u;
-			childmask |= (s_mids[idx].x < s_l_maxes[idx]) ? 1u : 0u;
-			childmask |= (s_mids[idx].y < s_l_maxes[idx]) ? 2u : 0u;
-			childmask |= (s_mids[idx].z < s_l_maxes[idx]) ? 4u : 0u;
-			lastmask = 0u;
-			lastmask |= (s_mids[idx].x < s_u_mins[idx]) ? 1u : 0u;
-			lastmask |= (s_mids[idx].y < s_u_mins[idx]) ? 2u : 0u;
-			lastmask |= (s_mids[idx].z < s_u_mins[idx]) ? 4u : 0u;
-			childmasks[mask_index] = bitfieldInsert(childmasks[mask_index], childmask, mask_bitfield_offset, MASK_SIZE);
-			lastmasks[mask_index] = bitfieldInsert(lastmasks[mask_index], lastmask, mask_bitfield_offset, MASK_SIZE);
-
-			//masklist_indices[idx] = 0;
-			masklist_indices[mli_index] = bitfieldInsert(masklist_indices[mli_index], 0, mli_bitfield_offset, MASKLIST_INDEX_SIZE);
-
-
-			// if this node is behind the ray's origin, skip it
-			//if (s_u_mins[idx] < s_l_maxes[idx])
-			//if (s_u_mins[idx] < 0.0) // TODO: s_u_min is always negative??????
-			if (s_u_mins[idx] < s_l_maxes[idx] || s_u_mins[idx] < 0.0)
-			{
+				// if air, check if this is the last node to be searched within its parent
 				if (last_childmask == last_lastmask)
 				{
 					layer++;
@@ -456,87 +405,127 @@ uint rayMarchHero(in Ray ray)
 					continue;
 				}
 
-				bool continue_main_loop = false;
-				//while ((masklists[idx-1][masklist_indices[idx-1]] & last_childmask) != 0u)
-				//while ((last_masklist[masklist_indices[idx-1]] & last_childmask) != 0u)
+				// if air and not the last node to be searched within its parent, find the next sister node
 				uint last_masklist_index = bitfieldExtract(masklist_indices[last_mli_index], last_mli_bitfield_offset, MASKLIST_INDEX_SIZE);
 				while ((last_masklist[last_masklist_index] & last_childmask) != 0u)
 				{
-					//if (masklist_indices[idx-1] == 2)
-					if (last_masklist_index == 2)
-					{
-						layer++;
-						entered_new_node = false;
-						continue_main_loop = true;
-						break;
-					}
 					// find next valid masklist element
 					//masklist_indices[idx-1]++;
 					last_masklist_index++;
 					masklist_indices[last_mli_index] = bitfieldInsert(masklist_indices[last_mli_index], last_masklist_index, last_mli_bitfield_offset, MASKLIST_INDEX_SIZE);
 				}
-				if (continue_main_loop) continue;
 				// now re-generate childmask
 				//childmasks[idx-1] |= masklists[idx-1][masklist_indices[idx-1]];
 				childmasks[last_mask_index] = bitfieldInsert(childmasks[last_mask_index], last_childmask | last_masklist[last_masklist_index], last_mask_bitfield_offset, MASK_SIZE);
+				slmask = last_masklist[last_masklist_index];
 				entered_new_node = true;
+				in_first_child = false;
 				continue;
 			}
-		}
-	
-
-		bool is_terminal = (layer == 0) || (readUniformityPool(indirection_pointers[idx-1], this_child_index) == 1);
-		if (is_terminal)
-		{
-			uint voxel_type = readVoxelTypePool(indirection_pointers[idx-1], this_child_index);
-			if (voxel_type != 0)
+			// if not terminal, prepare to descend into children
+			else
 			{
-				return voxel_type;
-			}
-			// if air, check if this is the last node to be searched within its parent
-			if (last_childmask == last_lastmask)
-			{
-				layer++;
-				entered_new_node = false;
-				continue;
-			}
-
-			// if air and not the last node to be searched within its parent, find the next sister node
-			bool continue_main_loop = false;
-			uint last_masklist_index = bitfieldExtract(masklist_indices[last_mli_index], last_mli_bitfield_offset, MASKLIST_INDEX_SIZE);
-			while ((last_masklist[last_masklist_index] & last_childmask) != 0u)
-			{
-				//if (masklist_indices[idx-1] == 2)
-				/*
-				if (last_masklist_index == 2)
+				uint distance_from_last_node_mid = 1u << (layer-1);
+				// Take the last node midplanes, find the distance from that layer's midplane to this layer's midplane, and compute the new midplanes
+				for (uint j = 0; j < 3; j++)
 				{
-					layer++;
-					entered_new_node = false;
-					continue_main_loop = true;
-					break;
+					if ((this_child_index & (1u << j)) != 0)
+						node_mids[idx][j] = node_mids[idx-1][j] + distance_from_last_node_mid;
+					else
+						node_mids[idx][j] = node_mids[idx-1][j] - distance_from_last_node_mid;
 				}
-				*/
-				// find next valid masklist element
-				//masklist_indices[idx-1]++;
-				last_masklist_index++;
-				masklist_indices[last_mli_index] = bitfieldInsert(masklist_indices[last_mli_index], last_masklist_index, last_mli_bitfield_offset, MASKLIST_INDEX_SIZE);
+				node_min = node_mids[idx] - distance_from_last_node_mid;
+				node_max = node_mids[idx] + distance_from_last_node_mid;
+
+				s_min = (vec3(node_min) - E) * v_reciprocal;
+				s_max = (vec3(node_max) - E) * v_reciprocal;
+				s_mids[idx] = (vec3(node_mids[idx]) - E) * v_reciprocal;
+				//masklists[idx] = generateMasklist(s_mids[idx]);
+				masklists[mask_index] = bitfieldInsert(masklists[mask_index], generateMasklist(s_mids[idx]), mask_bitfield_offset, MASK_SIZE);
+
+				for (uint j = 0; j < 3; j++)
+				{
+					if ((vmask & (1u << j)) == 0)
+					{
+						s_lower[j] = s_min[j];
+						s_upper[j] = s_max[j];
+					}
+					else
+					{
+						s_lower[j] = s_max[j];
+						s_upper[j] = s_min[j];
+					}
+				}
+
+				s_l_maxes[idx] = max(max(s_lower.x, s_lower.y), s_lower.z);
+				s_u_mins[idx] = min(min(s_upper.x, s_upper.y), s_upper.z);
+
+				childmask = 0u;
+				for (uint axis = 0; axis < 3; axis++)
+				{
+					if (s_mids[idx][axis] < 0.0)
+						childmask |= (1u << axis);
+					else
+						childmask |= (s_mids[idx][axis] < s_l_maxes[idx]) ? (1u << axis) : 0u;
+				}
+				lastmask = 0u;
+				lastmask |= (s_mids[idx].x < s_u_mins[idx]) ? 1u : 0u;
+				lastmask |= (s_mids[idx].y < s_u_mins[idx]) ? 2u : 0u;
+				lastmask |= (s_mids[idx].z < s_u_mins[idx]) ? 4u : 0u;
+				childmasks[mask_index] = bitfieldInsert(childmasks[mask_index], childmask, mask_bitfield_offset, MASK_SIZE);
+				lastmasks[mask_index] = bitfieldInsert(lastmasks[mask_index], lastmask, mask_bitfield_offset, MASK_SIZE);
+
+				masklist_indices[mli_index] = bitfieldInsert(masklist_indices[mli_index], 0, mli_bitfield_offset, MASKLIST_INDEX_SIZE);
+				//distance_traveled = s_l_maxes[idx];
+
+
+				// if this node is behind the ray's origin, skip it
+				if (s_u_mins[idx] < s_l_maxes[idx] || s_u_mins[idx] < 0.0)
+				{
+					if (last_childmask == last_lastmask)
+					{
+						layer++;
+						entered_new_node = false;
+						continue;
+					}
+
+					bool continue_main_loop = false;
+					//while ((masklists[idx-1][masklist_indices[idx-1]] & last_childmask) != 0u)
+					//while ((last_masklist[masklist_indices[idx-1]] & last_childmask) != 0u)
+					uint last_masklist_index = bitfieldExtract(masklist_indices[last_mli_index], last_mli_bitfield_offset, MASKLIST_INDEX_SIZE);
+					while ((last_masklist[last_masklist_index] & last_childmask) != 0u)
+					{
+						//if (masklist_indices[idx-1] == 2)
+						if (last_masklist_index == 2)
+						{
+							layer++;
+							entered_new_node = false;
+							continue_main_loop = true;
+							break;
+						}
+						// find next valid masklist element
+						//masklist_indices[idx-1]++;
+						last_masklist_index++;
+						masklist_indices[last_mli_index] = bitfieldInsert(masklist_indices[last_mli_index], last_masklist_index, last_mli_bitfield_offset, MASKLIST_INDEX_SIZE);
+					}
+					if (continue_main_loop) continue;
+					// now re-generate childmask
+					//childmasks[idx-1] |= masklists[idx-1][masklist_indices[idx-1]];
+					childmasks[last_mask_index] = bitfieldInsert(childmasks[last_mask_index], last_childmask | last_masklist[last_masklist_index], last_mask_bitfield_offset, MASK_SIZE);
+					slmask = last_masklist[last_masklist_index];
+					entered_new_node = true;
+					in_first_child = false;
+					continue;
+				}
+				// now go actually search the children
+				indirection_pointers[idx] = readIndirectionPool(indirection_pointers[idx-1], this_child_index);
+				layer--;
+				entered_new_node = true;
+				in_first_child = true;
+				continue;
 			}
-			if (continue_main_loop) continue;
-			// now re-generate childmask
-			//childmasks[idx-1] |= masklists[idx-1][masklist_indices[idx-1]];
-			childmasks[last_mask_index] = bitfieldInsert(childmasks[last_mask_index], last_childmask | last_masklist[last_masklist_index], last_mask_bitfield_offset, MASK_SIZE);
-			entered_new_node = true;
-			continue;
 		}
 
-		// this node has children - search them if we haven't already
-		if (entered_new_node)
-		{
-			indirection_pointers[idx] = readIndirectionPool(indirection_pointers[idx-1], this_child_index);
-			layer--;
-			entered_new_node = true;
-			continue;
-		}
 
 		// the only time we will ever return to a node from one of its children is if all children have been searched.
 		// (this is the only time this code is ever reached)
@@ -550,34 +539,30 @@ uint rayMarchHero(in Ray ray)
 		}
 
 		// the node we just finished searching was not the last hit node within its parent - find the next hit sister node.
-		bool continue_main_loop = false;
 		uint last_masklist_index = bitfieldExtract(masklist_indices[last_mli_index], last_mli_bitfield_offset, MASKLIST_INDEX_SIZE);
 		while ((last_masklist[last_masklist_index] & last_childmask) != 0u)
 		{
-			//if (masklist_indices[idx-1] == 2)
-			/*
-			if (last_masklist_index == 2)
-			{
-				layer++;
-				entered_new_node = false;
-				continue_main_loop = true;
-				break;
-			}
-			*/
 			// find next valid masklist element
 			//masklist_indices[idx-1]++;
 			last_masklist_index++;
 			masklist_indices[last_mli_index] = bitfieldInsert(masklist_indices[last_mli_index], last_masklist_index, last_mli_bitfield_offset, MASKLIST_INDEX_SIZE);
 		}
-		if (continue_main_loop) continue;
 		// now re-generate childmask
 		//childmasks[idx-1] |= masklists[idx-1][masklist_indices[idx-1]];
 		childmasks[last_mask_index] = bitfieldInsert(childmasks[last_mask_index], last_childmask | last_masklist[last_masklist_index], last_mask_bitfield_offset, MASK_SIZE);
+		slmask = last_masklist[last_masklist_index];
 		entered_new_node = true;
+		in_first_child = false;
 		continue;
 	}
 
-	return 0;
+	// calculate the updated voxel position
+	ray.distance_traveled -= 0.01;
+	vec3 location_adder = v * ray.distance_traveled;
+	ray.world_location.dec_component += location_adder;
+	ray.world_location.int_component += ivec3(floor(ray.world_location.dec_component));
+	ray.world_location.dec_component -= floor(ray.world_location.dec_component);
+	return voxel_type;
 }
 
 
