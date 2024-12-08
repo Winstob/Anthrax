@@ -39,6 +39,9 @@ public:
 	Descriptor() {};
 	~Descriptor();
 	void destroy();
+	Descriptor(const Descriptor &other) { copy(other); }
+	Descriptor operator=(const Descriptor &other) { copy(other); return *this; }
+	void copy(const Descriptor &other);
 
 	VkDescriptorSetLayout *getDescriptorSetLayoutPtr() { return &descriptor_set_layout_; }
 	VkDescriptorSet *getDescriptorSetPtr() { return &descriptor_set_; }

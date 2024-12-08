@@ -194,4 +194,14 @@ void Descriptor::destroy()
 }
 
 
+void Descriptor::copy(const Descriptor &other)
+{
+	device_ = other.device_;
+	shadercode_filename_ = other.shadercode_filename_;
+	descriptor_pool_ = other.descriptor_pool_;
+	descriptor_set_layout_ = other.descriptor_set_layout_;
+	descriptor_set_ = other.descriptor_set_;
+	return;
+}
+
 } // namespace Anthrax

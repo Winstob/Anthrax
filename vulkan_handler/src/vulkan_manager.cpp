@@ -24,9 +24,10 @@ GLFWwindow *VulkanManager::window_;
 
 VulkanManager::VulkanManager()
 {
+	// default values
 	window_width_ = 800;
 	window_height_ = 600;
-	max_frames_in_flight_ = 1; // default value
+	max_frames_in_flight_ = 1;
 	return;
 }
 
@@ -72,18 +73,21 @@ void VulkanManager::start()
 	//createBuffers();
 	createRenderPass();
 	createComputeShader();
-	addAllBuffers();
+	//addAllBuffers();
+	render_pass_.setDescriptors(render_pass_descriptors_);
+	compute_shader_manager_.setDescriptors(compute_pass_descriptors_);
 	render_pass_.init();
 	compute_shader_manager_.init();
 
 	createFramebuffers();
+
 	createCommandPool();
 	createCommandBuffer();
-	createSyncObjects();
 
 	createComputeCommandPool();
 	createComputeCommandBuffer();
 
+	createSyncObjects();
 
 	return;
 }
@@ -106,12 +110,15 @@ void VulkanManager::setMultiBuffering(int max_frames_in_flight)
 
 void VulkanManager::drawFrame()
 {
-	vkWaitForFences(device_.logical, 1, &(frames_[current_frame_].in_flight_fence), VK_TRUE, UINT64_MAX);
+	//if (vkGetFenceStatus(device_.logical, frames_[current_frame_].in_flight_fence) == VK_NOT_READY) std::cout << "Waiting for fence " << current_frame_ << std::endl;
+	vkWaitForFences(device_.logical, 1, &(frames_[current_frame_].in_flight_fence), VK_TRUE, UINT64_MAX); // since the render pass waits for compute pass to finish before starting, we only need to wait for the render pass
+	vkResetFences(device_.logical, 1, &(frames_[current_frame_].in_flight_fence));
+
+	compute_shader_manager_.selectDescriptor(current_frame_);
+	render_pass_.selectDescriptor(current_frame_);
 
 	// Compute pass
-	vkWaitForFences(device_.logical, 1, &(frames_[current_frame_].compute_in_flight_fence), VK_TRUE, UINT64_MAX);
 	// TODO: compute buffer updates should really go here. Maybe when buffers are moved away from host-visible memory, set them up for transfers normally and initiate the transfer here.
-	vkResetFences(device_.logical, 1, &(frames_[current_frame_].compute_in_flight_fence));
 	vkResetCommandBuffer((frames_[current_frame_].compute_command_buffer), 0);
 	compute_shader_manager_.recordCommandBuffer(frames_[current_frame_].compute_command_buffer, ceil((float)window_width_/WORKGROUP_SIZE), ceil((float)window_height_/WORKGROUP_SIZE), 1);
 
@@ -123,16 +130,12 @@ void VulkanManager::drawFrame()
 	compute_submit_info.pSignalSemaphores = &(frames_[current_frame_].compute_finished_semaphore);
 	//compute_submit_info.
 	
-	if (vkQueueSubmit(device_.getComputeQueue(), 1, &compute_submit_info, frames_[current_frame_].compute_in_flight_fence) != VK_SUCCESS)
+	if (vkQueueSubmit(device_.getComputeQueue(), 1, &compute_submit_info, VK_NULL_HANDLE) != VK_SUCCESS)
 	{
 		throw std::runtime_error("Failed to submit dispatch command buffer");
 	}
 
 	// Graphics pass
-	vkWaitForFences(device_.logical, 1, &(frames_[current_frame_].in_flight_fence), VK_TRUE, UINT64_MAX);
-	vkResetFences(device_.logical, 1, &(frames_[current_frame_].in_flight_fence));
-	//vkDeviceWaitIdle(device_.logical);
-
 	uint32_t image_index;
 	vkAcquireNextImageKHR(device_.logical, swap_chain_.data(), UINT64_MAX, frames_[current_frame_].image_available_semaphore, VK_NULL_HANDLE, &image_index);
 
@@ -156,6 +159,7 @@ void VulkanManager::drawFrame()
 	{
 		throw std::runtime_error("Failed to submit draw command buffer");
 	}
+	//std::cout << "Submitted frame " << current_frame_ << std::endl;
 
 
 	VkPresentInfoKHR present_info{};
@@ -207,7 +211,6 @@ void VulkanManager::destroy()
 	for (unsigned int i = 0; i < frames_.size(); i++)
 	{
 		vkDestroySemaphore(device_.logical, frames_[i].compute_finished_semaphore, nullptr);
-		vkDestroyFence(device_.logical, frames_[i].compute_in_flight_fence, nullptr);
 		vkDestroySemaphore(device_.logical, frames_[i].image_available_semaphore, nullptr);
 		vkDestroySemaphore(device_.logical, frames_[i].render_finished_semaphore, nullptr);
 		vkDestroyFence(device_.logical, frames_[i].in_flight_fence, nullptr);
@@ -304,7 +307,7 @@ void VulkanManager::createSwapChain()
 
 	// Number of frames to store in the swap chain
 	uint32_t image_count = swap_chain_support.capabilities.minImageCount + 1;
-	if (swap_chain_support.capabilities.maxImageCount > 0 && image_count > swap_chain_support.capabilities.maxImageCount) {
+	if (swap_chain_support.capabilities.maxImageCount > 0 && image_count < swap_chain_support.capabilities.maxImageCount) {
 		image_count = swap_chain_support.capabilities.maxImageCount;
 	}
 
@@ -472,8 +475,7 @@ void VulkanManager::createSyncObjects()
 		}
 
 		// compute semaphores
-		if (vkCreateSemaphore(device_.logical, &semaphore_info, nullptr, &(frames_[i].compute_finished_semaphore)) != VK_SUCCESS ||
-			vkCreateFence(device_.logical, &fence_info, nullptr, &(frames_[i].compute_in_flight_fence)) != VK_SUCCESS)
+		if (vkCreateSemaphore(device_.logical, &semaphore_info, nullptr, &(frames_[i].compute_finished_semaphore)) != VK_SUCCESS)
 		{
 			throw std::runtime_error("Failed to create compute sync objects");
 		}
@@ -671,6 +673,7 @@ void VulkanManager::createBuffers()
 
 void VulkanManager::addAllBuffers()
 {
+	/*
 	for (unsigned int i = 0; i < render_pass_buffers_.size(); i++)
 	{
 		render_pass_.addBuffer(render_pass_buffers_[i]);
@@ -687,6 +690,7 @@ void VulkanManager::addAllBuffers()
 	{
 		compute_shader_manager_.addImage(compute_pass_images_[i]);
 	}
+	*/
 	return;
 }
 

@@ -42,10 +42,8 @@ public:
 	int getWindowWidth() { return window_width_; }
 	int getWindowHeight() { return window_height_; }
 
-	void renderPassAddBuffer(Buffer buffer) { render_pass_buffers_.push_back(buffer); }
-	void renderPassAddImage(Image image) { render_pass_images_.push_back(image); }
-	void computePassAddBuffer(Buffer buffer) { compute_pass_buffers_.push_back(buffer); }
-	void computePassAddImage(Image image) { compute_pass_images_.push_back(image); }
+	void renderPassSetDescriptors(std::vector<Descriptor> descriptors) { render_pass_descriptors_ = descriptors; }
+	void computePassSetDescriptors(std::vector<Descriptor> descriptors) { compute_pass_descriptors_ = descriptors; }
 	void wait() { vkDeviceWaitIdle(device_.logical); }
 
 	GLFWAPI int getKey(int key) { return input_handler_.getKey(key); }
@@ -127,7 +125,6 @@ private:
 		VkSemaphore render_finished_semaphore;
 		VkFence in_flight_fence;
 		VkSemaphore compute_finished_semaphore;
-		VkFence compute_in_flight_fence;
 		VkCommandBuffer compute_command_buffer;
 		VkCommandBuffer command_buffer;
 	};
@@ -144,6 +141,8 @@ private:
 	std::vector<Image> render_pass_images_;
 	std::vector<Buffer> compute_pass_buffers_;
 	std::vector<Image> compute_pass_images_;
+	std::vector<Descriptor> render_pass_descriptors_;
+	std::vector<Descriptor> compute_pass_descriptors_;
 
 	InputHandler input_handler_;
 	float frame_time_ = 0.0;

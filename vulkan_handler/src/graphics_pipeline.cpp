@@ -33,7 +33,6 @@ void GraphicsPipeline::destroy()
 {
 	vkDestroyPipeline(device_.logical, pipeline_, nullptr);
 	vkDestroyPipelineLayout(device_.logical, pipeline_layout_, nullptr);
-	descriptor_.destroy();
 	return;
 }
 
@@ -140,22 +139,16 @@ void GraphicsPipeline::init()
 	dynamic_state_create_info.pDynamicStates = dynamic_states.data();
 
 	// Create descriptor set
-	if (buffers_.size() + images_.size() > 0)
-	{
-		descriptor_ = Descriptor(device_, Descriptor::ShaderStage::FRAGMENT, buffers_, images_);
-	}
-
 	VkPipelineLayoutCreateInfo pipeline_layout_create_info{};
 	pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	if (buffers_.size() + images_.size() > 0)
+	pipeline_layout_create_info.setLayoutCount = fragment_descriptors_.size();
+	std::vector<VkDescriptorSetLayout> descriptor_set_layouts;
+	descriptor_set_layouts.resize(fragment_descriptors_.size());
+	for (unsigned int i = 0; i < fragment_descriptors_.size(); i++)
 	{
-		pipeline_layout_create_info.setLayoutCount = 1;
-		pipeline_layout_create_info.pSetLayouts = descriptor_.getDescriptorSetLayoutPtr();
+		descriptor_set_layouts[i] = *(fragment_descriptors_[i].getDescriptorSetLayoutPtr());
 	}
-	else
-	{
-		pipeline_layout_create_info.setLayoutCount = 0;
-	}
+	pipeline_layout_create_info.pSetLayouts = descriptor_set_layouts.data();
 	//pipeline_layout_create_info.pushConstantRangeCount = 0;
 	if (vkCreatePipelineLayout(device_.logical, &pipeline_layout_create_info, nullptr, &pipeline_layout_) != VK_SUCCESS)
 	{

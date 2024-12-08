@@ -22,16 +22,21 @@ ComputeShaderManager::ComputeShaderManager(Device device, std::string shadercode
 
 void ComputeShaderManager::init()
 {
-	descriptor_ = Descriptor(device_, Descriptor::ShaderStage::COMPUTE, buffers_, images_);
-
 	// Create shader module
 	Shader shader(device_, shadercode_filename_);
 
 	// Create pipeline
 	VkPipelineLayoutCreateInfo pipeline_layout_info{};
 	pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipeline_layout_info.setLayoutCount = 1;
-	pipeline_layout_info.pSetLayouts = descriptor_.getDescriptorSetLayoutPtr();
+	pipeline_layout_info.setLayoutCount = descriptors_.size();
+	std::vector<VkDescriptorSetLayout> descriptor_set_layouts;
+	descriptor_set_layouts.resize(descriptors_.size());
+	for (unsigned int i = 0; i < descriptors_.size(); i++)
+	{
+		descriptor_set_layouts[i] = *(descriptors_[i].getDescriptorSetLayoutPtr());
+	}
+	pipeline_layout_info.pSetLayouts = descriptor_set_layouts.data();
+
 	if (vkCreatePipelineLayout(device_.logical, &pipeline_layout_info, nullptr, &pipeline_layout_) != VK_SUCCESS)
 	{
 		throw std::runtime_error("Failed to create compute pipeline layout!");
@@ -68,7 +73,6 @@ void ComputeShaderManager::destroy()
 		vkDestroyPipeline(device_.logical, pipeline_, nullptr);
 	if (pipeline_layout_ != VK_NULL_HANDLE)
 		vkDestroyPipelineLayout(device_.logical, pipeline_layout_, nullptr);
-	descriptor_.destroy();
 	/*
 	for (unsigned int i = 0; i < buffers_.size(); i++)
 	{
@@ -92,7 +96,7 @@ void ComputeShaderManager::recordCommandBuffer(VkCommandBuffer command_buffer, u
 
 	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_);
 
-	vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout_, 0, 1, descriptor_.getDescriptorSetPtr(), 0, nullptr);
+	vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout_, 0, 1, descriptors_[descriptor_index_].getDescriptorSetPtr(), 0, nullptr);
 
 	vkCmdDispatch(command_buffer, x_work_groups, y_work_groups, z_work_groups);
 

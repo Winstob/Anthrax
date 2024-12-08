@@ -53,7 +53,8 @@ Anthrax::Anthrax()
 Anthrax::~Anthrax()
 {
 	vulkan_manager_->wait();
-	raymarched_image_.destroy();
+	for (unsigned int i = 0; i < raymarched_images_.size(); i++)
+		raymarched_images_[i].destroy();
 	materials_ssbo_.destroy();
 	indirection_pool_ssbo_.destroy();
 	uniformity_pool_ssbo_.destroy();
@@ -67,6 +68,14 @@ Anthrax::~Anthrax()
 	camera_up_ubo_.destroy();
 	camera_forward_ubo_.destroy();
 	sunlight_ubo_.destroy();
+	for (unsigned int i = 0; i < main_compute_descriptors_.size(); i++)
+	{
+		main_compute_descriptors_[i].destroy();
+	}
+	for (unsigned int i = 0; i < main_graphics_descriptors_.size(); i++)
+	{
+		main_graphics_descriptors_[i].destroy();
+	}
 
 	delete world_;
 	delete vulkan_manager_;
@@ -79,23 +88,8 @@ int Anthrax::init()
 	vulkan_manager_->setMultiBuffering(multibuffering_value_);
 	vulkan_manager_->init();
 	createBuffers();
+	createDescriptors();
 
-	vulkan_manager_->renderPassAddImage(raymarched_image_);
-
-	vulkan_manager_->computePassAddBuffer(materials_ssbo_);
-	vulkan_manager_->computePassAddBuffer(indirection_pool_ssbo_);
-	vulkan_manager_->computePassAddBuffer( uniformity_pool_ssbo_);
-	vulkan_manager_->computePassAddBuffer(voxel_type_pool_ssbo_);
-	vulkan_manager_->computePassAddBuffer(num_levels_ubo_);
-	vulkan_manager_->computePassAddBuffer(focal_distance_ubo_);
-	vulkan_manager_->computePassAddBuffer(screen_width_ubo_);
-	vulkan_manager_->computePassAddBuffer(screen_height_ubo_);
-	vulkan_manager_->computePassAddBuffer(camera_position_ubo_);
-	vulkan_manager_->computePassAddBuffer(camera_right_ubo_);
-	vulkan_manager_->computePassAddBuffer(camera_up_ubo_);
-	vulkan_manager_->computePassAddBuffer(camera_forward_ubo_);
-	vulkan_manager_->computePassAddBuffer(sunlight_ubo_);
-	vulkan_manager_->computePassAddImage(raymarched_image_);
 	vulkan_manager_->start();
 
 	loadMaterials();
@@ -680,32 +674,64 @@ void Anthrax::createBuffers()
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 
-		raymarched_image_ = Image(vulkan_manager_->getDevice(),
-				1920,
-				1080,
+	for (unsigned int i = 0; i < multibuffering_value_; i++)
+	{
+		raymarched_images_.push_back(Image(vulkan_manager_->getDevice(),
+				MAX_WINDOW_X,
+				MAX_WINDOW_Y,
 				VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
 				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-				);
-	/*
-	glGenBuffers(1, &indirection_pool_ssbo_);
-	glBindBuffer(GL_SHADER_STORAGE_BUFFER, indirection_pool_ssbo_);
-	glBufferData(GL_SHADER_STORAGE_BUFFER, 8 * sizeof(uint32_t) * world_.num_indices_, world_.indirection_pool_, GL_DYNAMIC_DRAW);
-	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, indirection_pool_ssbo_);
-
-	glGenBuffers(1, &voxel_type_pool_ssbo_);
-	glBindBuffer(GL_SHADER_STORAGE_BUFFER, voxel_type_pool_ssbo_);
-	glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(uint32_t) * world_.num_indices_, world_.voxel_type_pool_, GL_DYNAMIC_DRAW);
-	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, voxel_type_pool_ssbo_);
-
-	glGenBuffers(1, &lod_pool_ssbo_);
-	glBindBuffer(GL_SHADER_STORAGE_BUFFER, lod_pool_ssbo_);
-	glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(uint32_t) * world_.num_indices_, world_.lod_pool_, GL_DYNAMIC_DRAW);
-	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, lod_pool_ssbo_);
-
-	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-	*/
+				));
+	}
 
 	return;
+}
+
+
+void Anthrax::createDescriptors()
+{
+	std::vector<Buffer> buffers;
+	std::vector<Image> images;
+
+	// main render pass
+	buffers.clear();
+	images.clear();
+	buffers.resize(0);
+	images.resize(1);
+	main_graphics_descriptors_.clear();
+	for (unsigned int i = 0; i < raymarched_images_.size(); i++)
+	{
+		images[0] = raymarched_images_[i];
+		main_graphics_descriptors_.push_back(Descriptor(vulkan_manager_->getDevice(), Descriptor::ShaderStage::FRAGMENT, buffers, images));
+	}
+	vulkan_manager_->renderPassSetDescriptors(main_graphics_descriptors_);
+
+	// main compute pass
+	buffers.clear();
+	images.clear();
+	buffers.resize(13);
+	images.resize(1);
+	main_compute_descriptors_.clear();
+	
+	buffers[0] = materials_ssbo_;
+	buffers[1] = indirection_pool_ssbo_;
+	buffers[2] =  uniformity_pool_ssbo_;
+	buffers[3] = voxel_type_pool_ssbo_;
+	buffers[4] = num_levels_ubo_;
+	buffers[5] = focal_distance_ubo_;
+	buffers[6] = screen_width_ubo_;
+	buffers[7] = screen_height_ubo_;
+	buffers[8] = camera_position_ubo_;
+	buffers[9] = camera_right_ubo_;
+	buffers[10] = camera_up_ubo_;
+	buffers[11] = camera_forward_ubo_;
+	buffers[12] = sunlight_ubo_;
+	for (unsigned int i = 0; i < raymarched_images_.size(); i++)
+	{
+		images[0] = raymarched_images_[i];
+		main_compute_descriptors_.push_back(Descriptor(vulkan_manager_->getDevice(), Descriptor::ShaderStage::COMPUTE, buffers, images));
+	}
+	vulkan_manager_->computePassSetDescriptors(main_compute_descriptors_);
 }
 
 } // namespace Anthrax

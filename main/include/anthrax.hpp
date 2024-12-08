@@ -39,6 +39,9 @@
 #include "intfloat.hpp"
 #include "material.hpp"
 
+#define MAX_WINDOW_X 1920
+#define MAX_WINDOW_Y 1080
+
 namespace Anthrax
 {
 
@@ -75,6 +78,7 @@ private:
 	void renderText(std::string text, float x, float y, float scale, glm::vec3 color);
 	void renderText(Text text) { renderText(text.text, text.x, text.y, text.scale, text.color); }
 	void createBuffers();
+	void createDescriptors();
 
 	// Shader passes
 	/*
@@ -110,9 +114,12 @@ private:
 
 	// ssbos
 	Buffer materials_ssbo_, indirection_pool_ssbo_, uniformity_pool_ssbo_, voxel_type_pool_ssbo_;
-	Image raymarched_image_;
+	std::vector<Image> raymarched_images_;
 	// ubos
 	Buffer num_levels_ubo_, focal_distance_ubo_, screen_width_ubo_, screen_height_ubo_, camera_position_ubo_, camera_right_ubo_, camera_up_ubo_, camera_forward_ubo_, sunlight_ubo_;
+	// descriptors
+	std::vector<Descriptor> main_compute_descriptors_;
+	std::vector<Descriptor> main_graphics_descriptors_;
 
 };
 

@@ -29,12 +29,13 @@ public:
 	~GraphicsPipeline();
 	VkPipeline data() { return pipeline_; }
 	VkPipelineLayout getLayout() { return pipeline_layout_; }
-	VkDescriptorSet *getDescriptorSetPtr() { return descriptor_.getDescriptorSetPtr(); }
+	//VkDescriptorSet *getDescriptorSetPtr() { return descriptor_.getDescriptorSetPtr(); }
+	VkDescriptorSet *getDescriptorSetPtr() { return fragment_descriptors_[fragment_descriptor_index_].getDescriptorSetPtr(); }
 
 	void destroy();
 
-	void addBuffer(Buffer buffer) { buffers_.push_back(buffer); }
-	void addImage(Image image) { images_.push_back(image); }
+	void setFragmentDescriptors(std::vector<Descriptor> descriptors) { fragment_descriptors_ = descriptors; }
+	void selectFragmentDescriptor(int index) { fragment_descriptor_index_ = index; }
 
 	void linkToRenderPass(VkRenderPass render_pass, int subpass_index);
 	void init();
@@ -45,10 +46,8 @@ private:
 
 	std::string shadercode_file_prefix_;
 
-	std::vector<Buffer> buffers_;
-	std::vector<Image> images_;
-
-	Descriptor descriptor_;
+	std::vector<Descriptor> fragment_descriptors_;
+	int fragment_descriptor_index_;
 	VkPipelineLayout pipeline_layout_;
 	VkPipeline pipeline_;
 	VkRenderPass render_pass_;

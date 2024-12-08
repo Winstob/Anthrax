@@ -39,23 +39,21 @@ public:
 
 	void updateSwapChain(SwapChain swap_chain) { swap_chain_ = swap_chain; } // TODO: make swapchain a pointer to an object shared between everything so this isn't necessary
 	void init();
-	void addBuffer(Buffer buffer) { buffers_.push_back(buffer); }
-	void addImage(Image image) { images_.push_back(image); } // TODO: fix (see buffers_)
+	void setDescriptors(std::vector<Descriptor> descriptors) { fragment_descriptors_ = descriptors; }
 
+	//void selectDescriptor(int descriptor_index) { descriptor_index_ = fragment_descriptor_index; }
+	void selectDescriptor(int index) { pipeline_.selectFragmentDescriptor(index); }
 	void recordCommandBuffer(VkCommandBuffer command_buffer, VkFramebuffer framebuffer);
 
 private:
 	Device device_;
 
-	std::vector<Buffer> buffers_;
-	std::vector<Image> images_;
 	std::string shadercode_file_prefix_;
 
 	VkRenderPass render_pass_;
 
-	VkDescriptorPool descriptor_pool_ = VK_NULL_HANDLE;
-	VkDescriptorSetLayout descriptor_set_layout_ = VK_NULL_HANDLE;
-	VkDescriptorSet descriptor_set_ = VK_NULL_HANDLE;
+	std::vector<Descriptor> fragment_descriptors_;
+	int fragment_descriptor_index_;
 	GraphicsPipeline pipeline_;
 
 	SwapChain swap_chain_;

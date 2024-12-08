@@ -36,19 +36,18 @@ public:
 	void destroy();
 
 	void init();
-	void addBuffer(Buffer buffer) { buffers_.push_back(buffer); }
-	void addImage(Image image) { images_.push_back(image); }
+	void setDescriptors(std::vector<Descriptor> descriptors) { descriptors_ = descriptors; }
 
+	void selectDescriptor(int descriptor_index) { descriptor_index_ = descriptor_index; }
 	void recordCommandBuffer(VkCommandBuffer command_buffer, unsigned int x_work_groups, unsigned int y_work_groups, unsigned int z_work_groups);
 
 private:
 	Device device_;
 
-	std::vector<Buffer> buffers_;
-	std::vector<Image> images_;
 	std::string shadercode_filename_;
 
-	Descriptor descriptor_;
+	std::vector<Descriptor> descriptors_;
+	int descriptor_index_;
 	VkPipelineLayout pipeline_layout_ = VK_NULL_HANDLE;
 	VkPipeline pipeline_ = VK_NULL_HANDLE;
 
