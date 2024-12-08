@@ -21,6 +21,7 @@ InputHandler::InputHandler(GLFWwindow *window)
 {
 	window_ = window;
 	glfwSetCursorPosCallback(window_, cursorPosCallback);
+	recent_frame_times_.resize(NUM_FRAME_TIME_RECORDS);
 }
 
 
@@ -38,6 +39,7 @@ void InputHandler::beginNewFrame()
 		frame_time_ = current_time - frame_start_time_;
 	}
 	frame_start_time_ = current_time;
+	recent_frame_times_.push_back(frame_time_);
 
 	// record mouse movement
 	mouse_x_difference_ = mouse_x_ - previous_mouse_x_;
@@ -47,6 +49,17 @@ void InputHandler::beginNewFrame()
 
 	glfwPollEvents();
 	return;
+}
+
+
+float InputHandler::getFrameTimeAvg()
+{
+	float total_frame_times = 0.0;
+	for (unsigned int i = 0; i < recent_frame_times_.size(); i++)
+	{
+		total_frame_times += recent_frame_times_[i];
+	}
+	return (total_frame_times / recent_frame_times_.size());
 }
 
 

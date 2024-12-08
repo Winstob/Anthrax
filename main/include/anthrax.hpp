@@ -55,6 +55,7 @@ public:
 	void exit();
 	void renderFrame();
 	bool windowShouldClose() const { return false; }//glfwWindowShouldClose(window_); }
+	float getFrameTimeAvg() { return vulkan_manager_->getFrameTimeAvg(); }
 
 	unsigned int addText(std::string text, float x, float y, float scale, glm::vec3 color);
 	unsigned int addText(std::string text, float x, float y, float scale, float colorx, float colory, float colorz) { return addText(text, x, y, scale, glm::vec3(colorx, colory, colorz)); }

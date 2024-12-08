@@ -13,6 +13,10 @@
 #include <cstdint>
 #include <math.h>
 
+#include "ringbuffer.hpp"
+
+#define NUM_FRAME_TIME_RECORDS 8
+
 
 namespace Anthrax
 {
@@ -29,6 +33,8 @@ public:
 	float getFrameTime() { return frame_time_; }
 	float getMouseMovementX() { return mouse_x_difference_; }
 	float getMouseMovementY() { return mouse_y_difference_; }
+
+	float getFrameTimeAvg();
 
 	GLFWAPI int getKey(int key) { return glfwGetKey(window_, key); }
 
@@ -47,6 +53,7 @@ private:
 
 	float frame_start_time_ = 0.0;
 	float frame_time_;
+	Ringbuffer<float> recent_frame_times_;
 
 	static void cursorPosCallback(GLFWwindow *window, double xpos, double ypos);
 	static void scrollCallback(GLFWwindow *window, double xoffset, double yoffset);

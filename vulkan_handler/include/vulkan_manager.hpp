@@ -51,6 +51,8 @@ public:
 	float getMouseMovementX() { return input_handler_.getMouseMovementX(); }
 	float getMouseMovementY() { return input_handler_.getMouseMovementY(); }
 
+	float getFrameTimeAvg() { return input_handler_.getFrameTimeAvg(); }
+
 private:
 	void destroy();
 
