@@ -26,6 +26,7 @@ VulkanManager::VulkanManager()
 {
 	window_width_ = 800;
 	window_height_ = 600;
+	max_frames_in_flight_ = 1; // default value
 	return;
 }
 
@@ -60,6 +61,8 @@ void VulkanManager::init()
 	input_handler_ = InputHandler(window_);
 	input_handler_.captureMouse();
 
+	frames_.resize(max_frames_in_flight_);
+
 	return;
 }
 
@@ -86,53 +89,70 @@ void VulkanManager::start()
 }
 
 
+void VulkanManager::setMultiBuffering(int max_frames_in_flight)
+{
+	if (!frames_.empty())
+	{
+		throw std::runtime_error("Can't set multibuffering after VulkanManager is initialized!");
+	}
+	if (max_frames_in_flight < 1)
+	{
+		throw std::runtime_error("Multi-buffering value must be at least 1!");
+	}
+	max_frames_in_flight_ = max_frames_in_flight;
+	return;
+}
+
+
 void VulkanManager::drawFrame()
 {
+	vkWaitForFences(device_.logical, 1, &(frames_[current_frame_].in_flight_fence), VK_TRUE, UINT64_MAX);
+
 	// Compute pass
-	vkWaitForFences(device_.logical, 1, &compute_in_flight_fence_, VK_TRUE, UINT64_MAX);
+	vkWaitForFences(device_.logical, 1, &(frames_[current_frame_].compute_in_flight_fence), VK_TRUE, UINT64_MAX);
 	// TODO: compute buffer updates should really go here. Maybe when buffers are moved away from host-visible memory, set them up for transfers normally and initiate the transfer here.
-	vkResetFences(device_.logical, 1, &compute_in_flight_fence_);
-	vkResetCommandBuffer(compute_command_buffer_, 0);
-	compute_shader_manager_.recordCommandBuffer(compute_command_buffer_, ceil((float)window_width_/WORKGROUP_SIZE), ceil((float)window_height_/WORKGROUP_SIZE), 1);
+	vkResetFences(device_.logical, 1, &(frames_[current_frame_].compute_in_flight_fence));
+	vkResetCommandBuffer((frames_[current_frame_].compute_command_buffer), 0);
+	compute_shader_manager_.recordCommandBuffer(frames_[current_frame_].compute_command_buffer, ceil((float)window_width_/WORKGROUP_SIZE), ceil((float)window_height_/WORKGROUP_SIZE), 1);
 
 	VkSubmitInfo compute_submit_info{};
 	compute_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	compute_submit_info.commandBufferCount = 1;
-	compute_submit_info.pCommandBuffers = &compute_command_buffer_;
+	compute_submit_info.pCommandBuffers = &(frames_[current_frame_].compute_command_buffer);
 	compute_submit_info.signalSemaphoreCount = 1;
-	compute_submit_info.pSignalSemaphores = &compute_finished_semaphore_;
+	compute_submit_info.pSignalSemaphores = &(frames_[current_frame_].compute_finished_semaphore);
 	//compute_submit_info.
 	
-	if (vkQueueSubmit(device_.getComputeQueue(), 1, &compute_submit_info, compute_in_flight_fence_) != VK_SUCCESS)
+	if (vkQueueSubmit(device_.getComputeQueue(), 1, &compute_submit_info, frames_[current_frame_].compute_in_flight_fence) != VK_SUCCESS)
 	{
 		throw std::runtime_error("Failed to submit dispatch command buffer");
 	}
 
 	// Graphics pass
-	vkWaitForFences(device_.logical, 1, &in_flight_fence_, VK_TRUE, UINT64_MAX);
-	vkResetFences(device_.logical, 1, &in_flight_fence_);
+	vkWaitForFences(device_.logical, 1, &(frames_[current_frame_].in_flight_fence), VK_TRUE, UINT64_MAX);
+	vkResetFences(device_.logical, 1, &(frames_[current_frame_].in_flight_fence));
 	//vkDeviceWaitIdle(device_.logical);
 
 	uint32_t image_index;
-	vkAcquireNextImageKHR(device_.logical, swap_chain_.data(), UINT64_MAX, image_available_semaphore_, VK_NULL_HANDLE, &image_index);
+	vkAcquireNextImageKHR(device_.logical, swap_chain_.data(), UINT64_MAX, frames_[current_frame_].image_available_semaphore, VK_NULL_HANDLE, &image_index);
 
-	vkResetCommandBuffer(command_buffer_, 0);
+	vkResetCommandBuffer(frames_[current_frame_].command_buffer, 0);
 	//recordCommandBuffer(command_buffer_, image_index);
-	render_pass_.recordCommandBuffer(command_buffer_, swap_chain_framebuffers_[image_index]);
+	render_pass_.recordCommandBuffer(frames_[current_frame_].command_buffer, swap_chain_framebuffers_[image_index]);
 
 	VkSubmitInfo submit_info{};
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	VkSemaphore wait_semaphores[] = {compute_finished_semaphore_, image_available_semaphore_};
+	VkSemaphore wait_semaphores[] = {frames_[current_frame_].compute_finished_semaphore, frames_[current_frame_].image_available_semaphore};
 	VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 	submit_info.waitSemaphoreCount = 2;
 	submit_info.pWaitSemaphores = wait_semaphores;
 	submit_info.pWaitDstStageMask = wait_stages;
 	submit_info.commandBufferCount = 1;
-	submit_info.pCommandBuffers = &command_buffer_;
-	VkSemaphore signal_semaphores[] = {render_finished_semaphore_};
+	submit_info.pCommandBuffers = &(frames_[current_frame_].command_buffer);
+	VkSemaphore signal_semaphores[] = {frames_[current_frame_].render_finished_semaphore};
 	submit_info.signalSemaphoreCount = 1;
 	submit_info.pSignalSemaphores = signal_semaphores;
-	if (vkQueueSubmit(device_.getGraphicsQueue(), 1, &submit_info, in_flight_fence_) != VK_SUCCESS)
+	if (vkQueueSubmit(device_.getGraphicsQueue(), 1, &submit_info, frames_[current_frame_].in_flight_fence) != VK_SUCCESS)
 	{
 		throw std::runtime_error("Failed to submit draw command buffer");
 	}
@@ -164,6 +184,7 @@ void VulkanManager::drawFrame()
 	input_handler_.getMouseMovementX();
 	input_handler_.getMouseMovementY();
 
+	current_frame_ = (current_frame_ + 1) % frames_.size();
 	return;
 }
 
@@ -182,16 +203,20 @@ void VulkanManager::destroy()
 
 	// Compute shader stuff
 	compute_shader_manager_.destroy();
+
+	for (unsigned int i = 0; i < frames_.size(); i++)
+	{
+		vkDestroySemaphore(device_.logical, frames_[i].compute_finished_semaphore, nullptr);
+		vkDestroyFence(device_.logical, frames_[i].compute_in_flight_fence, nullptr);
+		vkDestroySemaphore(device_.logical, frames_[i].image_available_semaphore, nullptr);
+		vkDestroySemaphore(device_.logical, frames_[i].render_finished_semaphore, nullptr);
+		vkDestroyFence(device_.logical, frames_[i].in_flight_fence, nullptr);
+	}
 	vkDestroyCommandPool(device_.logical, compute_command_pool_, nullptr);
-	vkDestroySemaphore(device_.logical, compute_finished_semaphore_, nullptr);
-	vkDestroyFence(device_.logical, compute_in_flight_fence_, nullptr);
+	vkDestroyCommandPool(device_.logical, command_pool_, nullptr);
 
 	destroySwapChain();
 
-	vkDestroySemaphore(device_.logical, image_available_semaphore_, nullptr);
-	vkDestroySemaphore(device_.logical, render_finished_semaphore_, nullptr);
-	vkDestroyFence(device_.logical, in_flight_fence_, nullptr);
-	vkDestroyCommandPool(device_.logical, command_pool_, nullptr);
 	/*
 	delete graphics_pipeline_;
 	vkDestroyRenderPass(device_.logical, render_pass_, nullptr);
@@ -418,9 +443,12 @@ void VulkanManager::createCommandBuffer()
 	alloc_info.commandPool = command_pool_;
 	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 	alloc_info.commandBufferCount = 1;
-	if (vkAllocateCommandBuffers(device_.logical, &alloc_info, &command_buffer_) != VK_SUCCESS)
+	for (unsigned int i = 0; i < frames_.size(); i++)
 	{
-		throw std::runtime_error("Failed to allocate command buffers");
+		if (vkAllocateCommandBuffers(device_.logical, &alloc_info, &(frames_[i].command_buffer)) != VK_SUCCESS)
+		{
+			throw std::runtime_error("Failed to allocate command buffers");
+		}
 	}
 }
 
@@ -433,19 +461,22 @@ void VulkanManager::createSyncObjects()
 	fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT; // Begin with the fence activated to avoid hang on startup
 
-	// graphics semaphores
-	if (vkCreateSemaphore(device_.logical, &semaphore_info, nullptr, &image_available_semaphore_) != VK_SUCCESS ||
-		vkCreateSemaphore(device_.logical, &semaphore_info, nullptr, &render_finished_semaphore_) != VK_SUCCESS ||
-		vkCreateFence(device_.logical, &fence_info, nullptr, &in_flight_fence_) != VK_SUCCESS)
+	for (unsigned int i = 0; i < frames_.size(); i++)
 	{
-		throw std::runtime_error("Failed to create graphics sync objects");
-	}
+		// graphics semaphores
+		if (vkCreateSemaphore(device_.logical, &semaphore_info, nullptr, &(frames_[i].image_available_semaphore)) != VK_SUCCESS ||
+			vkCreateSemaphore(device_.logical, &semaphore_info, nullptr, &(frames_[i].render_finished_semaphore)) != VK_SUCCESS ||
+			vkCreateFence(device_.logical, &fence_info, nullptr, &(frames_[i].in_flight_fence)) != VK_SUCCESS)
+		{
+			throw std::runtime_error("Failed to create graphics sync objects");
+		}
 
-	// compute semaphores
-	if (vkCreateSemaphore(device_.logical, &semaphore_info, nullptr, &compute_finished_semaphore_) != VK_SUCCESS ||
-		vkCreateFence(device_.logical, &fence_info, nullptr, &compute_in_flight_fence_) != VK_SUCCESS)
-	{
-		throw std::runtime_error("Failed to create compute sync objects");
+		// compute semaphores
+		if (vkCreateSemaphore(device_.logical, &semaphore_info, nullptr, &(frames_[i].compute_finished_semaphore)) != VK_SUCCESS ||
+			vkCreateFence(device_.logical, &fence_info, nullptr, &(frames_[i].compute_in_flight_fence)) != VK_SUCCESS)
+		{
+			throw std::runtime_error("Failed to create compute sync objects");
+		}
 	}
 
 }
@@ -609,9 +640,12 @@ void VulkanManager::createComputeCommandBuffer()
 	alloc_info.commandPool = compute_command_pool_;
 	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 	alloc_info.commandBufferCount = 1;
-	if (vkAllocateCommandBuffers(device_.logical, &alloc_info, &compute_command_buffer_) != VK_SUCCESS)
+	for (unsigned int i = 0; i < frames_.size(); i++)
 	{
-		throw std::runtime_error("Failed to allocate compute command buffers");
+		if (vkAllocateCommandBuffers(device_.logical, &alloc_info, &(frames_[i].compute_command_buffer)) != VK_SUCCESS)
+		{
+			throw std::runtime_error("Failed to allocate compute command buffers");
+		}
 	}
 }
 

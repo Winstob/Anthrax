@@ -33,6 +33,7 @@ add_subdirectory(${JSONCPP_DIR})
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/main)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/model_handler)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/vulkan_handler)
 
 set(TOOLS
   ${CMAKE_CURRENT_SOURCE_DIR}/tools/tools.hpp

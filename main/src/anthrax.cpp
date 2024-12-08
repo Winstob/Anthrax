@@ -76,6 +76,7 @@ Anthrax::~Anthrax()
 
 int Anthrax::init()
 {
+	vulkan_manager_->setMultiBuffering(multibuffering_value_);
 	vulkan_manager_->init();
 	createBuffers();
 
@@ -679,12 +680,12 @@ void Anthrax::createBuffers()
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 
-	raymarched_image_ = Image(vulkan_manager_->getDevice(),
-			1920,
-			1080,
-			VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-			);
+		raymarched_image_ = Image(vulkan_manager_->getDevice(),
+				1920,
+				1080,
+				VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+				);
 	/*
 	glGenBuffers(1, &indirection_pool_ssbo_);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, indirection_pool_ssbo_);

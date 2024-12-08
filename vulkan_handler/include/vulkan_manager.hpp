@@ -35,6 +35,8 @@ public:
 	void start();
 	void drawFrame();
 
+	void setMultiBuffering(int max_frames_in_flight);
+
 	Device getDevice() { return device_; }
 
 	int getWindowWidth() { return window_width_; }
@@ -102,14 +104,6 @@ private:
 	//GraphicsPipeline *graphics_pipeline_;
 
 	VkCommandPool command_pool_;
-	VkCommandBuffer command_buffer_;
-
-	VkSemaphore image_available_semaphore_;
-	VkSemaphore render_finished_semaphore_;
-	VkFence in_flight_fence_;
-
-	VkSemaphore compute_finished_semaphore_;
-	VkFence compute_in_flight_fence_;
 
 	// Settings
 	unsigned int window_width_, window_height_;
@@ -126,7 +120,21 @@ private:
 
 	ComputeShaderManager compute_shader_manager_;
 	VkCommandPool compute_command_pool_;
-	VkCommandBuffer compute_command_buffer_;
+
+	struct Frame
+	{
+		VkSemaphore image_available_semaphore;
+		VkSemaphore render_finished_semaphore;
+		VkFence in_flight_fence;
+		VkSemaphore compute_finished_semaphore;
+		VkFence compute_in_flight_fence;
+		VkCommandBuffer compute_command_buffer;
+		VkCommandBuffer command_buffer;
+	};
+	//Frame frames_[MAX_FRAMES_IN_FLIGHT];
+	std::vector<Frame> frames_;
+	int max_frames_in_flight_;
+	int current_frame_ = 0;
 
 	/*
 	Buffer world_ssbo_, raymarched_ssbo_;

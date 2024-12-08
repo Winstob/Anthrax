@@ -87,6 +87,7 @@ private:
 	static unsigned int window_width_;
 	static unsigned int window_height_;
 	static bool window_size_changed_;
+	int multibuffering_value_ = 2;
 	// Callbacks
 	static void framebufferSizeCallback(GLFWwindow* window, int width, int height);
 	static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);

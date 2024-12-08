@@ -46,7 +46,7 @@ Voxelizer::~Voxelizer()
 void Voxelizer::addToWorld(World *world)
 {
 	unsigned int offset[3] = { 2048, 2048, 2048 };
-	float multiplier = 40.0;
+	float multiplier = 20.0;
 	for (unsigned int i = 0; i < mesh_->size(); i++)
 	{
 		Mesh::Triangle triangle = (*mesh_)[i];
