@@ -11,6 +11,8 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <iostream>
+
 #include "device.hpp"
 
 namespace Anthrax
@@ -38,10 +40,13 @@ public:
 	size_t size() { return size_; }
 	void* getMappedPtr();
 
+	void copy(Buffer other);
+
 private:
 	uint32_t findMemoryType(uint32_t type_filter, VkMemoryPropertyFlags properties);
 
 	Device device_;
+	VkMemoryPropertyFlags properties_;
 	VkBuffer buffer_ = VK_NULL_HANDLE;
 	VkDeviceMemory buffer_memory_ = VK_NULL_HANDLE;
 	void *buffer_memory_mapped_;

@@ -16,6 +16,7 @@ namespace Anthrax
 Buffer::Buffer(Device device, size_t size, BufferType buffer_type, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties)
 {
 	device_ = device;
+	properties_ = properties;
 	type_ = buffer_type;
 	size_ = size;
 
@@ -58,7 +59,7 @@ Buffer::Buffer(Device device, size_t size, BufferType buffer_type, VkBufferUsage
 	vkBindBufferMemory(device_.logical, buffer_, buffer_memory_, 0);
 
 	//if (type_ == UNIFORM_TYPE)
-	if (true)
+	if (properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
 	{
 		vkMapMemory(device_.logical, buffer_memory_, 0, size_, 0, &buffer_memory_mapped_);
 	}
@@ -102,12 +103,48 @@ uint32_t Buffer::findMemoryType(uint32_t type_filter, VkMemoryPropertyFlags prop
 void* Buffer::getMappedPtr()
 {
 	//if (type_ != UNIFORM_TYPE)
-	if (false)
+	if (!(properties_ & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
 	{
-		throw std::runtime_error("getMappedPtr() was called from a non-uniform buffer");
+		throw std::runtime_error("getMappedPtr() was called from a local gpu buffer");
 	}
 	return buffer_memory_mapped_;
 }
 
+void Buffer::copy(Buffer other)
+{
+	// start by creating a new command buffer
+	VkCommandBufferAllocateInfo alloc_info{};
+	alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	alloc_info.commandPool = device_.getTransferCommandPool();
+	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	alloc_info.commandBufferCount = 1;
+	VkCommandBuffer transfer_command_buffer;
+	if (vkAllocateCommandBuffers(device_.logical, &alloc_info, &transfer_command_buffer) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to allocate transfer command buffer");
+	}
+
+	VkCommandBufferBeginInfo begin_info{};
+	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	vkBeginCommandBuffer(transfer_command_buffer, &begin_info);
+
+	VkBufferCopy copy_region{};
+	copy_region.srcOffset = 0;
+	copy_region.dstOffset = 0;
+	copy_region.size = other.size();
+	vkCmdCopyBuffer(transfer_command_buffer, other.data(), buffer_, 1, &copy_region);
+	vkEndCommandBuffer(transfer_command_buffer);
+
+	VkSubmitInfo submit_info{};
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = &transfer_command_buffer;
+	vkQueueSubmit(device_.getTransferQueue(), 1, &submit_info, VK_NULL_HANDLE);
+	vkQueueWaitIdle(device_.getTransferQueue());
+
+	vkFreeCommandBuffers(device_.logical, device_.getTransferCommandPool(), 1, &transfer_command_buffer);
+	return;
+}
 
 } // namespace Anthrax

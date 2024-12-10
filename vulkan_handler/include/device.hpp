@@ -45,11 +45,13 @@ public:
 		std::optional<uint32_t> graphics_family;
 		std::optional<uint32_t> present_family;
 		std::optional<uint32_t> compute_family;
+		std::optional<uint32_t> transfer_family;
 		bool isComplete()
 		{
 			return graphics_family.has_value() &&
-			present_family.has_value() &&
-			compute_family.has_value();
+				present_family.has_value() &&
+				compute_family.has_value() &&
+				transfer_family.has_value();
 		}
 	};
 	struct SwapChainSupportDetails {
@@ -65,6 +67,8 @@ public:
 	VkQueue getGraphicsQueue() { return graphics_queue_; }
 	VkQueue getPresentQueue() { return present_queue_; }
 	VkQueue getComputeQueue() { return compute_queue_; }
+	VkQueue getTransferQueue() { return transfer_queue_; }
+	VkCommandPool getTransferCommandPool() { return transfer_command_pool_; }
 
 	VkDevice logical;
 	VkPhysicalDevice physical;
@@ -80,10 +84,13 @@ private:
 
 	void createCommandPool();
 	VkCommandPool command_pool_;
+	void createTransferCommandPool();
+	VkCommandPool transfer_command_pool_;
 
 	VkQueue graphics_queue_;
 	VkQueue present_queue_;
 	VkQueue compute_queue_;
+	VkQueue transfer_queue_;
 
 	SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
 

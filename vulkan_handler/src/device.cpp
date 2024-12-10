@@ -21,6 +21,7 @@ Device::Device(VkInstance instance, VkSurfaceKHR surface)
 	queue_family_indices_ = findQueueFamilies(physical);
 
 	createCommandPool();
+	createTransferCommandPool();
 }
 
 
@@ -41,6 +42,7 @@ Device& Device::operator=(const Device &rhs_device)
 void Device::destroy()
 {
 	vkDestroyCommandPool(logical, command_pool_, nullptr);
+	vkDestroyCommandPool(logical, transfer_command_pool_, nullptr);
 	vkDestroyDevice(logical, nullptr);
 	return;
 }
@@ -120,6 +122,7 @@ VkDevice Device::createLogicalDevice(VkPhysicalDevice physical_device)
 	vkGetDeviceQueue(logical_device, indices.graphics_family.value(), 0, &graphics_queue_);
 	vkGetDeviceQueue(logical_device, indices.present_family.value(), 0, &present_queue_);
 	vkGetDeviceQueue(logical_device, indices.compute_family.value(), 0, &compute_queue_);
+	vkGetDeviceQueue(logical_device, indices.transfer_family.value(), 0, &transfer_queue_);
 
 	return logical_device;
 }
@@ -249,15 +252,26 @@ Device::QueueFamilyIndices Device::findQueueFamilies(VkPhysicalDevice device)
 		}
 		VkBool32 present_support = false;
 		vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface_, &present_support);
+		bool is_used = false;
 		if (present_support)
 		{
 			indices.present_family = i;
+			is_used = true;
 		}
 		if (queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT)
 		{
-			if (!indices.graphics_family.has_value() || indices.graphics_family != i)
+			if (!indices.compute_family.has_value() || !is_used)
 			{
 				indices.compute_family = i;
+				is_used = true;
+			}
+		}
+		if (queue_family.queueFlags & VK_QUEUE_TRANSFER_BIT)
+		{
+			if (!indices.transfer_family.has_value() || !is_used)
+			{
+				indices.transfer_family = i;
+				is_used = true;
 			}
 		}
 		if (indices.isComplete())
@@ -280,5 +294,17 @@ void Device::createCommandPool()
 	}
 }
 
+
+void Device::createTransferCommandPool()
+{
+	VkCommandPoolCreateInfo pool_info{};
+	pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+	pool_info.queueFamilyIndex = queue_family_indices_.transfer_family.value();
+	if (vkCreateCommandPool(logical, &pool_info, nullptr, &transfer_command_pool_) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to create transfer command pool");
+	}
+}
 
 } // namespace Anthrax

@@ -8,7 +8,6 @@ set(HEADERS ${HEADERS}
   ${CMAKE_CURRENT_SOURCE_DIR}/include/intfloat.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/material.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/octree.hpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/ringbuffer.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/text.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/include/world.hpp
 	PARENT_SCOPE

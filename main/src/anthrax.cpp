@@ -55,6 +55,10 @@ Anthrax::~Anthrax()
 	vulkan_manager_->wait();
 	for (unsigned int i = 0; i < raymarched_images_.size(); i++)
 		raymarched_images_[i].destroy();
+	materials_staging_ssbo_.destroy();
+	indirection_pool_staging_ssbo_.destroy();
+	uniformity_pool_staging_ssbo_.destroy();
+	voxel_type_pool_staging_ssbo_.destroy();
 	materials_ssbo_.destroy();
 	indirection_pool_ssbo_.destroy();
 	uniformity_pool_ssbo_.destroy();
@@ -275,17 +279,25 @@ void Anthrax::loadMaterials()
 {
 	for (unsigned int i = 0; i < materials_.size(); i++)
 	{
-		((Material::PackedMaterial*)materials_ssbo_.getMappedPtr())[i] = (materials_[i].pack());
+		((Material::PackedMaterial*)materials_staging_ssbo_.getMappedPtr())[i] = (materials_[i].pack());
 	}
+	materials_ssbo_.copy(materials_staging_ssbo_);
 	return;
 }
 
 
 void Anthrax::createWorld()
 {
-	memcpy(indirection_pool_ssbo_.getMappedPtr(), world_->getIndirectionPool(), world_->getIndirectionPoolSize());
-	memcpy(uniformity_pool_ssbo_.getMappedPtr(), world_->getUniformityPool(), world_->getUniformityPoolSize());
-	memcpy(voxel_type_pool_ssbo_.getMappedPtr(), world_->getVoxelTypePool(), world_->getVoxelTypePoolSize());
+	std::cout << "Copying world to staging buffers" << std::endl;
+	memcpy(indirection_pool_staging_ssbo_.getMappedPtr(), world_->getIndirectionPool(), world_->getIndirectionPoolSize());
+	memcpy(uniformity_pool_staging_ssbo_.getMappedPtr(), world_->getUniformityPool(), world_->getUniformityPoolSize());
+	memcpy(voxel_type_pool_staging_ssbo_.getMappedPtr(), world_->getVoxelTypePool(), world_->getVoxelTypePoolSize());
+
+	std::cout << "Moving world to local memory" << std::endl;
+	indirection_pool_ssbo_.copy(indirection_pool_staging_ssbo_);
+	uniformity_pool_ssbo_.copy(uniformity_pool_staging_ssbo_);
+	voxel_type_pool_ssbo_.copy(voxel_type_pool_staging_ssbo_);
+	std::cout << "Done!" << std::endl;
 	return;
 }
 
@@ -580,33 +592,62 @@ int Anthrax::removeText(unsigned int id)
 void Anthrax::createBuffers()
 {
 	// ssbos
+	materials_staging_ssbo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			materials_.size() * sizeof(Material::PackedMaterial),
+			Buffer::STORAGE_TYPE,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	indirection_pool_staging_ssbo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			world_->getIndirectionPoolSize(),
+			Buffer::STORAGE_TYPE,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	uniformity_pool_staging_ssbo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			world_->getUniformityPoolSize(),
+			Buffer::STORAGE_TYPE,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	voxel_type_pool_staging_ssbo_ = Buffer(
+			vulkan_manager_->getDevice(),
+			world_->getVoxelTypePoolSize(),
+			Buffer::STORAGE_TYPE,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+
 	materials_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			materials_.size() * sizeof(Material::PackedMaterial),
 			Buffer::STORAGE_TYPE,
-			0,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 			);
 	indirection_pool_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			world_->getIndirectionPoolSize(),
 			Buffer::STORAGE_TYPE,
-			0,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 			);
 	uniformity_pool_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			world_->getUniformityPoolSize(),
 			Buffer::STORAGE_TYPE,
-			0,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 			);
 	voxel_type_pool_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			world_->getVoxelTypePoolSize(),
 			Buffer::STORAGE_TYPE,
-			0,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 			);
 
 	// ubos
@@ -615,63 +656,63 @@ void Anthrax::createBuffers()
 			4,
 			Buffer::UNIFORM_TYPE,
 			0,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	focal_distance_ubo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			4,
 			Buffer::UNIFORM_TYPE,
 			0,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	screen_width_ubo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			4,
 			Buffer::UNIFORM_TYPE,
 			0,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	screen_height_ubo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			4,
 			Buffer::UNIFORM_TYPE,
 			0,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	camera_position_ubo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			32,
 			Buffer::UNIFORM_TYPE,
 			0,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	camera_right_ubo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			12,
 			Buffer::UNIFORM_TYPE,
 			0,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	camera_up_ubo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			12,
 			Buffer::UNIFORM_TYPE,
 			0,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	camera_forward_ubo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			12,
 			Buffer::UNIFORM_TYPE,
 			0,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	sunlight_ubo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			32,
 			Buffer::UNIFORM_TYPE,
 			0,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 
 	for (unsigned int i = 0; i < multibuffering_value_; i++)
