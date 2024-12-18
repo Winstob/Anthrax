@@ -1,9 +1,9 @@
 /* ---------------------------------------------------------------- *\
- * octree.cpp
+ * flat_octree.cpp
  * Author: Gavin Ralston
  * Date Created: 2024-02-03
 \* ---------------------------------------------------------------- */
-#include "octree.hpp"
+#include "flat_octree.hpp"
 
 #include <cstdlib>
 #include <algorithm>
@@ -12,7 +12,7 @@
 namespace Anthrax
 {
 
-Octree::Octree(int num_layers)
+FlatOctree::FlatOctree(int num_layers)
 {
 	num_layers_ = num_layers;
 	num_indices_ = indirection_pool_size_ / (sizeof(uint32_t) * 8); // 4 byte data, 8 octants per node
@@ -22,7 +22,7 @@ Octree::Octree(int num_layers)
 }
 
 
-Octree::~Octree()
+FlatOctree::~FlatOctree()
 {
 	free(indirection_pool_);
 	free(voxel_type_pool_);
@@ -30,7 +30,7 @@ Octree::~Octree()
 }
 
 
-Octree& Octree::operator=(const Octree& other)
+FlatOctree& FlatOctree::operator=(const FlatOctree& other)
 {
 	num_layers_ = other.num_layers_;
 	num_indices_ = other.num_indices_;

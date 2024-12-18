@@ -172,6 +172,14 @@ void main()
 	voxel_type = rayMarchHero(ray);
 	color = materials[voxel_type].color;
 	vec4 intersections_visualization = vec4(vec3(float(ray.num_intersections)/150), 1.0);
+	/*
+	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), intersections_visualization);
+	return;
+	*/
+	/*
+	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.world_location.dec_component, 1.0));
+	return;
+	*/
 
 	ray.direction = normalize(vec3(0.1, 1.0, 0.2));
 	uint bounce1_voxel_type = rayMarchHero(ray);

@@ -11,6 +11,9 @@
 #include <iostream>
 #include <cmath>
 
+#include "vox_handler.hpp"
+#include "gltf_handler.hpp"
+
 namespace Anthrax
 {
 
@@ -97,10 +100,13 @@ void World::generate()
 	}
 	*/
 
-	// glb file
-	GltfHandler gltf_handler(this);
+	// gltf file
+	GltfHandler gltf_handler;
 	Voxelizer voxelizer(gltf_handler.getMeshPtr());
-	voxelizer.addToWorld(this);
+	Model *model = voxelizer.createModel();
+	unsigned int offset[3] = { 2048, 2048, 2048 };
+	model->addToWorld(this, offset[0], offset[1], offset[2]);
+	delete model;
 	Material *materials = voxelizer.getMaterials();
 	for (unsigned int i = 0; i < voxelizer.getNumMaterials(); i++)
 	{
@@ -334,8 +340,33 @@ void World::setVoxelType(uint32_t base_location, unsigned int node_index, uint32
 }
 
 
+uint32_t World::mkAndReadIndirectionPool(uint32_t base_location, unsigned int node_index)
+{
+	uint32_t indirection_index;
+	if (readUniformityPool(base_location, node_index))
+	{
+		// need to create children
+		uint32_t voxel_type = readVoxelTypePool(base_location, node_index);
+		setUniformity(base_location, node_index, false);
+		setIndirection(base_location, node_index, next_available_pool_index_);
+		// set up new node
+		for (unsigned int i = 0; i < (1u << (3*LOG2K)); i++)
+		{
+			setUniformity(next_available_pool_index_, i, true);
+			setVoxelType(next_available_pool_index_, i, voxel_type);
+			setIndirection(next_available_pool_index_, i, 0);
+		}
+
+		next_available_pool_index_++;
+	}
+	return readIndirectionPool(base_location, node_index);
+}
+
+
 void World::setVoxel(uint32_t x, uint32_t y, uint32_t z, uint32_t voxel_type)
 {
+	//if (voxel_type != 0) std::cout << voxel_type << std::endl;
+	if (voxel_type == 0) return;
 	uint32_t indirection_pointer = 0;
 	uint32_t current_node_index = 0;
 	uint32_t layer = num_layers_ - 1;

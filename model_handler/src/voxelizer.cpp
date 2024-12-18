@@ -43,56 +43,74 @@ Voxelizer::~Voxelizer()
 }
 
 
-void Voxelizer::addToWorld(World *world)
+Model *Voxelizer::createModel()
 {
-	unsigned int offset[3] = { 2048, 2048, 2048 };
 	float multiplier = 20.0;
+	// Set up the Model object with dimensions from the Mesh
+	float mesh_mins[3];
+	float mesh_maxes[3];
+	for (unsigned int i = 0; i < 3; i++)
+	{
+		mesh_mins[i] = mesh_->getMins()[i] * multiplier;
+		mesh_maxes[i] = mesh_->getMaxes()[i] * multiplier;
+	}
+	size_t model_size[3];
+	for (unsigned int axis = 0; axis < 3; axis++)
+	{
+		model_size[axis] = ceil(abs(mesh_mins[axis]));
+		if (ceil(abs(mesh_maxes[axis])) > model_size[axis]) model_size[axis] = ceil(abs(mesh_maxes[axis]));
+		model_size[axis] = (model_size[axis]+1) * 2;
+	}
+	//std::cout << model_size[0] << " " << model_size[1] << " " << model_size[2] << std::endl;
+	Model *model = new Model(model_size[0], model_size[1], model_size[2]);
+
 	for (unsigned int i = 0; i < mesh_->size(); i++)
 	{
 		Mesh::Triangle triangle = (*mesh_)[i];
-		float world_locations[3][3]; // the vertex positions in the world
+		triangle.scale(multiplier);
+		float triangle_vertices[3][3];
 		for (unsigned int vertex = 0; vertex < 3; vertex++)
 		{
 			// manipulate world position
-			world_locations[vertex][0] = triangle[vertex][0]*multiplier;
-			world_locations[vertex][1] = triangle[vertex][1]*multiplier;
-			world_locations[vertex][2] = triangle[vertex][2]*multiplier;
+			triangle_vertices[vertex][0] = triangle[vertex][0];
+			triangle_vertices[vertex][1] = triangle[vertex][1];
+			triangle_vertices[vertex][2] = triangle[vertex][2];
 		}
-		triangle.scale(multiplier);
 		// find min/max for each axis
 		int mins[3];
 		int maxes[3];
 		for (unsigned int axis = 0; axis < 3; axis++)
 		{
-			float min = world_locations[0][axis];
-			if (world_locations[1][axis] < min) min = world_locations[1][axis];
-			if (world_locations[2][axis] < min) min = world_locations[2][axis];
-			float max = world_locations[0][axis];
-			if (world_locations[1][axis] > max) max = world_locations[1][axis];
-			if (world_locations[2][axis] > max) max = world_locations[2][axis];
-			mins[axis] = static_cast<int>(min);
-			maxes[axis] = static_cast<int>(max);
+			float min = triangle[0][axis];
+			if (triangle[1][axis] < min) min = triangle[1][axis];
+			if (triangle[2][axis] < min) min = triangle[2][axis];
+			float max = triangle[0][axis];
+			if (triangle[1][axis] > max) max = triangle[1][axis];
+			if (triangle[2][axis] > max) max = triangle[2][axis];
+			mins[axis] = static_cast<int>(floor(min));
+			maxes[axis] = static_cast<int>(ceil(max));
 		}
+		// fill model with voxels
 		for (int x = mins[0]; x <= maxes[0]; x++)
 		{
 			for (int y = mins[1]; y <= maxes[1]; y++)
 			{
 				for (int z = mins[2]; z <= maxes[2]; z++)
 				{
-					if (intersectionCheck(world_locations, x, y, z))
+					if (intersectionCheck(triangle_vertices, x, y, z))
 					{
 						float test_point[3] = { static_cast<float>(x), static_cast<float>(y), static_cast<float>(z) };
 						//projectOntoTrianglePlane(test_point, triangle);
 						int material = getMaterial(triangle, test_point);
-						world->setVoxel(x+offset[0], y+offset[1], z+offset[2], material);
+						//world->setVoxel(x+offset[0], y+offset[1], z+offset[2], material);
+						//std::cout << "set voxel |" << x << "|" << y << "|" << z << std::endl;
+						model->setVoxel(x, y, z, material);
 					}
 				}
 			}
 		}
-
-		//world->setVoxel(world_location[0], world_location[1], world_location[2], 1);
 	}
-	return;
+	return model;
 }
 
 

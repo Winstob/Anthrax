@@ -27,7 +27,6 @@
 
 #include "json/json.h"
 #include "material.hpp"
-#include "world.hpp"
 #include "transform.hpp"
 #include "mesh.hpp"
 #include "voxelizer.hpp"
@@ -41,7 +40,6 @@ class GltfHandler
 {
 public:
 	GltfHandler();
-	GltfHandler(World *world);
 	~GltfHandler();
 	void constructMesh();
 	Mesh *getMeshPtr() { return &mesh_; }
@@ -200,7 +198,6 @@ private:
 	std::vector<GltfMaterial> gltf_materials_;
 
 	Mesh mesh_;
-	World *world_;
 	float unit_length_mm_ = 1000.0; // glTF standard unit length is 1 meter (1000 millimeters)
 };
 

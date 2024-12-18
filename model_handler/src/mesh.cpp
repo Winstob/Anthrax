@@ -32,7 +32,20 @@ int Mesh::addTriangle(float vertices[3][3])
 	int initial_num_triangles = triangles_.size();
 	triangles_.push_back(Triangle(vertices[0], vertices[1], vertices[2]));
 	if (triangles_.size() == initial_num_triangles+1)
+	{
+		// update mesh dimensions
+		for (unsigned int i = 0; i < 3; i++)
+		{
+			for (unsigned int axis = 0; axis < 3; axis++)
+			{
+				if (vertices[i][axis] < mins_[axis])
+					mins_[axis] = vertices[i][axis];
+				else if (vertices[i][axis] > maxes_[axis])
+					maxes_[axis] = vertices[i][axis];
+			}
+		}
 		return initial_num_triangles;
+	}
 	return -1;
 }
 
@@ -45,7 +58,20 @@ int Mesh::addTriangle(float vertices[3][3], int texture_id, float tex_coords[3][
 	int initial_num_triangles = triangles_.size();
 	triangles_.push_back(Triangle(this, vertices, texture_id, tex_coords));
 	if (triangles_.size() == initial_num_triangles+1)
+	{
+		// update mesh dimensions
+		for (unsigned int i = 0; i < 3; i++)
+		{
+			for (unsigned int axis = 0; axis < 3; axis++)
+			{
+				if (vertices[i][axis] < mins_[axis])
+					mins_[axis] = vertices[i][axis];
+				else if (vertices[i][axis] > maxes_[axis])
+					maxes_[axis] = vertices[i][axis];
+			}
+		}
 		return initial_num_triangles;
+	}
 	return -1;
 }
 

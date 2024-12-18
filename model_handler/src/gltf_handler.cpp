@@ -12,10 +12,9 @@
 namespace Anthrax
 {
 
-GltfHandler::GltfHandler(World *world)
+GltfHandler::GltfHandler()
 {
 	// TODO: endianness correction?
-	world_ = world;
 	std::string input_file_location = "";
 	//input_file_location = "models/glb/sponza.glb";
 	input_file_location = "models/gltf/sponza";

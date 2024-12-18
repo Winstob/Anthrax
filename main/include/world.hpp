@@ -13,9 +13,7 @@
 #include <glm/glm.hpp>
 
 #include "tools.hpp"
-
-#include "vox_handler.hpp"
-#include "gltf_handler.hpp"
+#include "material.hpp"
 
 #define LOG2K 1
 
@@ -47,6 +45,7 @@ public:
 	void setIndirection(uint32_t base_location, unsigned int node_index, uint32_t value);
 	void setUniformity(uint32_t base_location, unsigned int node_index, bool value);
 	void setVoxelType(uint32_t base_location, unsigned int node_index, uint32_t value);
+	uint32_t mkAndReadIndirectionPool(uint32_t base_location, unsigned int node_index);
 
 	void generate();
 	void setVoxel(uint32_t x, uint32_t y, uint32_t z, uint32_t voxel_type);

@@ -1,10 +1,10 @@
 /* ---------------------------------------------------------------- *\
- * octree.hpp
+ * flat_octree.hpp
  * Author: Gavin Ralston
  * Date Created: 2024-02-03
 \* ---------------------------------------------------------------- */
-#ifndef OCTREE_HPP
-#define OCTREE_HPP
+#ifndef FLAT_OCTREE_HPP
+#define FLAT_OCTREE_HPP
 
 #include <stdint.h>
 #include <cstddef>
@@ -16,13 +16,13 @@
 namespace Anthrax
 {
 
-class Octree
+class FlatOctree
 {
 public:
-	Octree(int num_layers);
-	Octree() : Octree(8) {};
-	~Octree();
-	Octree& operator=(const Octree& other);
+	FlatOctree(int num_layers);
+	FlatOctree() : FlatOctree(8) {};
+	~FlatOctree();
+	FlatOctree& operator=(const FlatOctree& other);
 
 
 	int num_layers_;
@@ -38,4 +38,4 @@ private:
 };
 
 } // namespace Anthrax
-#endif // OCTREE_HPP
+#endif // FLAT_OCTREE_HPP

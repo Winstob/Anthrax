@@ -23,6 +23,7 @@
 #include "material.hpp"
 #include "mesh.hpp"
 #include "world.hpp"
+#include "model.hpp"
 
 namespace Anthrax
 {
@@ -36,7 +37,7 @@ public:
 	Voxelizer &operator=(const Voxelizer &other) { copy(other); return *this; }
 	void copy(const Voxelizer &other);
 	~Voxelizer();
-	void addToWorld(World *world);
+	Model *createModel();
 	unsigned int getNumMaterials() { return num_materials_; }
 	Material *getMaterials() { return materials_; }
 private:

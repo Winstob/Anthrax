@@ -55,6 +55,8 @@ public:
 	int addTexture(int image_id, int sampler_id);
 	Triangle operator[](size_t index);
 	size_t size() { return triangles_.size(); }
+	float *getMins() { return mins_; };
+	float *getMaxes() { return maxes_; };
 	class Sampler
 	{
 	public:
@@ -106,6 +108,8 @@ private:
 	std::vector<Triangle> triangles_;
 	std::vector<Sampler> samplers_;
 	std::vector<Texture> textures_;
+	float mins_[3] = { 0.0, 0.0, 0.0 };
+	float maxes_[3] = { 0.0, 0.0, 0.0 };
 };
 
 } // namespace Anthrax
