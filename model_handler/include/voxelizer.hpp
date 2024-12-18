@@ -22,7 +22,6 @@
 
 #include "material.hpp"
 #include "mesh.hpp"
-#include "world.hpp"
 #include "model.hpp"
 
 namespace Anthrax
