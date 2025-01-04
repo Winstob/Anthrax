@@ -15,5 +15,7 @@
 #define MB(x) ((size_t) (x) << 20)
 #define GB(x) ((size_t) (x) << 30)
 
+#define PI 3.14159265358979
+
 
 #endif // ANTHRAX_TOOLS_HPP

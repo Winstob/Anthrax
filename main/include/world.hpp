@@ -14,6 +14,7 @@
 
 #include "tools.hpp"
 #include "material.hpp"
+#include "device.hpp"
 
 #define LOG2K 1
 
@@ -23,6 +24,7 @@ namespace Anthrax
 class World
 {
 public:
+	World(int num_layers, Device gpu_device);
 	World(int num_layers);
 	World() { World(1); }
 	~World();
@@ -49,8 +51,11 @@ public:
 
 	void generate();
 	void setVoxel(uint32_t x, uint32_t y, uint32_t z, uint32_t voxel_type);
+	void clear();
 
 private:
+	void mainSetup(int num_layers);
+
 	size_t num_materials_ = 4096;
 	Material materials_[4096];
 	uint32_t *indirection_pool_;
@@ -69,6 +74,7 @@ private:
 
 	size_t gpu_buffer_size_ = MB(512); // The maximum size of a buffer in the GPU
 
+	Device device_;
 
 };
 

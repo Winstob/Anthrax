@@ -4,6 +4,8 @@
  * Date Created: 2024-02-03
 \* ---------------------------------------------------------------- */
 #include <fstream>
+#include <iostream>
+#include <chrono>
 #include "anthrax.hpp"
 
 #ifndef WINDOW_NAME
@@ -28,25 +30,12 @@ Anthrax::Anthrax()
 {
 	window_width_ = 800;
 	window_height_ = 600;
-	/*
-	int world_size = 4;
-	world_ = new World(world_size);
-	*/
-	int world_size = 4096;
-	world_ = new World(log2(world_size)/log2(1u<<LOG2K));
 
-	// Load materials
-	// TODO: make this less horrible
-	materials_.clear();
-	Material *tmp_ptr = world_->getMaterialsPtr();
-	for (unsigned int i = 0; i < world_->getNumMaterials(); i++)
-		materials_.push_back(tmp_ptr[i]);
+	vulkan_manager_ = new VulkanManager();
 
 	//camera_ = Camera(glm::vec3(pow(2, world_size-3), pow(2, world_size-3), 0.0));
 	camera_ = Camera(glm::vec3(0.0, 0.0, 0.0));
 	//camera_ = Camera(glm::ivec3(0, 0, 0));
-
-	vulkan_manager_ = new VulkanManager();
 }
 
 
@@ -81,6 +70,7 @@ Anthrax::~Anthrax()
 		main_graphics_descriptors_[i].destroy();
 	}
 
+	delete test_model_;
 	delete world_;
 	delete vulkan_manager_;
 	//exit();
@@ -91,13 +81,15 @@ int Anthrax::init()
 {
 	vulkan_manager_->setMultiBuffering(multibuffering_value_);
 	vulkan_manager_->init();
+	createTestModel();
+	createWorld();
 	createBuffers();
 	createDescriptors();
 
 	vulkan_manager_->start();
 
+	loadWorld();
 	loadMaterials();
-	createWorld();
 
 	/*
 	initializeShaders();
@@ -151,6 +143,7 @@ void Anthrax::exit()
 void Anthrax::renderFrame()
 {
 	updateCamera();
+	loadWorld();
 	
 	// update buffers
 	*((int*)num_levels_ubo_.getMappedPtr()) = world_->getNumLayers();
@@ -286,8 +279,51 @@ void Anthrax::loadMaterials()
 }
 
 
+void Anthrax::createTestModel()
+{
+	GltfHandler gltf_handler;
+	Voxelizer voxelizer(gltf_handler.getMeshPtr(), vulkan_manager_->getDevice());
+	test_model_ = voxelizer.createModel();
+
+	materials_.clear();
+	Material *materials = voxelizer.getMaterials();
+	for (unsigned int i = 0; i < voxelizer.getNumMaterials(); i++)
+	{
+		materials_.push_back(materials[i]);
+	}
+	materials_[0] = Material(0.0, 0.0, 0.0, 0.0);
+	return;
+}
+
+
 void Anthrax::createWorld()
 {
+	/*
+	int world_size = 4;
+	world_ = new World(world_size);
+	*/
+	int world_size = 4096;
+	world_ = new World(log2(world_size)/log2(1u<<LOG2K), vulkan_manager_->getDevice());
+	return;
+}
+
+
+void Anthrax::loadWorld()
+{
+	world_->clear();
+	auto time_now = std::chrono::system_clock::now();
+	auto time_since_epoch = time_now.time_since_epoch();
+	auto time_duration = std::chrono::duration_cast<std::chrono::milliseconds>(time_since_epoch);
+	unsigned int time = time_duration.count();
+	float yaw = 2.0*PI*(static_cast<float>(time%4000)/4000.0) - PI;
+	float pitch = 2.0*PI*(static_cast<float>(time%6000)/6000.0) - PI;
+	float roll = 2.0*PI*(static_cast<float>(time%5000)/5000.0) - PI;
+
+	Quaternion rot(yaw, pitch, roll);
+	rot.normalize();
+	test_model_->rotate(rot);
+	test_model_->addToWorld(world_, 2048, 2048, 2048);
+
 	std::cout << "Copying world to staging buffers" << std::endl;
 	memcpy(indirection_pool_staging_ssbo_.getMappedPtr(), world_->getIndirectionPool(), world_->getIndirectionPoolSize());
 	memcpy(uniformity_pool_staging_ssbo_.getMappedPtr(), world_->getUniformityPool(), world_->getUniformityPoolSize());

@@ -23,6 +23,7 @@
 #include "material.hpp"
 #include "mesh.hpp"
 #include "model.hpp"
+#include "device.hpp"
 
 namespace Anthrax
 {
@@ -30,6 +31,7 @@ namespace Anthrax
 class Voxelizer
 {
 public:
+	Voxelizer(Mesh *mesh, Device gpu_device);
 	Voxelizer(Mesh *mesh);
 	Voxelizer() : Voxelizer(nullptr) {}
 	Voxelizer(const Voxelizer &other) { copy(other); }
@@ -40,6 +42,8 @@ public:
 	unsigned int getNumMaterials() { return num_materials_; }
 	Material *getMaterials() { return materials_; }
 private:
+	void mainSetup(Mesh *mesh);
+
 	bool intersectionCheck(float vertices[3][3], int x, int y, int z);
 	void projectOntoTrianglePlane(float *point, Mesh::Triangle triangle);
 	int getMaterial(Mesh::Triangle triangle, float test_point[3]);
@@ -51,6 +55,9 @@ private:
 	Mesh *mesh_;
 	Material *materials_;
 	unsigned int num_materials_ = 4096;
+
+	Device device_;
+	bool has_gpu_device_;
 };
 
 } // namespace Anthrax

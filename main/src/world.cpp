@@ -17,7 +17,22 @@
 namespace Anthrax
 {
 
+World::World(int num_layers, Device gpu_device)
+{
+	device_ = gpu_device;
+	mainSetup(num_layers);
+	return;
+}
+
+
 World::World(int num_layers)
+{
+	mainSetup(num_layers);
+	return;
+}
+
+
+void World::mainSetup(int num_layers)
 {
 	std::cout << num_layers << std::endl;
 	if (num_layers < 1)
@@ -102,10 +117,15 @@ void World::generate()
 
 	// gltf file
 	GltfHandler gltf_handler;
-	Voxelizer voxelizer(gltf_handler.getMeshPtr());
+	Voxelizer voxelizer(gltf_handler.getMeshPtr(), device_);
 	Model *model = voxelizer.createModel();
 	unsigned int offset[3] = { 2048, 2048, 2048 };
-	model->addToWorld(this, offset[0], offset[1], offset[2]);
+	Quaternion rot(0.9238795325, 0.33, 0.3826834324, 0.1);
+	//Quaternion rot(0.23, 0.2341, 0.552, 0.388);
+	rot.normalize();
+	model->rotate(rot);
+	//model->rotate(Quaternion(1.0, 0.0, 0.0, 0.0)); // should turn it upside down?
+	//model->addToWorld(this, offset[0], offset[1], offset[2]);
 	delete model;
 	Material *materials = voxelizer.getMaterials();
 	for (unsigned int i = 0; i < voxelizer.getNumMaterials(); i++)
@@ -412,6 +432,20 @@ void World::splitNode(uint32_t base_location, unsigned int node_index)
 	}
 
 	next_available_pool_index_++;
+	return;
+}
+
+
+void World::clear()
+{
+	for (unsigned int i = 0; i < (1u << (3*LOG2K)); i++)
+	{
+		setIndirection(0, i, 0);
+		setUniformity(0, i, true);
+		setVoxelType(0, i, 0);
+	}
+	materials_[0] = Material(0.0, 0.0, 0.0, 0.0);
+	next_available_pool_index_ = 1;
 	return;
 }
 

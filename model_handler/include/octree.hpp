@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <cstdint>
 
+#include "quaternion.hpp"
 #include "world.hpp"
 
 namespace Anthrax
@@ -32,8 +33,10 @@ public:
 	void setMaterialType(uint16_t material_type) { material_type_ = material_type; }
 	void setParentWorldIndirectionPoolIndex(uint32_t idx) { parent_world_indirection_pool_index_ = idx; }
 	void setChildIndex(unsigned int idx) { this_child_index_ = idx; }
+	int getLayer() { return layer_; }
 	
 	void setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type);
+	uint16_t getVoxel(int32_t x, int32_t y, int32_t z);
 	void addToWorld(World *world, unsigned int x, unsigned int y, unsigned int z);
 
 private:

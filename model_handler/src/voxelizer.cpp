@@ -9,7 +9,24 @@
 namespace Anthrax
 {
 
+Voxelizer::Voxelizer(Mesh *mesh, Device gpu_device)
+{
+	mainSetup(mesh);
+	has_gpu_device_ = true;
+	device_ = gpu_device;
+	return;
+}
+
+
 Voxelizer::Voxelizer(Mesh *mesh)
+{
+	mainSetup(mesh);
+	has_gpu_device_ = false;
+	return;
+}
+
+
+void Voxelizer::mainSetup(Mesh *mesh)
 {
 	mesh_ = mesh;
 	materials_ = reinterpret_cast<Material*>(malloc(num_materials_*sizeof(Material)));
@@ -45,7 +62,12 @@ Voxelizer::~Voxelizer()
 
 Model *Voxelizer::createModel()
 {
-	float multiplier = 20.0;
+	if (!has_gpu_device_)
+	{
+		throw std::runtime_error("No GPU device linked to voxelizer! Cannot create model.");
+		// maybe in the future get rid of this. also start acutally using the gpu here
+	}
+	float multiplier = 1.0;
 	// Set up the Model object with dimensions from the Mesh
 	float mesh_mins[3];
 	float mesh_maxes[3];
@@ -62,7 +84,8 @@ Model *Voxelizer::createModel()
 		model_size[axis] = (model_size[axis]+1) * 2;
 	}
 	//std::cout << model_size[0] << " " << model_size[1] << " " << model_size[2] << std::endl;
-	Model *model = new Model(model_size[0], model_size[1], model_size[2]);
+	//Model *model = new Model(model_size[0], model_size[1], model_size[2]);
+	Model *model = new Model(model_size[0], model_size[1], model_size[2], device_);
 
 	for (unsigned int i = 0; i < mesh_->size(); i++)
 	{

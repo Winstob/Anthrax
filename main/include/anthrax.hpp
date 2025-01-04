@@ -6,8 +6,6 @@
 #ifndef ANTHRAX_HPP
 #define ANTHRAX_HPP
 
-#define PI 3.14159265
-
 #include "vulkan_manager.hpp"
 
 /*
@@ -31,12 +29,14 @@
 #include "tools.hpp"
 
 //#include "shader.hpp"
+#include "model.hpp"
 #include "world.hpp"
 #include "camera.hpp"
 #include "character.hpp"
 #include "idmap.hpp"
 #include "text.hpp"
 #include "intfloat.hpp"
+#include "gltf_handler.hpp"
 #include "material.hpp"
 
 #define MAX_WINDOW_X 1920
@@ -70,7 +70,9 @@ private:
 	void renderFullscreenQuad();
 	void initializeShaders();
 	void loadMaterials();
+	void createTestModel();
 	void createWorld();
+	void loadWorld();
 	void initializeWorldSSBOs();
 	void updateCamera();
 	void textTexturesSetup();
@@ -104,6 +106,7 @@ private:
 
 	std::vector<Material> materials_;
 	World *world_;
+	Model *test_model_;
 	Camera camera_;
 	//GLuint indirection_pool_ssbo_ = 0, voxel_type_pool_ssbo_ = 0, lod_pool_ssbo_ = 0;
 

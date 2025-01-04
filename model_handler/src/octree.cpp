@@ -120,6 +120,62 @@ void Octree::setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type)
 }
 
 
+uint16_t Octree::getVoxel(int32_t x, int32_t y, int32_t z)
+{
+	if (isUniform())
+	{
+		return material_type_;
+	}
+	else
+	{
+		unsigned int quarter_axis_size;
+		unsigned int adder;
+		unsigned int subtracter;
+		if (layer_ == 1)
+		{
+			quarter_axis_size = 0;
+			adder = 1;
+			subtracter = 0;
+		}
+		else
+		{
+			quarter_axis_size = (1u << (layer_-2));
+			adder = quarter_axis_size;
+			subtracter = quarter_axis_size;
+		}
+		unsigned int child_index = 0;
+		if (x < 0)
+		{
+			x += adder;
+		}
+		else
+		{
+			child_index |= 1u;
+			x -= subtracter;
+		}
+		if (y < 0)
+		{
+			y += adder;
+		}
+		else
+		{
+			child_index |= 2u;
+			y -= subtracter;
+		}
+		if (z < 0)
+		{
+			z += adder;
+		}
+		else
+		{
+			child_index |= 4u;
+			z -= subtracter;
+		}
+		return children_[child_index].getVoxel(x, y, z);
+	}
+}
+
+
 /* ---------------------------------------------------------------- *\
  * This is a less CPU-intensive merge function. While the normal
  * merge() checks all possible merges in all descendents, this

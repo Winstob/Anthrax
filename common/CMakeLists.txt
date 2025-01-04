@@ -2,9 +2,11 @@ set(INCLUDE_DIRS ${INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/include PARENT_SCOP
 
 set(HEADERS ${HEADERS}
   ${CMAKE_CURRENT_SOURCE_DIR}/include/ringbuffer.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/quaternion.hpp
 	PARENT_SCOPE
   )
 
 set(SRC ${SRC}
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/quaternion.cpp
 	PARENT_SCOPE
   )
