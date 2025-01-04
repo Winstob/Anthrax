@@ -15,6 +15,7 @@
 #include "quaternion.hpp"
 #include "device.hpp"
 #include "compute_shader_manager.hpp"
+#include "timer.hpp"
 
 #define MODEL_ROTATION_CHUNK_SIZE 256 // with 16-bit voxel types, this equates to 32MB
 

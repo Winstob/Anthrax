@@ -310,6 +310,8 @@ void Anthrax::createWorld()
 
 void Anthrax::loadWorld()
 {
+	Timer timer(Timer::MILLISECONDS);
+	timer.start();
 	world_->clear();
 	auto time_now = std::chrono::system_clock::now();
 	auto time_since_epoch = time_now.time_since_epoch();
@@ -324,16 +326,17 @@ void Anthrax::loadWorld()
 	test_model_->rotate(rot);
 	test_model_->addToWorld(world_, 2048, 2048, 2048);
 
-	std::cout << "Copying world to staging buffers" << std::endl;
+	//std::cout << "Copying world to staging buffers" << std::endl;
 	memcpy(indirection_pool_staging_ssbo_.getMappedPtr(), world_->getIndirectionPool(), world_->getIndirectionPoolSize());
 	memcpy(uniformity_pool_staging_ssbo_.getMappedPtr(), world_->getUniformityPool(), world_->getUniformityPoolSize());
 	memcpy(voxel_type_pool_staging_ssbo_.getMappedPtr(), world_->getVoxelTypePool(), world_->getVoxelTypePoolSize());
 
-	std::cout << "Moving world to local memory" << std::endl;
+	//std::cout << "Moving world to local memory" << std::endl;
 	indirection_pool_ssbo_.copy(indirection_pool_staging_ssbo_);
 	uniformity_pool_ssbo_.copy(uniformity_pool_staging_ssbo_);
 	voxel_type_pool_ssbo_.copy(voxel_type_pool_staging_ssbo_);
-	std::cout << "Done!" << std::endl;
+	//std::cout << "Done!" << std::endl;
+	std::cout << "Time to load world: " << timer.stop() << "ms" << std::endl;
 	return;
 }
 

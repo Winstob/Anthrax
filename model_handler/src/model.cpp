@@ -98,6 +98,8 @@ void Model::setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type)
 
 void Model::rotate(Quaternion quat)
 {
+	Timer timer(Timer::MILLISECONDS);
+	timer.start();
 	// TODO: not naive approach - possibly use compute shader?
 	int min = -(size_>>1);
 	int max = min + size_;
@@ -141,10 +143,10 @@ void Model::rotate(Quaternion quat)
 			}
 		}
 	}
-	std::cout << "num_voxels: " << num_voxels << std::endl;
 	delete octree_;
 	octree_ = rotated_octree;
 	current_rotation_ = quat;
+	std::cout << "Time to rotate: " << timer.stop() << "ms" << std::endl;
 	return;
 	/*
 	// future implementation: use compute shader for rotation

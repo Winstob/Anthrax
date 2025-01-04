@@ -209,7 +209,7 @@ void Octree::simpleMerge()
 		free(children_);
 		children_ = nullptr;
 		material_type_ = material_type;
-		std::cout << "Merged! Material type: " << material_type << " | Layer: " << layer_ << std::endl;
+		//std::cout << "Merged! Material type: " << material_type << " | Layer: " << layer_ << std::endl;
 		if (parent_)
 		{
 			parent_->simpleMerge();
