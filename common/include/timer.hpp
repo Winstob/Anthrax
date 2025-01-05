@@ -31,11 +31,13 @@ public:
 
 	void start();
 	long long stop();
+	long long query();
 
 private:
 	Interval interval_;
 	std::chrono::time_point<std::chrono::steady_clock> start_time_point_;
-	long long time_;
+	std::chrono::time_point<std::chrono::steady_clock> stop_time_point_;
+	bool running_;
 };
 
 } // namespace Anthrax
