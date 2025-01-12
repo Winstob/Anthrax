@@ -27,6 +27,7 @@ public:
 	Octree(const Octree &other) { copy(other); }
 	Octree& operator=(const Octree &other) { copy(other); return *this; }
 	void copy(const Octree &other);
+	void clear();
 	
 	bool isUniform() { return (layer_ == 0) || (children_ == nullptr); }
 	uint16_t getMaterialType() { return material_type_; }
@@ -36,7 +37,9 @@ public:
 	int getLayer() { return layer_; }
 	
 	void setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type);
+	void setVoxelAtLayer(int32_t x, int32_t y, int32_t z, uint16_t material_type, int layer);
 	uint16_t getVoxel(int32_t x, int32_t y, int32_t z);
+	uint16_t getVoxelAtLayer(int32_t x, int32_t y, int32_t z, int layer);
 	void addToWorld(World *world, unsigned int x, unsigned int y, unsigned int z);
 
 private:
@@ -46,6 +49,8 @@ private:
 	uint16_t material_type_;
 
 	void simpleMerge();
+	void simpleUpdateLOD();
+	uint16_t calculateMaterialTypeFromChildren();
 	unsigned int prepareForDescent(int32_t *x, int32_t *y, int32_t *z);
 	
 	// used for manipulating the World object

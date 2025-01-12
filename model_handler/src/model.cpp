@@ -12,21 +12,9 @@
 namespace Anthrax
 {
 
-Model::Model(size_t size_x, size_t size_y, size_t size_z, Device gpu_device)
-{
-	mainSetup(size_x, size_y, size_z);
-	use_gpu_device_ = true;
-
-	device_ = gpu_device;
-	rotationComputeShaderSetup();
-	return;
-}
-
-
 Model::Model(size_t size_x, size_t size_y, size_t size_z)
 {
 	mainSetup(size_x, size_y, size_z);
-	use_gpu_device_ = false;
 	return;
 }
 
@@ -47,6 +35,7 @@ void Model::mainSetup(size_t size_x, size_t size_y, size_t size_z)
 	}
 	size_ = 1u << num_layers;
 
+	original_octree_ = new Octree(num_layers);
 	octree_ = new Octree(num_layers);
 	current_rotation_ = Quaternion();
 	return;
@@ -55,21 +44,15 @@ void Model::mainSetup(size_t size_x, size_t size_y, size_t size_z)
 
 Model::~Model()
 {
+	if (original_octree_)
+	{
+		delete original_octree_;
+		original_octree_ = nullptr;
+	}
 	if (octree_)
 	{
 		delete octree_;
 		octree_ = nullptr;
-	}
-	if (use_gpu_device_)
-	{
-		rotation_shader_manager_.destroy();
-		for (unsigned int i = 0; i < rotation_shader_descriptors_.size(); i++)
-		{
-			rotation_shader_descriptors_[i].destroy();
-		}
-		rotation_input_buffer_.destroy();
-		rotation_output_buffer_.destroy();
-		// the device wasn't have been created by the Model, so it shouldn't be destroyed here
 	}
 	return;
 }
@@ -84,6 +67,15 @@ void Model::copy(const Model& other)
 
 void Model::setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type)
 {
+	if (original_octree_)
+	{
+		original_octree_->setVoxel(x, y, z, material_type);
+	}
+	else
+	{
+		throw std::runtime_error("setVoxel(): original_octree member not yet initialized!");
+	}
+
 	if (octree_)
 	{
 		octree_->setVoxel(x, y, z, material_type);
@@ -92,99 +84,73 @@ void Model::setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type)
 	{
 		throw std::runtime_error("setVoxel(): octree member not yet initialized!");
 	}
+
 	return;
 }
 
 
 void Model::rotate(Quaternion quat)
 {
+	current_rotation_ = quat;
+	octree_->clear();
+	//int precision = original_octree_->getLayer()-7;
+	int precision = 0;
+	// rotate breadth-first: rotate highest layer,
+	// then work down to layer <precision>
+	for (lowest_rotated_layer_ = original_octree_->getLayer()+1;
+			lowest_rotated_layer_ > precision;
+			lowest_rotated_layer_--)
+	{
+		rotateOnLayer(quat, lowest_rotated_layer_-1);
+	}
+	return;
+}
+
+
+void Model::rotateOnLayer(Quaternion quat, int layer)
+{
+	if (layer >= original_octree_->getLayer())
+	{
+		return;
+	}
+
 	Timer timer(Timer::MILLISECONDS);
 	timer.start();
-	// TODO: not naive approach - possibly use compute shader?
-	int min = -(size_>>1);
-	int max = min + size_;
-	Octree *rotated_octree = new Octree(octree_->getLayer());
+	int min = -(1<<(original_octree_->getLayer()-layer-1));
+	int max = (1<<(original_octree_->getLayer()-layer-1)) - 1;
 
-	std::vector<float> old_angles = current_rotation_.eulerAngles();
-	std::vector<float> new_angles = quat.eulerAngles();
+	std::vector<float> angles = quat.eulerAngles();
 
 	int num_voxels = 0;
 
-	// calculate shear angles
-	for (int z = min; z < max; z++)
+	for (int z = min; z <= max; z++)
 	{
-		for (int y = min; y < max; y++)
+		for (int y = min; y <= max; y++)
 		{
-			for (int x = min; x < max; x++)
+			for (int x = min; x <= max; x++)
 			{
-				uint16_t voxel_type = octree_->getVoxel(x, y, z);
-				if (voxel_type == 0)
-					continue;
+				uint16_t voxel_type = original_octree_->getVoxelAtLayer(x, y, z, layer);
 				num_voxels++;
 				int new_x = x;
 				int new_y = y;
 				int new_z = z;
 
-				// undo the current rotation
-				//rotateVoxel(&new_x, &new_y, &new_z, -old_angles[0], -old_angles[1], -old_angles[2]);
-				//rotateVoxel(&new_z, &new_y, &new_x, old_angles[2], old_angles[1], old_angles[0]);
-				//unrotateVoxel(&new_x, &new_y, &new_z, old_angles[0], old_angles[1], old_angles[2]);
-				unrotateVoxelRoll(&new_x, &new_y, &new_z, old_angles[2]);
-				unrotateVoxelPitch(&new_x, &new_y, &new_z, old_angles[1]);
-				unrotateVoxelYaw(&new_x, &new_y, &new_z, old_angles[0]);
-				
-				// do the new rotation
-				//rotateVoxel(&new_x, &new_y, &new_z, new_angles[0], new_angles[1], new_angles[2]);
-				rotateVoxelYaw(&new_x, &new_y, &new_z, new_angles[0]);
-				rotateVoxelPitch(&new_x, &new_y, &new_z, new_angles[1]);
-				rotateVoxelRoll(&new_x, &new_y, &new_z, new_angles[2]);
+				rotateVoxelYaw(&new_x, &new_y, &new_z, angles[0]);
+				rotateVoxelPitch(&new_x, &new_y, &new_z, angles[1]);
+				rotateVoxelRoll(&new_x, &new_y, &new_z, angles[2]);
 
-				rotated_octree->setVoxel(new_x, new_y, new_z, voxel_type);
+				if (new_x < min || new_x > max ||
+						new_y < min || new_y > max ||
+						new_z < min || new_z > max)
+				{
+					continue;
+				}
+				octree_->setVoxelAtLayer(new_x, new_y, new_z, voxel_type, layer);
 			}
 		}
 	}
-	delete octree_;
-	octree_ = rotated_octree;
-	current_rotation_ = quat;
 	std::cout << "Time to rotate: " << timer.stop() << "ms" << std::endl;
 	return;
-	/*
-	// future implementation: use compute shader for rotation
-	// split up the model into MODEL_ROTATION_CHUNK_SIZE^3 cubes
-	float chunk_inclusion_zone_radius = 0.57; // approximately 1/sqrt(3) rounded down.
-																						// chunks need to overlap because some
-																						// rotations may exceed the chunk boundaries.
-	//int num_chunks_per_axis = static_cast<int>(ceil(size_/MODEL_ROTATION_CHUNK_SIZE));
-	int num_chunks_per_axis = 1;
-	int test_model_size = size_ - MODEL_ROTATION_CHUNK_SIZE;
-	while (test_model_size > 0)
-	{
-		test_model_size -= static_cast<int>(floor(MODEL_ROTATION_CHUNK_SIZE*chunk_inclusion_zone_radius));
-		num_chunks_per_axis++;
-	}
-	std::cout << size_ << std::endl;
-	int chunk_offset = static_cast<int>(floor(MODEL_ROTATION_CHUNK_SIZE*chunk_inclusion_zone_radius));
-	for (int chunk_z = 0; chunk_z < num_chunks_per_axis; chunk_z++)
-	{
-		for (int chunk_y = 0; chunk_y < num_chunks_per_axis; chunk_y++)
-		{
-			for (int chunk_x = 0; chunk_x < num_chunks_per_axis; chunk_x++)
-			{
-				std::cout << "Rotating chunk |" << chunk_x << "|" << chunk_y << "|" << chunk_z << "|" << std::endl;
-				int chunk_min[3] = { chunk_x*chunk_offset, chunk_y*chunk_offset, chunk_z*chunk_offset };
-				int chunk_max[3];
-				for (unsigned int axis = 0; axis < 3; axis++)
-				{
-					chunk_min[axis] -= size_ >> 1; // need to move center of chunk to 0,0,0
-					chunk_max[axis] = chunk_min[axis]+MODEL_ROTATION_CHUNK_SIZE;
-				}
-				// first rotate the chunk around its center
-				// then find the center's correct location (rotate the chunk center around the model enter)
-				// translate the chunk
-			}
-		}
-	}
-	*/
 }
 
 /****************************************************************\
@@ -373,44 +339,6 @@ void Model::addToWorld(World *world, unsigned int x, unsigned int y, unsigned in
 		throw std::runtime_error("Model::addToWorld(): octree not initialized!");
 	}
 	octree_->addToWorld(world, x, y, z);
-	return;
-}
-
-
-void Model::rotationComputeShaderSetup()
-{
-	rotation_shader_manager_ = ComputeShaderManager(device_, std::string(xstr(SHADER_DIRECTORY)) + "model_rotation_c.spv");
-
-	// set up buffers
-	rotation_input_buffer_ = Buffer(
-			device_,
-			MODEL_ROTATION_CHUNK_SIZE*MODEL_ROTATION_CHUNK_SIZE*MODEL_ROTATION_CHUNK_SIZE*2, // 2 bytes per voxel
-			Buffer::STORAGE_TYPE,
-			0,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-			);
-	rotation_output_buffer_ = Buffer(
-			device_,
-			MODEL_ROTATION_CHUNK_SIZE*MODEL_ROTATION_CHUNK_SIZE*MODEL_ROTATION_CHUNK_SIZE*2, // 2 bytes per voxel
-			Buffer::STORAGE_TYPE,
-			0,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-			);
-
-
-	// set up descriptors
-	std::vector<Buffer> buffers;
-	std::vector<Image> images;
-	buffers.clear();
-	images.clear();
-	buffers.push_back(rotation_input_buffer_);
-	buffers.push_back(rotation_output_buffer_);
-	rotation_shader_descriptors_.clear();
-	rotation_shader_descriptors_.push_back(Descriptor(device_, Descriptor::ShaderStage::COMPUTE, buffers, images));
-	rotation_shader_manager_.setDescriptors(rotation_shader_descriptors_);
-	
-	// initialize the shader module
-	//rotation_shader_manager_.init();
 	return;
 }
 

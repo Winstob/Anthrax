@@ -84,8 +84,7 @@ Model *Voxelizer::createModel()
 		model_size[axis] = (model_size[axis]+1) * 2;
 	}
 	//std::cout << model_size[0] << " " << model_size[1] << " " << model_size[2] << std::endl;
-	//Model *model = new Model(model_size[0], model_size[1], model_size[2]);
-	Model *model = new Model(model_size[0], model_size[1], model_size[2], device_);
+	Model *model = new Model(model_size[0], model_size[1], model_size[2]);
 
 	for (unsigned int i = 0; i < mesh_->size(); i++)
 	{

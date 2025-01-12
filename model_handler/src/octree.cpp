@@ -29,6 +29,7 @@ Octree::~Octree()
 		free(children_);
 		children_ = nullptr;
 	}
+	return;
 }
 
 
@@ -43,21 +44,59 @@ void Octree::copy(const Octree& other)
 }
 
 
+void Octree::clear()
+{
+	if (children_)
+	{
+		for (unsigned int i = 0; i < 8; i++)
+			children_[i].~Octree();
+		free(children_);
+		children_ = nullptr;
+	}
+	material_type_ = 0;
+	return;
+}
+
+
 void Octree::setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type)
 {
+	return setVoxelAtLayer(x, y, z, material_type, 0);
+}
+
+
+/* ---------------------------------------------------------------- *\
+ * Set a voxel at a specific layer/precision. The octree is treated
+ * as if it were only <layer> layers deep, and coordinates are
+ * adjusted accordingly. Beware that this will remove any octree
+ * data at a lower precision.
+\* ---------------------------------------------------------------- */
+void Octree::setVoxelAtLayer(int32_t x, int32_t y, int32_t z,
+		uint16_t material_type, int layer)
+{
+	if (layer < 0)
+	{
+		throw std::runtime_error("Cannot set voxel at layer with negative value!");
+	}
+
 	if (isUniform() && material_type == material_type_)
 	{
 		// no change
 		return;
 	}
-	if (layer_ == 0)
+	if (layer_ == layer)
 	{
 		if (x != 0 || y != 0 || z != 0)
 		{
 			throw std::runtime_error("setVoxel() out of bounds of octree!");
 		}
+		clear();
 		material_type_ = material_type;
-		parent_->simpleMerge();
+		if (parent_)
+		{
+			parent_->simpleUpdateLOD();
+			parent_->simpleMerge(); // NOTE: this always has to come last since it
+															// might destroy this octree object
+		}
 		return;
 	}
 	else
@@ -71,10 +110,11 @@ void Octree::setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type)
 				children_[i].setMaterialType(material_type_);
 			}
 		}
+		int relative_layer = layer_ - layer;
 		unsigned int quarter_axis_size;
 		unsigned int adder;
 		unsigned int subtracter;
-		if (layer_ == 1)
+		if (relative_layer == 1)
 		{
 			quarter_axis_size = 0;
 			adder = 1;
@@ -82,7 +122,7 @@ void Octree::setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type)
 		}
 		else
 		{
-			quarter_axis_size = (1u << (layer_-2));
+			quarter_axis_size = (1u << (relative_layer -2));
 			adder = quarter_axis_size;
 			subtracter = quarter_axis_size;
 		}
@@ -114,7 +154,7 @@ void Octree::setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type)
 			child_index |= 4u;
 			z -= subtracter;
 		}
-		children_[child_index].setVoxel(x, y, z, material_type);
+		children_[child_index].setVoxelAtLayer(x, y, z, material_type, layer);
 	}
 	return;
 }
@@ -122,16 +162,34 @@ void Octree::setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type)
 
 uint16_t Octree::getVoxel(int32_t x, int32_t y, int32_t z)
 {
+	return getVoxelAtLayer(x, y, z, 0);
+}
+
+
+/* ---------------------------------------------------------------- *\
+ * Similar to setVoxelAtLayer(), the octree is treated as if it
+ * were only <layer> layers deep, and coordinates are adjusted
+ * accordingly. In order for this to work properly, material_type_
+ * must be set properly at all layers of this octree.
+\* ---------------------------------------------------------------- */
+uint16_t Octree::getVoxelAtLayer(int32_t x, int32_t y, int32_t z, int layer)
+{
+	if (layer < 0)
+	{
+		throw std::runtime_error("Cannot get voxel at layer with negative value!");
+	}
+
 	if (isUniform())
 	{
 		return material_type_;
 	}
 	else
 	{
+		int relative_layer = layer_ - layer;
 		unsigned int quarter_axis_size;
 		unsigned int adder;
 		unsigned int subtracter;
-		if (layer_ == 1)
+		if (relative_layer == 1)
 		{
 			quarter_axis_size = 0;
 			adder = 1;
@@ -139,7 +197,7 @@ uint16_t Octree::getVoxel(int32_t x, int32_t y, int32_t z)
 		}
 		else
 		{
-			quarter_axis_size = (1u << (layer_-2));
+			quarter_axis_size = (1u << (relative_layer-2));
 			adder = quarter_axis_size;
 			subtracter = quarter_axis_size;
 		}
@@ -171,7 +229,7 @@ uint16_t Octree::getVoxel(int32_t x, int32_t y, int32_t z)
 			child_index |= 4u;
 			z -= subtracter;
 		}
-		return children_[child_index].getVoxel(x, y, z);
+		return children_[child_index].getVoxelAtLayer(x, y, z, layer);
 	}
 }
 
@@ -216,6 +274,37 @@ void Octree::simpleMerge()
 		}
 	}
 	return;
+}
+
+
+/* ---------------------------------------------------------------- *\
+ * Update the approximated material type based on the children
+\* ---------------------------------------------------------------- */
+void Octree::simpleUpdateLOD()
+{
+	if (!children_)
+	{
+		return;
+	}
+	uint16_t new_material_type = calculateMaterialTypeFromChildren();
+	bool material_type_changed = (new_material_type != material_type_);
+	material_type_ = new_material_type;
+	if (material_type_changed && parent_)
+	{
+		parent_->simpleUpdateLOD();
+	}
+	return;
+}
+
+
+uint16_t Octree::calculateMaterialTypeFromChildren()
+{
+	if (!children_)
+	{
+		return material_type_;
+	}
+	// return the material type of the 0th child
+	return children_[0].getMaterialType();
 }
 
 
