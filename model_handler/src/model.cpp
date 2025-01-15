@@ -101,7 +101,9 @@ void Model::rotate(Quaternion quat)
 			lowest_rotated_layer_ > precision;
 			lowest_rotated_layer_--)
 	{
+		octree_->setSplitMode(Octree::SPLIT_MODE_AIRFILL);
 		rotateOnLayer(quat, lowest_rotated_layer_-1);
+		octree_->setSplitMode(Octree::SPLIT_MODE_NORMAL);
 	}
 	return;
 }
@@ -149,7 +151,8 @@ void Model::rotateOnLayer(Quaternion quat, int layer)
 			}
 		}
 	}
-	std::cout << "Time to rotate: " << timer.stop() << "ms" << std::endl;
+	std::cout << "Time to rotate layer " << layer << ": " << timer.stop()
+			<< "ms" << std::endl;
 	return;
 }
 

@@ -36,16 +36,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/main)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/model_handler)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/vulkan_handler)
 
-set(TOOLS
-  ${CMAKE_CURRENT_SOURCE_DIR}/tools/tools.hpp
-  )
-
-#set(SHADERS
-#  ${CMAKE_CURRENT_SOURCE_DIR}/include/internalshaders.hpp
-#  )
-
 add_library(${PROJECT_NAME}
-  ${TOOLS}
   ${SRC}
   ${HEADERS}
   )
@@ -61,7 +52,6 @@ target_link_libraries(${PROJECT_NAME}
 
 target_include_directories(${PROJECT_NAME}
   PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/tools
 	${JSONCPP_DIR}/include
 	${STB_DIR}
 	${INCLUDE_DIRS}

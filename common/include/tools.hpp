@@ -17,5 +17,11 @@
 
 #define PI 3.14159265358979
 
+namespace Anthrax
+{
+
+unsigned int log2(unsigned int val);
+
+}
 
 #endif // ANTHRAX_TOOLS_HPP
