@@ -2,8 +2,6 @@
  * world.hpp
  * Author: Gavin Ralston
  * Date Created: 2024-08-08
- *
- * A class to manage a 512-tree (kd-tree where k=8,d=3).
 \* ---------------------------------------------------------------- */
 
 #ifndef WORLD_HPP
@@ -15,6 +13,8 @@
 #include "tools.hpp"
 #include "material.hpp"
 #include "device.hpp"
+#include "octree.hpp"
+#include "model.hpp"
 
 #define LOG2K 1
 
@@ -30,49 +30,56 @@ public:
 	~World();
 	World& operator=(const World &other);
 
-	uint32_t* getIndirectionPool() { return indirection_pool_; }
-	char* getUniformityPool() { return uniformity_pool_; }
-	uint32_t* getVoxelTypePool() { return voxel_type_pool_; }
-	int getNumLayers() { return num_layers_; }
-	int getNumIndices() { return num_indices_; }
+	IndirectionElement* getIndirectionPool() { return octree_->getIndirectionPool(); }
+	UniformityElement* getUniformityPool() { return octree_->getUniformityPool(); }
+	VoxelTypeElement* getVoxelTypePool() { return octree_->getVoxelTypePool(); }
+	int getNumLayers() { return octree_->getLayer(); }
 	Material* getMaterialsPtr() { return materials_; }
 	size_t getNumMaterials() { return num_materials_; }
-	int getIndirectionPoolSize() { return indirection_pool_size_; }
-	int getUniformityPoolSize() { return uniformity_pool_size_; }
-	int getVoxelTypePoolSize() { return voxel_type_pool_size_; }
-
-	uint32_t readIndirectionPool(uint32_t base_location, unsigned int node_index);
-	bool readUniformityPool(uint32_t base_location, unsigned int node_index);
-	uint32_t readVoxelTypePool(uint32_t base_location, unsigned int node_index);
-	void setIndirection(uint32_t base_location, unsigned int node_index, uint32_t value);
-	void setUniformity(uint32_t base_location, unsigned int node_index, bool value);
-	void setVoxelType(uint32_t base_location, unsigned int node_index, uint32_t value);
-	uint32_t mkAndReadIndirectionPool(uint32_t base_location, unsigned int node_index);
+	size_t getIndirectionPoolSize()
+	{
+		return octree_->getIndirectionPoolSize()*sizeof(IndirectionElement);
+	}
+	size_t getUniformityPoolSize() { return octree_->getUniformityPoolSize(); }
+	size_t getVoxelTypePoolSize()
+	{
+		return octree_->getVoxelTypePoolSize()*sizeof(VoxelTypeElement);
+	}
+	// These assume the indirection pool will always be the largest
+	size_t getMaxIndirectionPoolSize() { return max_gpu_buffer_size_; }
+	size_t getMaxVoxelTypePoolSize()
+	{
+		return max_gpu_buffer_size_ / (8*sizeof(IndirectionElement))
+			* 8*sizeof(VoxelTypeElement);
+	}
+	size_t getMaxUniformityPoolSize()
+	{
+		return max_gpu_buffer_size_ / (8*sizeof(IndirectionElement))
+			* 8*sizeof(UniformityElement) / 8;
+	}
 
 	void generate();
-	void setVoxel(uint32_t x, uint32_t y, uint32_t z, uint32_t voxel_type);
-	void clear();
+	void setVoxel(int32_t x, int32_t y, int32_t z, int32_t voxel_type)
+	{
+		octree_->setVoxel(x, y, z, voxel_type);
+	}
+	void clear() { octree_->clear(); }
+	void addModel(Model *model, int32_t x_offset, int32_t y_offset,
+			int32_t z_offset);
 
 private:
 	void mainSetup(int num_layers);
 
+	Octree *octree_;
+
 	size_t num_materials_ = 4096;
 	Material materials_[4096];
-	uint32_t *indirection_pool_;
-	uint32_t *voxel_type_pool_;
-	char *uniformity_pool_; // indexed by 64 bytes (512 bits)
-	int num_layers_;
-	int num_indices_;
-	size_t indirection_pool_size_;
-	size_t uniformity_pool_size_;
-	size_t voxel_type_pool_size_;
-	uint32_t next_available_pool_index_;
 
 	void generateSerpinskiPyramidNode(unsigned int index);
 	void generateSingleSerpinskiPyramidNode(unsigned int node_index, int num_layers, int layer, unsigned int x, unsigned int y, unsigned int z, bool is_air);
-	void splitNode(uint32_t base_location, unsigned int node_index);
+	//void splitNode(uint32_t base_location, unsigned int node_index);
 
-	size_t gpu_buffer_size_ = MB(512); // The maximum size of a buffer in the GPU
+	size_t max_gpu_buffer_size_ = MB(512); // The maximum size of a buffer in the GPU
 
 	Device device_;
 

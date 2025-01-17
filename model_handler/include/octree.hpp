@@ -13,7 +13,6 @@
 
 #include "freelist.hpp"
 #include "quaternion.hpp"
-#include "world.hpp"
 
 namespace Anthrax
 {
@@ -35,26 +34,26 @@ public:
 	void copy(const Octree &other);
 	void clear();
 	
-	//bool isUniform() { return (layer_ == 0) || (children_ == nullptr); }
-	bool isUniform() { return getUniformity(); }
+	bool isUniform() { return (layer_ == 0 || getUniformity()); }
 	VoxelTypeElement getMaterialType()
 	{
-		return (*voxel_type_pool_)[pool_index_];
+		if (isRoot()) return 0;
+		return (*voxel_type_pool_)[(parent_->pool_index_<<3)+this_child_index_];
 	}
 	void setMaterialType(VoxelTypeElement material_type)
 	{
-		(*voxel_type_pool_)[pool_index_] = material_type;
+		if (isRoot()) return;
+		(*voxel_type_pool_)[(parent_->pool_index_<<3)+this_child_index_] = material_type;
 		return;
 	}
 	int getLayer() { return layer_; }
-	//bool isRoot() { return (pool_index_ == 0); }
-	bool isRoot() { return (!parent_); }
+	bool isRoot() { return (parent_ == nullptr); }
 	
 	void setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type);
 	void setVoxelAtLayer(int32_t x, int32_t y, int32_t z, uint16_t material_type, int layer);
-	uint16_t getVoxel(int32_t x, int32_t y, int32_t z);
-	uint16_t getVoxelAtLayer(int32_t x, int32_t y, int32_t z, int layer);
-	void addToWorld(World *world, unsigned int x, unsigned int y, unsigned int z);
+	VoxelTypeElement getVoxel(int32_t x, int32_t y, int32_t z);
+	VoxelTypeElement getVoxelAtLayer(int32_t x, int32_t y, int32_t z, int layer);
+	void mergeOctree(Octree *other, int32_t x, int32_t y, int32_t z);
 
 	enum SplitMode
 	{
@@ -63,6 +62,12 @@ public:
 	};
 	void setSplitMode(SplitMode mode) { *split_mode_ = mode; }
 
+	IndirectionElement *getIndirectionPool() { return indirection_pool_->data(); }
+	VoxelTypeElement *getVoxelTypePool() { return voxel_type_pool_->data(); }
+	UniformityElement *getUniformityPool() { return uniformity_pool_->data(); }
+	size_t getIndirectionPoolSize() { return indirection_pool_->size(); }
+	size_t getVoxelTypePoolSize() { return voxel_type_pool_->size(); }
+	size_t getUniformityPoolSize() { return uniformity_pool_->size(); }
 private:
 	int layer_;
 	Octree *parent_;
@@ -72,7 +77,7 @@ private:
 
 	void simpleMerge();
 	void simpleUpdateLOD();
-	uint16_t calculateMaterialTypeFromChildren();
+	VoxelTypeElement calculateMaterialTypeFromChildren();
 	unsigned int prepareForDescent(int32_t *x, int32_t *y, int32_t *z);
 	void split();
 
@@ -83,6 +88,10 @@ private:
 	size_t pool_index_;
 	void setUniformity(bool uniformity)
 	{
+		if (isRoot()) return;
+		IndirectionElement tmp = (uniformity) ? 0 : pool_index_;
+		(*indirection_pool_)[(parent_->pool_index_<<3)+this_child_index_] = tmp;
+		return;
 		unsigned int shifter = Anthrax::log2(sizeof(UniformityElement)*8);
 		size_t index = pool_index_ >> shifter;
 		unsigned int subindex = ~(index << shifter) & pool_index_;
@@ -100,6 +109,10 @@ private:
 	}
 	bool getUniformity()
 	{
+		if (isRoot()) return false;
+		return ((*indirection_pool_)[(parent_->pool_index_<<3)+this_child_index_]
+				== 0);
+		
 		unsigned int shifter = Anthrax::log2(sizeof(UniformityElement)*8);
 		size_t index = pool_index_ >> shifter;
 		unsigned int subindex = ~(index << shifter) & pool_index_;
@@ -109,9 +122,12 @@ private:
 	}
 	void setIndirection(int child_index, IndirectionElement pool_location)
 	{
-		(*indirection_pool_)[pool_index_>>3] = pool_location;
+		if (isRoot()) return;
+		(*indirection_pool_)[(parent_->pool_index_<<3)+child_index] = pool_location;
 		return;
 	}
+
+	void mergeIntoOctree(Octree *other, int32_t x, int32_t y, int32_t z);
 };
 
 } // namespace Anthrax

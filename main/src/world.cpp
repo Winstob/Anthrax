@@ -37,55 +37,24 @@ void World::mainSetup(int num_layers)
 	std::cout << num_layers << std::endl;
 	if (num_layers < 1)
 	{
-		throw std::runtime_error("World cannot have zero levels!");
+		throw std::runtime_error("World cannot have zero layers!");
 	}
-	unsigned int num_subnodes_per_node = 1u<<(3*LOG2K); // 2^LOG2K (k) subnodes per dimension, 3 dimensions
-	num_layers_ = num_layers;
-	num_indices_ = gpu_buffer_size_ / (num_subnodes_per_node*4); // 4 bytes per sub-node
-
-	indirection_pool_size_ = num_subnodes_per_node*4*num_indices_;
-	uniformity_pool_size_ = num_subnodes_per_node*num_indices_/8;
-	voxel_type_pool_size_ = num_subnodes_per_node*4*num_indices_;
-	//num_indices_ = indirection_pool_size_ / (sizeof(uint32_t) * 8); // 4 byte data, 8 octants per node
-	/*
-	indirection_pool_ = reinterpret_cast<uint32_t*>(malloc(num_subnodes_per_node*4 * num_indices_));
-	uniformity_pool_ = reinterpret_cast<char*>(calloc(1, num_subnodes_per_node*num_indices_/8));
-	voxel_type_pool_ = reinterpret_cast<uint32_t*>(calloc(sizeof(uint32_t), num_subnodes_per_node*num_indices_));
-	*/
-	indirection_pool_ = reinterpret_cast<uint32_t*>(malloc(indirection_pool_size_));
-	uniformity_pool_ = reinterpret_cast<char*>(malloc(uniformity_pool_size_));
-	voxel_type_pool_ = reinterpret_cast<uint32_t*>(malloc(voxel_type_pool_size_));
-	next_available_pool_index_ = 0;
+	octree_ = new Octree(num_layers);
 	generate();
 }
 
 
 World::~World()
 {
-	free(indirection_pool_);
-	free(uniformity_pool_);
-	free(voxel_type_pool_);
+	delete octree_;
 }
 
 
 World& World::operator=(const World& other)
 {
-	num_layers_ = other.num_layers_;
-	num_indices_ = other.num_indices_;
-	gpu_buffer_size_ = other.gpu_buffer_size_;
-	indirection_pool_size_ = other.indirection_pool_size_;
-	uniformity_pool_size_ = other.uniformity_pool_size_;
-	voxel_type_pool_size_ = other.voxel_type_pool_size_;
-	next_available_pool_index_ = other.next_available_pool_index_;
-	indirection_pool_ = reinterpret_cast<uint32_t*>(malloc(indirection_pool_size_));
-	uniformity_pool_ = reinterpret_cast<char*>(malloc(uniformity_pool_size_));
-	voxel_type_pool_ = reinterpret_cast<uint32_t*>(malloc(voxel_type_pool_size_));
-	//lod_pool_ = reinterpret_cast<uint32_t*>(calloc(sizeof(uint32_t), num_indices_));
-
-	std::copy(other.indirection_pool_, other.indirection_pool_ + indirection_pool_size_, indirection_pool_);
-	std::copy(other.uniformity_pool_, other.uniformity_pool_ + uniformity_pool_size_, uniformity_pool_);
-	std::copy(other.voxel_type_pool_, other.voxel_type_pool_ + voxel_type_pool_size_, voxel_type_pool_);
-	//std::copy(other.lod_pool_, other.lod_pool_ + (num_indices_), lod_pool_);
+	throw std::runtime_error("Don't use this (World::operator=)");
+	octree_ = other.octree_;
+	device_ = other.device_;
 	return *this;
 }
 
@@ -95,14 +64,8 @@ void World::generate()
 	std::cout << "generating world... " << std::flush;
 
 	// set up world as empty node
-	for (unsigned int i = 0; i < (1u << (3*LOG2K)); i++)
-	{
-		setIndirection(0, i, 0);
-		setUniformity(0, i, true);
-		setVoxelType(0, i, 0);
-	}
+	octree_->clear();
 	materials_[0] = Material(0.0, 0.0, 0.0, 0.0);
-	next_available_pool_index_ = 1;
 	
 
 	/*
@@ -116,6 +79,7 @@ void World::generate()
 	*/
 
 	// gltf file
+	/*
 	GltfHandler gltf_handler;
 	Voxelizer voxelizer(gltf_handler.getMeshPtr(), device_);
 	Model *model = voxelizer.createModel();
@@ -133,9 +97,10 @@ void World::generate()
 		materials_[i] = materials[i];
 	}
 	materials_[0] = Material(0.0, 0.0, 0.0, 0.0);
+	*/
 
 
-	std::cout << "World size: " << (next_available_pool_index_>>(18-(LOG2K*3))) << "MB" << std::endl; // *4(four bytes per 32-bit word), <<(LOG2K*3)(2^(log2k*3) children per index), >>20(B->MB)
+	//std::cout << "World size: " << (next_available_pool_index_>>(18-(LOG2K*3))) << "MB" << std::endl; // *4(four bytes per 32-bit word), <<(LOG2K*3)(2^(log2k*3) children per index), >>20(B->MB)
 	
 	/*
 	// Serpinski pyramid -- store all voxels individually
@@ -273,6 +238,7 @@ void World::generateSerpinskiPyramidNode(unsigned int index)
 
 void World::generateSingleSerpinskiPyramidNode(unsigned int node_index, int num_layers, int layer, unsigned int x, unsigned int y, unsigned int z, bool is_air)
 {
+	/*
 	if (layer == 0)
 	{
 		unsigned int secondary_index = (z << (2*num_layers)) | (y << num_layers) | x;
@@ -310,142 +276,18 @@ void World::generateSingleSerpinskiPyramidNode(unsigned int node_index, int num_
 		}
 	}
 	return;
+	*/
 }
 
 
-uint32_t World::readIndirectionPool(uint32_t base_location, unsigned int node_index)
+void World::addModel(
+		Model *model,
+		int32_t x_offset,
+		int32_t y_offset,
+		int32_t z_offset
+		)
 {
-	return indirection_pool_[(base_location << (3*LOG2K)) | node_index];
-}
-
-
-bool World::readUniformityPool(uint32_t base_location, unsigned int node_index)
-{
-	uint32_t index_preunpack = (base_location << (3*LOG2K)) | node_index;
-	uint32_t true_index = index_preunpack >> 3;
-	uint8_t bit_location = index_preunpack & 0x7u;
-	return ((uniformity_pool_[true_index] >> bit_location) & 1u) != 0;
-}
-
-
-uint32_t World::readVoxelTypePool(uint32_t base_location, unsigned int node_index)
-{
-	return voxel_type_pool_[(base_location << (3*LOG2K)) | node_index];
-}
-
-
-void World::setIndirection(uint32_t base_location, unsigned int node_index, uint32_t value)
-{
-	indirection_pool_[(base_location << (3*LOG2K)) | node_index] = value;
-	return;
-}
-
-
-void World::setUniformity(uint32_t base_location, unsigned int node_index, bool value)
-{
-	uint32_t index_preunpack = (base_location << (3*LOG2K)) | node_index;
-	uint32_t true_index = index_preunpack >> 3;
-	uint8_t bitfield = 0x1u << (index_preunpack & 7u);
-	if (value)
-		uniformity_pool_[true_index] |= bitfield;
-	else
-		uniformity_pool_[true_index] &= ~bitfield;
-	return;
-}
-
-
-void World::setVoxelType(uint32_t base_location, unsigned int node_index, uint32_t value)
-{
-	voxel_type_pool_[(base_location << (3*LOG2K)) | node_index] = value;
-}
-
-
-uint32_t World::mkAndReadIndirectionPool(uint32_t base_location, unsigned int node_index)
-{
-	uint32_t indirection_index;
-	if (readUniformityPool(base_location, node_index))
-	{
-		// need to create children
-		uint32_t voxel_type = readVoxelTypePool(base_location, node_index);
-		setUniformity(base_location, node_index, false);
-		setIndirection(base_location, node_index, next_available_pool_index_);
-		// set up new node
-		for (unsigned int i = 0; i < (1u << (3*LOG2K)); i++)
-		{
-			setUniformity(next_available_pool_index_, i, true);
-			setVoxelType(next_available_pool_index_, i, voxel_type);
-			setIndirection(next_available_pool_index_, i, 0);
-		}
-
-		next_available_pool_index_++;
-	}
-	return readIndirectionPool(base_location, node_index);
-}
-
-
-void World::setVoxel(uint32_t x, uint32_t y, uint32_t z, uint32_t voxel_type)
-{
-	//if (voxel_type != 0) std::cout << voxel_type << std::endl;
-	if (voxel_type == 0) return;
-	uint32_t indirection_pointer = 0;
-	uint32_t current_node_index = 0;
-	uint32_t layer = num_layers_ - 1;
-	uint32_t bitfield_ander = 0xFFFFFFFFu >> (32-LOG2K);
-	// starting at the top layer, descend until a uniform layer is reached
-	for (; layer >= 0;)
-	{
-		current_node_index = 0;
-		current_node_index |= ((x >> (LOG2K*layer)) & bitfield_ander);
-		current_node_index |= ((y >> (LOG2K*layer)) & bitfield_ander) << LOG2K; 
-		current_node_index |= ((z >> (LOG2K*layer)) & bitfield_ander) << (2*LOG2K);
-		if (layer == 0) break;
-
-		if (readUniformityPool(indirection_pointer, current_node_index))
-		{
-			if (readVoxelTypePool(indirection_pointer, current_node_index) == voxel_type)
-			{
-				return;
-			}
-			splitNode(indirection_pointer, current_node_index);
-		}
-
-		indirection_pointer = readIndirectionPool(indirection_pointer, current_node_index);
-		layer--;
-	}
-
-	setVoxelType(indirection_pointer, current_node_index, voxel_type);
-	return;
-}
-
-
-void World::splitNode(uint32_t base_location, unsigned int node_index)
-{
-	uint32_t voxel_type = readVoxelTypePool(base_location, node_index);
-	setUniformity(base_location, node_index, false);
-	setIndirection(base_location, node_index, next_available_pool_index_);
-	// set up new node
-	for (unsigned int i = 0; i < (1u << (3*LOG2K)); i++)
-	{
-		setUniformity(next_available_pool_index_, i, true);
-		setVoxelType(next_available_pool_index_, i, voxel_type);
-		setIndirection(next_available_pool_index_, i, 0);
-	}
-
-	next_available_pool_index_++;
-	return;
-}
-
-
-void World::clear()
-{
-	for (unsigned int i = 0; i < (1u << (3*LOG2K)); i++)
-	{
-		setIndirection(0, i, 0);
-		setUniformity(0, i, true);
-		setVoxelType(0, i, 0);
-	}
-	materials_[0] = Material(0.0, 0.0, 0.0, 0.0);
-	next_available_pool_index_ = 1;
+	octree_->mergeOctree(model->getOctree(), x_offset, y_offset, z_offset);
 	return;
 }
 

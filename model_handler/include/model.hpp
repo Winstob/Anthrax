@@ -11,7 +11,6 @@
 #include <string>
 
 #include "octree.hpp"
-#include "world.hpp"
 #include "quaternion.hpp"
 #include "device.hpp"
 #include "compute_shader_manager.hpp"
@@ -33,7 +32,9 @@ public:
 	void setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type);
 	void rotate(Quaternion quat);
 	void rotateOnLayer(Quaternion quat, int layer);
-	void addToWorld(World *world, unsigned int x, unsigned int y, unsigned int z);
+	//void addToWorld(World *world, unsigned int x, unsigned int y, unsigned int z);
+
+	Octree *getOctree() { return octree_; }
 
 private:
 	void mainSetup(size_t size_x, size_t size_y, size_t size_z);

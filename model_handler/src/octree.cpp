@@ -2,6 +2,11 @@
  * octree.cpp
  * Author: Gavin Ralston
  * Date Created: 2024-12-12
+ *
+ * It is important to note that the root node can never be uniform
+ * (must always have children) due to the way the indirection pool
+ * and voxel type pools are laid out. An octree root node must
+ * always have valid children.
 \* ---------------------------------------------------------------- */
 
 #include "octree.hpp"
@@ -44,9 +49,9 @@ Octree::Octree(Octree *parent, int layer, int this_child_index)
 	{
 		indirection_pool_->resize((pool_index_+1)*8, 0);
 	}
-	if (voxel_type_pool_->size() <= pool_index_)
+	if (voxel_type_pool_->size() <= pool_index_*8)
 	{
-		voxel_type_pool_->resize(pool_index_+1, 0);
+		voxel_type_pool_->resize((pool_index_+1)*8, 0);
 	}
 	if (uniformity_pool_->size() <= pool_index_/(8*sizeof(UniformityElement)))
 	{
@@ -55,12 +60,18 @@ Octree::Octree(Octree *parent, int layer, int this_child_index)
 
 	if (!isRoot())
 	{
-		parent_->setIndirection(this_child_index_, pool_index_);
+		//parent_->setIndirection(this_child_index_, pool_index_);
+		setIndirection(this_child_index_, pool_index_);
 	}
 
 	setUniformity(true);
 	setMaterialType(0);
 	children_ = nullptr;
+
+	if (isRoot())
+	{
+		split();
+	}
 	return;
 }
 
@@ -106,15 +117,25 @@ void Octree::copy(const Octree& other)
 
 void Octree::clear()
 {
-	if (children_)
+	if (isRoot())
 	{
 		for (unsigned int i = 0; i < 8; i++)
-			children_[i].~Octree();
-		free(children_);
-		children_ = nullptr;
+		{
+			children_[i].setMaterialType(0);
+		}
 	}
-	setMaterialType(0);
-	setUniformity(true);
+	else
+	{
+		if (children_)
+		{
+			for (unsigned int i = 0; i < 8; i++)
+				children_[i].~Octree();
+			free(children_);
+			children_ = nullptr;
+		}
+		setMaterialType(0);
+		setUniformity(true);
+	}
 	return;
 }
 
@@ -127,9 +148,9 @@ void Octree::setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type)
 
 /* ---------------------------------------------------------------- *\
  * Set a voxel at a specific layer/precision. The octree is treated
- * as if it were only <layer> layers deep, and coordinates are
- * adjusted accordingly. Beware that this will remove any octree
- * data at a lower precision.
+ * as if <layer> was layer 0, and coordinates are adjusted
+ * accordingly. Beware that this will remove any octree data at a
+ * lower precision.
 \* ---------------------------------------------------------------- */
 void Octree::setVoxelAtLayer(int32_t x, int32_t y, int32_t z,
 		uint16_t material_type, int layer)
@@ -216,19 +237,19 @@ void Octree::setVoxelAtLayer(int32_t x, int32_t y, int32_t z,
 }
 
 
-uint16_t Octree::getVoxel(int32_t x, int32_t y, int32_t z)
+VoxelTypeElement Octree::getVoxel(int32_t x, int32_t y, int32_t z)
 {
 	return getVoxelAtLayer(x, y, z, 0);
 }
 
 
 /* ---------------------------------------------------------------- *\
- * Similar to setVoxelAtLayer(), the octree is treated as if it
- * were only <layer> layers deep, and coordinates are adjusted
- * accordingly. In order for this to work properly, material_type_
- * must be set properly at all layers of this octree.
+ * Similar to setVoxelAtLayer(), the octree is treated as if
+ * <layer> was layer 0, and coordinates are adjusted accordingly.
+ * In order for this to work properly, material_type_ must be set
+ * properly at all layers of this octree.
 \* ---------------------------------------------------------------- */
-uint16_t Octree::getVoxelAtLayer(int32_t x, int32_t y, int32_t z, int layer)
+VoxelTypeElement Octree::getVoxelAtLayer(int32_t x, int32_t y, int32_t z, int layer)
 {
 	if (layer < 0)
 	{
@@ -299,6 +320,12 @@ uint16_t Octree::getVoxelAtLayer(int32_t x, int32_t y, int32_t z, int layer)
 \* ---------------------------------------------------------------- */
 void Octree::simpleMerge()
 {
+	if (isRoot())
+	{
+		// the root node can never be uniform due to the way the
+		// indirection pool is laid out
+		return;
+	}
 	if (isUniform())
 	{
 		return;
@@ -339,7 +366,7 @@ void Octree::simpleUpdateLOD()
 	{
 		return;
 	}
-	uint16_t new_material_type = calculateMaterialTypeFromChildren();
+	VoxelTypeElement new_material_type = calculateMaterialTypeFromChildren();
 	bool material_type_changed = (new_material_type != getMaterialType());
 	setMaterialType(new_material_type);
 	if (material_type_changed && parent_)
@@ -350,7 +377,7 @@ void Octree::simpleUpdateLOD()
 }
 
 
-uint16_t Octree::calculateMaterialTypeFromChildren()
+VoxelTypeElement Octree::calculateMaterialTypeFromChildren()
 {
 	if (isUniform())
 	{
@@ -395,20 +422,28 @@ unsigned int Octree::prepareForDescent(int32_t *x, int32_t *y, int32_t *z)
 }
 
 
-void Octree::addToWorld(World *world, unsigned int x, unsigned int y, unsigned int z)
+void Octree::mergeOctree(Octree *other, int32_t x, int32_t y, int32_t z
+		)
+{
+	other->mergeIntoOctree(this, x, y, z);
+	return;
+}
+
+
+void Octree::mergeIntoOctree(Octree *other, int32_t x, int32_t y, int32_t z)
 {
 	// TODO: do this a better way
 	if (layer_ == 0)
 	{
-		world->setVoxel(x, y, z, getMaterialType());
+		other->setVoxel(x, y, z, getMaterialType());
 	}
 	else
 	{
-		unsigned int quarter_axis_size;
-		unsigned int adder;
-		unsigned int subtracter;
-		unsigned int upper_end_adder;
-		unsigned int lower_end_subtracter;
+		int quarter_axis_size;
+		int adder;
+		int subtracter;
+		int upper_end_adder;
+		int lower_end_subtracter;
 		if (layer_ == 1)
 		{
 			quarter_axis_size = 0;
@@ -427,20 +462,21 @@ void Octree::addToWorld(World *world, unsigned int x, unsigned int y, unsigned i
 		}
 		if (isUniform())
 		{
-			for (unsigned int curr_x = x - lower_end_subtracter; curr_x <= x + upper_end_adder; curr_x++)
+			for (int curr_x = x - lower_end_subtracter; curr_x <= x + upper_end_adder; curr_x++)
 			{
-				for (unsigned int curr_y = y - lower_end_subtracter; curr_y <= y + upper_end_adder; curr_y++)
+				for (int curr_y = y - lower_end_subtracter; curr_y <= y + upper_end_adder; curr_y++)
 				{
-					for (unsigned int curr_z = z - lower_end_subtracter; curr_z <= z + upper_end_adder; curr_z++)
+					for (int curr_z = z - lower_end_subtracter; curr_z <= z + upper_end_adder; curr_z++)
 					{
-						world->setVoxel(curr_x, curr_y, curr_z, getMaterialType());
+						//std::cout << curr_x << "|" << curr_y << "|" << curr_z << std::endl;
+						other->setVoxel(curr_x, curr_y, curr_z, getMaterialType());
 					}
 				}
 			}
 		}
 		else
 		{
-			unsigned int child_x, child_y, child_z;
+			int child_x, child_y, child_z;
 			for (unsigned int i = 0; i < 8; i++)
 			{
 				if (i & 1u)
@@ -455,7 +491,7 @@ void Octree::addToWorld(World *world, unsigned int x, unsigned int y, unsigned i
 					child_z = z + adder;
 				else
 					child_z = z - subtracter;
-				children_[i].addToWorld(world, child_x, child_y, child_z);
+				children_[i].mergeIntoOctree(other, child_x, child_y, child_z);
 			}
 		}
 	}
@@ -465,8 +501,10 @@ void Octree::addToWorld(World *world, unsigned int x, unsigned int y, unsigned i
 
 void Octree::split()
 {
-	setUniformity(false);
-	children_ = reinterpret_cast<Octree*>(malloc(8*sizeof(Octree)));
+	if (!children_)
+	{
+		children_ = reinterpret_cast<Octree*>(malloc(8*sizeof(Octree)));
+	}
 	VoxelTypeElement voxel_type;
 	switch (*split_mode_)
 	{
@@ -485,6 +523,7 @@ void Octree::split()
 		new (&children_[i]) Octree(this, layer_-1, i);
 		children_[i].setMaterialType(voxel_type);
 	}
+	setUniformity(false);
 	return;
 }
 

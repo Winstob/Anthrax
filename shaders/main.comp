@@ -823,6 +823,10 @@ uint readIndirectionPool(in uint base_location, in uint node_index)
 
 uint readUniformityPool(in uint base_location, in uint node_index)
 {
+	uint tmp = indirection_pool[(base_location << (3*LOG2K)) | node_index];
+	if (tmp == 0u) return 1u;
+	return 0u;
+
 	uint index_preunpack = (base_location << (3*LOG2K)) | node_index;
 	uint true_index = index_preunpack >> 5;
 	uint bit_location = index_preunpack & 0x1F;

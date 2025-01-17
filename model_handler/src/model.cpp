@@ -335,6 +335,7 @@ void Model::unrotateVoxel(int *x, int *y, int *z, float xangle, float yangle, fl
 	return;
 }
 
+/*
 void Model::addToWorld(World *world, unsigned int x, unsigned int y, unsigned int z)
 {
 	if (!octree_)
@@ -344,5 +345,6 @@ void Model::addToWorld(World *world, unsigned int x, unsigned int y, unsigned in
 	octree_->addToWorld(world, x, y, z);
 	return;
 }
+*/
 
 } // namespace Anthrax

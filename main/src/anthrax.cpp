@@ -324,7 +324,9 @@ void Anthrax::loadWorld()
 	Quaternion rot(yaw, pitch, roll);
 	rot.normalize();
 	test_model_->rotate(rot);
-	test_model_->addToWorld(world_, 2048, 2048, 2048);
+	//test_model_->addToWorld(world_, 2048, 2048, 2048);
+	//world_->addModel(test_model_, 2048, 2048, 2048);
+	world_->addModel(test_model_, 0, 0, 0);
 
 	//std::cout << "Copying world to staging buffers" << std::endl;
 	memcpy(indirection_pool_staging_ssbo_.getMappedPtr(), world_->getIndirectionPool(), world_->getIndirectionPoolSize());
@@ -640,21 +642,21 @@ void Anthrax::createBuffers()
 			);
 	indirection_pool_staging_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			world_->getIndirectionPoolSize(),
+			world_->getMaxIndirectionPoolSize(),
 			Buffer::STORAGE_TYPE,
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	uniformity_pool_staging_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			world_->getUniformityPoolSize(),
+			world_->getMaxUniformityPoolSize(),
 			Buffer::STORAGE_TYPE,
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	voxel_type_pool_staging_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			world_->getVoxelTypePoolSize(),
+			world_->getMaxVoxelTypePoolSize(),
 			Buffer::STORAGE_TYPE,
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
@@ -669,21 +671,21 @@ void Anthrax::createBuffers()
 			);
 	indirection_pool_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			world_->getIndirectionPoolSize(),
+			world_->getMaxIndirectionPoolSize(),
 			Buffer::STORAGE_TYPE,
 			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 			);
 	uniformity_pool_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			world_->getUniformityPoolSize(),
+			world_->getMaxUniformityPoolSize(),
 			Buffer::STORAGE_TYPE,
 			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 			);
 	voxel_type_pool_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			world_->getVoxelTypePoolSize(),
+			world_->getMaxVoxelTypePoolSize(),
 			Buffer::STORAGE_TYPE,
 			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
