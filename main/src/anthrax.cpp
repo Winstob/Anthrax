@@ -46,11 +46,9 @@ Anthrax::~Anthrax()
 		raymarched_images_[i].destroy();
 	materials_staging_ssbo_.destroy();
 	indirection_pool_staging_ssbo_.destroy();
-	uniformity_pool_staging_ssbo_.destroy();
 	voxel_type_pool_staging_ssbo_.destroy();
 	materials_ssbo_.destroy();
 	indirection_pool_ssbo_.destroy();
-	uniformity_pool_ssbo_.destroy();
 	voxel_type_pool_ssbo_.destroy();
 	num_levels_ubo_.destroy();
 	focal_distance_ubo_.destroy();
@@ -330,12 +328,10 @@ void Anthrax::loadWorld()
 
 	//std::cout << "Copying world to staging buffers" << std::endl;
 	memcpy(indirection_pool_staging_ssbo_.getMappedPtr(), world_->getIndirectionPool(), world_->getIndirectionPoolSize());
-	memcpy(uniformity_pool_staging_ssbo_.getMappedPtr(), world_->getUniformityPool(), world_->getUniformityPoolSize());
 	memcpy(voxel_type_pool_staging_ssbo_.getMappedPtr(), world_->getVoxelTypePool(), world_->getVoxelTypePoolSize());
 
 	//std::cout << "Moving world to local memory" << std::endl;
 	indirection_pool_ssbo_.copy(indirection_pool_staging_ssbo_);
-	uniformity_pool_ssbo_.copy(uniformity_pool_staging_ssbo_);
 	voxel_type_pool_ssbo_.copy(voxel_type_pool_staging_ssbo_);
 	//std::cout << "Done!" << std::endl;
 	std::cout << "Time to load world: " << timer.stop() << "ms" << std::endl;
@@ -647,13 +643,6 @@ void Anthrax::createBuffers()
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
-	uniformity_pool_staging_ssbo_ = Buffer(
-			vulkan_manager_->getDevice(),
-			world_->getMaxUniformityPoolSize(),
-			Buffer::STORAGE_TYPE,
-			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-			);
 	voxel_type_pool_staging_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			world_->getMaxVoxelTypePoolSize(),
@@ -672,13 +661,6 @@ void Anthrax::createBuffers()
 	indirection_pool_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			world_->getMaxIndirectionPoolSize(),
-			Buffer::STORAGE_TYPE,
-			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-			);
-	uniformity_pool_ssbo_ = Buffer(
-			vulkan_manager_->getDevice(),
-			world_->getMaxUniformityPoolSize(),
 			Buffer::STORAGE_TYPE,
 			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
@@ -791,23 +773,22 @@ void Anthrax::createDescriptors()
 	// main compute pass
 	buffers.clear();
 	images.clear();
-	buffers.resize(13);
+	buffers.resize(12);
 	images.resize(1);
 	main_compute_descriptors_.clear();
 	
 	buffers[0] = materials_ssbo_;
 	buffers[1] = indirection_pool_ssbo_;
-	buffers[2] =  uniformity_pool_ssbo_;
-	buffers[3] = voxel_type_pool_ssbo_;
-	buffers[4] = num_levels_ubo_;
-	buffers[5] = focal_distance_ubo_;
-	buffers[6] = screen_width_ubo_;
-	buffers[7] = screen_height_ubo_;
-	buffers[8] = camera_position_ubo_;
-	buffers[9] = camera_right_ubo_;
-	buffers[10] = camera_up_ubo_;
-	buffers[11] = camera_forward_ubo_;
-	buffers[12] = sunlight_ubo_;
+	buffers[2] = voxel_type_pool_ssbo_;
+	buffers[3] = num_levels_ubo_;
+	buffers[4] = focal_distance_ubo_;
+	buffers[5] = screen_width_ubo_;
+	buffers[6] = screen_height_ubo_;
+	buffers[7] = camera_position_ubo_;
+	buffers[8] = camera_right_ubo_;
+	buffers[9] = camera_up_ubo_;
+	buffers[10] = camera_forward_ubo_;
+	buffers[11] = sunlight_ubo_;
 	for (unsigned int i = 0; i < raymarched_images_.size(); i++)
 	{
 		images[0] = raymarched_images_[i];

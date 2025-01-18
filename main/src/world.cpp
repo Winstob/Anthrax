@@ -37,7 +37,7 @@ void World::mainSetup(int num_layers)
 	std::cout << num_layers << std::endl;
 	if (num_layers < 1)
 	{
-		throw std::runtime_error("World cannot have zero layers!");
+		throw std::runtime_error("World must have at least 1 layer!");
 	}
 	octree_ = new Octree(num_layers);
 	generate();

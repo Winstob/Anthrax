@@ -31,7 +31,6 @@ public:
 	World& operator=(const World &other);
 
 	IndirectionElement* getIndirectionPool() { return octree_->getIndirectionPool(); }
-	UniformityElement* getUniformityPool() { return octree_->getUniformityPool(); }
 	VoxelTypeElement* getVoxelTypePool() { return octree_->getVoxelTypePool(); }
 	int getNumLayers() { return octree_->getLayer(); }
 	Material* getMaterialsPtr() { return materials_; }
@@ -40,7 +39,6 @@ public:
 	{
 		return octree_->getIndirectionPoolSize()*sizeof(IndirectionElement);
 	}
-	size_t getUniformityPoolSize() { return octree_->getUniformityPoolSize(); }
 	size_t getVoxelTypePoolSize()
 	{
 		return octree_->getVoxelTypePoolSize()*sizeof(VoxelTypeElement);
@@ -50,12 +48,7 @@ public:
 	size_t getMaxVoxelTypePoolSize()
 	{
 		return max_gpu_buffer_size_ / (8*sizeof(IndirectionElement))
-			* 8*sizeof(VoxelTypeElement);
-	}
-	size_t getMaxUniformityPoolSize()
-	{
-		return max_gpu_buffer_size_ / (8*sizeof(IndirectionElement))
-			* 8*sizeof(UniformityElement) / 8;
+				* 8*sizeof(VoxelTypeElement);
 	}
 
 	void generate();
@@ -77,7 +70,6 @@ private:
 
 	void generateSerpinskiPyramidNode(unsigned int index);
 	void generateSingleSerpinskiPyramidNode(unsigned int node_index, int num_layers, int layer, unsigned int x, unsigned int y, unsigned int z, bool is_air);
-	//void splitNode(uint32_t base_location, unsigned int node_index);
 
 	size_t max_gpu_buffer_size_ = MB(512); // The maximum size of a buffer in the GPU
 

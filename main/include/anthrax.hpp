@@ -117,8 +117,8 @@ private:
 	IDMap<Text> texts_;
 
 	// ssbos
-	Buffer materials_staging_ssbo_, indirection_pool_staging_ssbo_, uniformity_pool_staging_ssbo_, voxel_type_pool_staging_ssbo_;
-	Buffer materials_ssbo_, indirection_pool_ssbo_, uniformity_pool_ssbo_, voxel_type_pool_ssbo_;
+	Buffer materials_staging_ssbo_, indirection_pool_staging_ssbo_, voxel_type_pool_staging_ssbo_;
+	Buffer materials_ssbo_, indirection_pool_ssbo_, voxel_type_pool_ssbo_;
 	std::vector<Image> raymarched_images_;
 	// ubos
 	Buffer num_levels_ubo_, focal_distance_ubo_, screen_width_ubo_, screen_height_ubo_, camera_position_ubo_, camera_right_ubo_, camera_up_ubo_, camera_forward_ubo_, sunlight_ubo_;
