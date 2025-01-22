@@ -458,27 +458,14 @@ void Octree::mergeIntoOctree(Octree *other, int32_t x, int32_t y, int32_t z)
 		if (isUniform())
 		{
 			// NOTE: experimental
-			setVoxelTypeWithinBounds(getMaterialType(),
+			other->setVoxelTypeWithinBounds(getMaterialType(),
 					x - lower_end_subtracter,
 					y - lower_end_subtracter,
 					z - lower_end_subtracter,
-					x + lower_end_subtracter,
-					y + lower_end_subtracter,
-					z + lower_end_subtracter
+					x + upper_end_adder,
+					y + upper_end_adder,
+					z + upper_end_adder
 					);
-			/*
-			for (int curr_x = x - lower_end_subtracter; curr_x <= x + upper_end_adder; curr_x++)
-			{
-				for (int curr_y = y - lower_end_subtracter; curr_y <= y + upper_end_adder; curr_y++)
-				{
-					for (int curr_z = z - lower_end_subtracter; curr_z <= z + upper_end_adder; curr_z++)
-					{
-						//std::cout << curr_x << "|" << curr_y << "|" << curr_z << std::endl;
-						other->setVoxel(curr_x, curr_y, curr_z, getMaterialType());
-					}
-				}
-			}
-			*/
 		}
 		else
 		{
@@ -517,6 +504,20 @@ void Octree::setVoxelTypeWithinBounds(VoxelTypeElement voxel_type,
 		int32_t z_max
 		)
 {
+	/*
+	for (int curr_x = x_min; curr_x <= x_max; curr_x++)
+	{
+		for (int curr_y = y_min; curr_y <= y_max; curr_y++)
+		{
+			for (int curr_z = z_min; curr_z <= z_max; curr_z++)
+			{
+				//std::cout << curr_x << "|" << curr_y << "|" << curr_z << std::endl;
+				setVoxel(curr_x, curr_y, curr_z, voxel_type);
+			}
+		}
+	}
+	return;
+	*/
 	if (x_min > x_max || y_min > y_max || z_min > z_max)
 	{
 		throw std::runtime_error("setVoxelTypeWithinBounds(): bounding box min \
@@ -580,13 +581,13 @@ void Octree::setVoxelTypeWithinBounds(VoxelTypeElement voxel_type,
 		if (x_min_separators.size() == 0)
 			x_min_separators.push_back(x_min);
 		else
-			x_min_separators.push_back(x_max_separators[i-2]+1);
-		x_max_separators.push_back(x_min_separators[i-1] + octree_node_size - 1);
+			x_min_separators.push_back(x_max_separators.back()+1);
+		x_max_separators.push_back(x_min_separators.back() + octree_node_size - 1);
 	}
 	if (x_max_separators.back() != x_max)
 	{
 		x_min_separators.push_back(x_max_separators.back()+1);
-		x_max_separators.push_back(x_min_separators.back() + octree_node_size - 1);
+		x_max_separators.push_back(x_max);
 	}
 	// calculate y separators
 	std::vector<int32_t> y_min_separators, y_max_separators;
@@ -600,13 +601,13 @@ void Octree::setVoxelTypeWithinBounds(VoxelTypeElement voxel_type,
 		if (y_min_separators.size() == 0)
 			y_min_separators.push_back(y_min);
 		else
-			y_min_separators.push_back(y_max_separators[i-2]+1);
-		y_max_separators.push_back(y_min_separators[i-1] + octree_node_size - 1);
+			y_min_separators.push_back(y_max_separators.back()+1);
+		y_max_separators.push_back(y_min_separators.back() + octree_node_size - 1);
 	}
 	if (y_max_separators.back() != y_max)
 	{
 		y_min_separators.push_back(y_max_separators.back()+1);
-		y_max_separators.push_back(y_min_separators.back() + octree_node_size - 1);
+		y_max_separators.push_back(y_max);
 	}
 	// calculate z separators
 	std::vector<int32_t> z_min_separators, z_max_separators;
@@ -620,13 +621,13 @@ void Octree::setVoxelTypeWithinBounds(VoxelTypeElement voxel_type,
 		if (z_min_separators.size() == 0)
 			z_min_separators.push_back(z_min);
 		else
-			z_min_separators.push_back(z_max_separators[i-2]+1);
-		z_max_separators.push_back(z_min_separators[i-1] + octree_node_size - 1);
+			z_min_separators.push_back(z_max_separators.back()+1);
+		z_max_separators.push_back(z_min_separators.back() + octree_node_size - 1);
 	}
 	if (z_max_separators.back() != z_max)
 	{
 		z_min_separators.push_back(z_max_separators.back()+1);
-		z_max_separators.push_back(z_min_separators.back() + octree_node_size - 1);
+		z_max_separators.push_back(z_max);
 	}
 
 	// split up the bounding box into smaller boxes
