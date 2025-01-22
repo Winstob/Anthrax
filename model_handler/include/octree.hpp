@@ -103,6 +103,15 @@ private:
 	}
 
 	void mergeIntoOctree(Octree *other, int32_t x, int32_t y, int32_t z);
+	void setVoxelTypeWithinBounds(VoxelTypeElement voxel_type,
+		int32_t x_min,
+		int32_t y_min,
+		int32_t z_min,
+		int32_t x_max,
+		int32_t y_max,
+		int32_t z_max
+		);
+	int32_t roundUpToInterval(int32_t val, uint32_t interval);
 };
 
 } // namespace Anthrax

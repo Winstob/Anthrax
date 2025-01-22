@@ -22,6 +22,17 @@ namespace Anthrax
 
 unsigned int log2(unsigned int val);
 
+template <class T>
+T min(T left, T right)
+{
+	return (left < right) ? left : right;
+}
+template <class T>
+T max(T left, T right)
+{
+	return (left > right) ? left : right;
+}
+
 }
 
 #endif // ANTHRAX_TOOLS_HPP
