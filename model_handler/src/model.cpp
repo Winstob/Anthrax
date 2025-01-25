@@ -38,6 +38,7 @@ void Model::mainSetup(size_t size_x, size_t size_y, size_t size_z)
 	original_octree_ = new Octree(num_layers);
 	octree_ = new Octree(num_layers);
 	current_rotation_ = Quaternion();
+	frame_rotation_timer_ = Timer(Timer::MICROSECONDS);
 	return;
 }
 
@@ -61,6 +62,7 @@ Model::~Model()
 void Model::copy(const Model& other)
 {
 	// TODO: this
+	throw std::runtime_error("Model::copy() not yet implemented!");
 	return;
 }
 
@@ -93,44 +95,111 @@ void Model::rotate(Quaternion quat)
 {
 	current_rotation_ = quat;
 	octree_->clear();
-	//int precision = original_octree_->getLayer()-7;
-	int precision = 0;
 	// rotate breadth-first: rotate highest layer,
-	// then work down to layer <precision>
-	for (lowest_rotated_layer_ = original_octree_->getLayer()+1;
-			lowest_rotated_layer_ > precision;
-			lowest_rotated_layer_--)
-	{
-		octree_->setSplitMode(Octree::SPLIT_MODE_AIRFILL);
-		rotateOnLayer(quat, lowest_rotated_layer_-1);
-		octree_->setSplitMode(Octree::SPLIT_MODE_NORMAL);
-	}
+	// then work down to layer 0
+	rotation_status_.in_progress = true;
+	rotation_status_.lowest_completed_layer = original_octree_->getLayer()+1;
+
+	continueRotation();
+
 	return;
 }
 
 
-void Model::rotateOnLayer(Quaternion quat, int layer)
+void Model::continueRotation()
 {
-	if (layer >= original_octree_->getLayer())
+	rotation_status_.timeout = 500;
+	if (!rotation_status_.in_progress)
 	{
 		return;
 	}
 
-	Timer timer(Timer::MILLISECONDS);
-	timer.start();
-	int min = -(1<<(original_octree_->getLayer()-layer-1));
-	int max = (1<<(original_octree_->getLayer()-layer-1)) - 1;
+	// the first rotateOnLayer must be a continuation unless we just started the
+	// rotation
+	// this assumes that the first layer will successfully be completely rotated
+	// within the span of a single frame, which is hopefully reasonable since
+	// it is literally a single voxel
+	bool continuation =
+			(rotation_status_.lowest_completed_layer <= original_octree_->getLayer());
+
+	frame_rotation_timer_.start();
+	octree_->setSplitMode(Octree::SPLIT_MODE_AIRFILL);
+	while (rotation_status_.lowest_completed_layer > 0)
+	{
+		if (!rotateOnLayer(current_rotation_,
+				rotation_status_.lowest_completed_layer-1,
+				continuation))
+		{
+			break;
+		}
+		continuation = false;
+		rotation_status_.lowest_completed_layer--;
+	}
+	octree_->setSplitMode(Octree::SPLIT_MODE_NORMAL);
+	frame_rotation_timer_.stop();
+
+	if (rotation_status_.lowest_completed_layer == 0)
+	{
+		rotation_status_.in_progress = false;
+	}
+
+	return;
+}
+
+
+bool Model::rotateOnLayer(Quaternion quat, int layer, bool continuation)
+{
+	if (layer >= original_octree_->getLayer())
+	{
+		return true;
+	}
+
+	// we don't really need to check the timer after every voxel since it'll just
+	// slow the whole thing down past a certain point. Only check the time once
+	// every <time_check_interval> voxels.
+	int time_check_interval = 1000;
+
+	int min = -(1u<<(original_octree_->getLayer()-layer-1));
+	int max = (1u<<(original_octree_->getLayer()-layer-1)) - 1;
+
+	int x_min, y_min, z_min;
+	if (continuation)
+	{
+		x_min = rotation_status_.next_x;
+		y_min = rotation_status_.next_y;
+		z_min = rotation_status_.next_z;
+	}
+	else
+	{
+		x_min = min;
+		y_min = min;
+		z_min = min;
+	}
 
 	std::vector<float> angles = quat.eulerAngles();
 
 	int num_voxels = 0;
 
-	for (int z = min; z <= max; z++)
+	for (int z = z_min; z <= max; z++)
 	{
-		for (int y = min; y <= max; y++)
+		for (int y = y_min; y <= max; y++)
 		{
-			for (int x = min; x <= max; x++)
+			for (int x = x_min; x <= max; x++)
 			{
+				if (rotation_parallelization_method_ ==
+						ROTATION_PARALLELIZATION_TIME_ALLOCATED &&
+						num_voxels % time_check_interval == 0)
+				{
+					if (frame_rotation_timer_.query() >=
+							rotation_status_.timeout)
+					{
+						rotation_status_.next_x = x;
+						rotation_status_.next_y = y;
+						rotation_status_.next_z = z;
+						return false;
+					}
+				}
+
 				uint16_t voxel_type = original_octree_->getVoxelAtLayer(x, y, z, layer);
 				num_voxels++;
 				int new_x = x;
@@ -141,19 +210,19 @@ void Model::rotateOnLayer(Quaternion quat, int layer)
 				rotateVoxelPitch(&new_x, &new_y, &new_z, angles[1]);
 				rotateVoxelRoll(&new_x, &new_y, &new_z, angles[2]);
 
-				if (new_x < min || new_x > max ||
-						new_y < min || new_y > max ||
-						new_z < min || new_z > max)
+				if (new_x >= min && new_x <= max &&
+						new_y >= min && new_y <= max &&
+						new_z >= min && new_z <= max)
 				{
-					continue;
+					octree_->setVoxelAtLayer(new_x, new_y, new_z, voxel_type, layer);
 				}
-				octree_->setVoxelAtLayer(new_x, new_y, new_z, voxel_type, layer);
 			}
+			x_min = min;
 		}
+		y_min = min;
 	}
-	std::cout << "Time to rotate layer " << layer << ": " << timer.stop()
-			<< "ms" << std::endl;
-	return;
+	z_min = min;
+	return true;
 }
 
 /****************************************************************\

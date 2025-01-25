@@ -67,7 +67,7 @@ Model *Voxelizer::createModel()
 		throw std::runtime_error("No GPU device linked to voxelizer! Cannot create model.");
 		// maybe in the future get rid of this. also start acutally using the gpu here
 	}
-	float multiplier = 1.0;
+	float multiplier = 2.0;
 	// Set up the Model object with dimensions from the Mesh
 	float mesh_mins[3];
 	float mesh_maxes[3];

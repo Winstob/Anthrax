@@ -126,6 +126,7 @@ private:
 	std::vector<Descriptor> main_compute_descriptors_;
 	std::vector<Descriptor> main_graphics_descriptors_;
 
+	int tmp_ = 0;
 };
 
 } // namespace Anthrax

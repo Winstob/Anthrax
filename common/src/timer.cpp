@@ -58,15 +58,23 @@ long long Timer::query()
 	switch (interval_)
 	{
 		case SECONDS:
-			time = static_cast<long long>(std::chrono::duration_cast<std::chrono::seconds>
+			time = static_cast<long long>
+					(std::chrono::duration_cast<std::chrono::seconds>
 					(time_elapsed).count());
 			break;
 		case MILLISECONDS:
-			time = static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>
+			time = static_cast<long long>
+					(std::chrono::duration_cast<std::chrono::milliseconds>
+					(time_elapsed).count());
+			break;
+		case MICROSECONDS:
+			time = static_cast<long long>
+					(std::chrono::duration_cast<std::chrono::microseconds>
 					(time_elapsed).count());
 			break;
 		default:
-			time = static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>
+			time = static_cast<long long>
+					(std::chrono::duration_cast<std::chrono::milliseconds>
 					(time_elapsed).count());
 			break;
 	}

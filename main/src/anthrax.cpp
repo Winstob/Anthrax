@@ -321,7 +321,10 @@ void Anthrax::loadWorld()
 
 	Quaternion rot(yaw, pitch, roll);
 	rot.normalize();
-	test_model_->rotate(rot);
+	if (tmp_++ % 800 == 0)
+		test_model_->rotate(rot);
+	else
+		test_model_->continueRotation();
 	//test_model_->addToWorld(world_, 2048, 2048, 2048);
 	//world_->addModel(test_model_, 2048, 2048, 2048);
 	world_->addModel(test_model_, 0, 0, 0);

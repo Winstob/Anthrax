@@ -31,7 +31,8 @@ public:
 	
 	void setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type);
 	void rotate(Quaternion quat);
-	void rotateOnLayer(Quaternion quat, int layer);
+	void continueRotation();
+	bool rotateOnLayer(Quaternion quat, int layer, bool continuation);
 	//void addToWorld(World *world, unsigned int x, unsigned int y, unsigned int z);
 
 	Octree *getOctree() { return octree_; }
@@ -45,7 +46,6 @@ private:
 
 	// rotation stuff
 	Quaternion current_rotation_;
-	size_t lowest_rotated_layer_;
 	void rotateOnLayer(Quaternion quat);
 	void rotateVoxel(int *x, int *y, int *z, float xangle, float yangle, float zangle);
 	void unrotateVoxel(int *x, int *y, int *z, float xangle, float yangle, float zangle);
@@ -57,6 +57,23 @@ private:
 	void unrotateVoxelYaw(int *x, int *y, int *z, float angle);
 	void unrotateVoxelPitch(int *x, int *y, int *z, float angle);
 	void unrotateVoxelRoll(int *x, int *y, int *z, float angle);
+
+	struct RotationStatusInfo
+	{
+		long long timeout; // timeout in microseconds
+		int lowest_completed_layer;
+		int32_t next_x;
+		int32_t next_y;
+		int32_t next_z;
+		bool in_progress;
+	} rotation_status_;
+	Timer frame_rotation_timer_;
+	enum RotationParallelizationMethod
+	{
+		ROTATION_PARALLELIZATION_TIME_ALLOCATED,
+		ROTATION_PARALLELIZATION_MULTITHREADED // TODO: not yet implemented
+	} rotation_parallelization_method_ = ROTATION_PARALLELIZATION_TIME_ALLOCATED;
+
 };
 
 } // namespace Anthrax
