@@ -30,26 +30,16 @@ public:
 	~World();
 	World& operator=(const World &other);
 
-	IndirectionElement* getIndirectionPool() { return octree_->getIndirectionPool(); }
-	VoxelTypeElement* getVoxelTypePool() { return octree_->getVoxelTypePool(); }
+	Octree::OctreeNode *getOctreePool() { return octree_->getOctreePool(); }
 	int getNumLayers() { return octree_->getLayer(); }
 	Material* getMaterialsPtr() { return materials_; }
 	size_t getNumMaterials() { return num_materials_; }
-	size_t getIndirectionPoolSize()
+	size_t getOctreePoolSize()
 	{
-		return octree_->getIndirectionPoolSize()*sizeof(IndirectionElement);
+		return octree_->getOctreePoolSize()*sizeof(Octree::OctreeNode);
 	}
-	size_t getVoxelTypePoolSize()
-	{
-		return octree_->getVoxelTypePoolSize()*sizeof(VoxelTypeElement);
-	}
-	// These assume the indirection pool will always be the largest
-	size_t getMaxIndirectionPoolSize() { return max_gpu_buffer_size_; }
-	size_t getMaxVoxelTypePoolSize()
-	{
-		return max_gpu_buffer_size_ / (8*sizeof(IndirectionElement))
-				* 8*sizeof(VoxelTypeElement);
-	}
+	size_t getMaxOctreePoolSize() { return max_gpu_buffer_size_; }
+	// TODO: variable buffers/descriptors?
 
 	void generate();
 	void setVoxel(int32_t x, int32_t y, int32_t z, int32_t voxel_type)

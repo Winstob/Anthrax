@@ -61,68 +61,69 @@ struct Material
   vec4 color;
 };
 
+struct OctreeNode
+{
+	int indirection;
+	uint voxel_type;
+};
+
 layout (std430, binding = 0) readonly buffer materials_ssbo
 {
 	Material materials[];
 };
 
-layout (std430, binding = 1) readonly buffer indirection_pool_ssbo
+layout (std430, binding = 1) readonly buffer octree_ssbo
 {
-	int indirection_pool[];
+	OctreeNode octree[];
 };
 
-layout (std430, binding = 2) readonly buffer voxel_type_pool_ssbo
-{
-	uint voxel_type_pool[];
-};
-
-layout (std140, binding = 3) uniform num_layers_ubo
+layout (std140, binding = 2) uniform num_layers_ubo
 {
 	int num_layers;
 };
 
-layout (std140, binding = 4) uniform focal_distance_ubo
+layout (std140, binding = 3) uniform focal_distance_ubo
 {
 	float focal_distance;
 };
 
-layout (std140, binding = 5) uniform screen_width_ubo
+layout (std140, binding = 4) uniform screen_width_ubo
 {
 	int screen_width;
 };
 
-layout (std140, binding = 6) uniform screen_height_ubo
+layout (std140, binding = 5) uniform screen_height_ubo
 {
 	int screen_height;
 };
 
-layout (std140, binding = 7) uniform camera_position_ubo
+layout (std140, binding = 6) uniform camera_position_ubo
 {
 	//WorldLocation camera_position;
 	ufvec3 camera_position;
 };
 
-layout (std140, binding = 8) uniform camera_right_ubo
+layout (std140, binding = 7) uniform camera_right_ubo
 {
 	vec3 camera_right;
 };
 
-layout (std140, binding = 9) uniform camera_up_ubo
+layout (std140, binding = 8) uniform camera_up_ubo
 {
 	vec3 camera_up;
 };
 
-layout (std140, binding = 10) uniform camera_forward_ubo
+layout (std140, binding = 9) uniform camera_forward_ubo
 {
 	vec3 camera_forward;
 };
 
-layout (std140, binding = 11) uniform sunlight_ubo
+layout (std140, binding = 10) uniform sunlight_ubo
 {
 	DirectedLight sunlight_TMP;
 };
 
-layout (rgba32f, binding = 12) uniform image2D out_image;
+layout (rgba32f, binding = 11) uniform image2D out_image;
 
 
 struct Ray
@@ -812,13 +813,15 @@ ufvec3 uf3Add(in ufvec3 first, in ufvec3 second)
 
 uint readIndirectionPool(in uint base_location, in uint node_index)
 {
-	return indirection_pool[(base_location << (3*LOG2K)) | node_index];
+	//return indirection_pool[(base_location << (3*LOG2K)) | node_index];
+	return octree[(base_location << (3*LOG2K)) | node_index].indirection;
 }
 
 
 uint readUniformityPool(in uint base_location, in uint node_index)
 {
-	uint tmp = indirection_pool[(base_location << (3*LOG2K)) | node_index];
+	//uint tmp = indirection_pool[(base_location << (3*LOG2K)) | node_index];
+	uint tmp = octree[(base_location << (3*LOG2K)) | node_index].indirection;
 	if (tmp == 0u) return 1u;
 	return 0u;
 }
@@ -826,5 +829,6 @@ uint readUniformityPool(in uint base_location, in uint node_index)
 
 uint readVoxelTypePool(in uint base_location, in uint node_index)
 {
-	return voxel_type_pool[(base_location << (3*LOG2K)) | node_index];
+	//return voxel_type_pool[(base_location << (3*LOG2K)) | node_index];
+	return octree[(base_location << (3*LOG2K)) | node_index].voxel_type;
 }

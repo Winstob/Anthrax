@@ -26,15 +26,13 @@ Octree::Octree(Octree *parent, int layer, int this_child_index)
 	{
 		// This is the root octree node - need to set up buffers
 		pool_freelist_ = new Freelist();
-		indirection_pool_ = new std::vector<IndirectionElement>();
-		voxel_type_pool_ = new std::vector<VoxelTypeElement>();
+		octree_pool_ = new std::vector<OctreeNode>();
 		split_mode_ = new SplitMode(SPLIT_MODE_NORMAL);
 	}
 	else
 	{
 		pool_freelist_ = parent_->pool_freelist_;
-		indirection_pool_ = parent_->indirection_pool_;
-		voxel_type_pool_ = parent_->voxel_type_pool_;
+		octree_pool_ = parent_->octree_pool_;
 		split_mode_ = parent_->split_mode_;
 	}
 	pool_index_ = pool_freelist_->alloc();
@@ -43,13 +41,9 @@ Octree::Octree(Octree *parent, int layer, int this_child_index)
 		throw std::runtime_error("Pool index of Octree root node is not 0!");
 	}
 	// Ensure pools have sufficient sizes
-	if (indirection_pool_->size() <= pool_index_*8)
+	if (octree_pool_->size() <= pool_index_*8)
 	{
-		indirection_pool_->resize((pool_index_+1)*8, 0);
-	}
-	if (voxel_type_pool_->size() <= pool_index_*8)
-	{
-		voxel_type_pool_->resize((pool_index_+1)*8, 0);
+		octree_pool_->resize((pool_index_+1)*8);
 	}
 
 	if (!isRoot())
@@ -83,8 +77,7 @@ Octree::~Octree()
 	if (isRoot())
 	{
 		delete pool_freelist_;
-		delete indirection_pool_;
-		delete voxel_type_pool_;
+		delete octree_pool_;
 		delete split_mode_;
 	}
 	return;
@@ -100,8 +93,7 @@ void Octree::copy(const Octree& other)
 	split_mode_ = other.split_mode_;
 
 	pool_freelist_ = other.pool_freelist_;
-	indirection_pool_ = other.indirection_pool_;
-	voxel_type_pool_ = other.voxel_type_pool_;
+	octree_pool_ = other.octree_pool_;
 	pool_index_ = other.pool_index_;
 	return;
 }

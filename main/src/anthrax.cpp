@@ -46,11 +46,9 @@ Anthrax::~Anthrax()
 	for (unsigned int i = 0; i < raymarched_images_.size(); i++)
 		raymarched_images_[i].destroy();
 	materials_staging_ssbo_.destroy();
-	indirection_pool_staging_ssbo_.destroy();
-	voxel_type_pool_staging_ssbo_.destroy();
+	octree_pool_staging_ssbo_.destroy();
 	materials_ssbo_.destroy();
-	indirection_pool_ssbo_.destroy();
-	voxel_type_pool_ssbo_.destroy();
+	octree_pool_ssbo_.destroy();
 	num_levels_ubo_.destroy();
 	focal_distance_ubo_.destroy();
 	screen_width_ubo_.destroy();
@@ -329,12 +327,10 @@ void Anthrax::loadWorld()
 	world_->addModel(test_model_, 0, 0, 0);
 
 	//std::cout << "Copying world to staging buffers" << std::endl;
-	memcpy(indirection_pool_staging_ssbo_.getMappedPtr(), world_->getIndirectionPool(), world_->getIndirectionPoolSize());
-	memcpy(voxel_type_pool_staging_ssbo_.getMappedPtr(), world_->getVoxelTypePool(), world_->getVoxelTypePoolSize());
+	memcpy(octree_pool_staging_ssbo_.getMappedPtr(), world_->getOctreePool(), world_->getOctreePoolSize());
 
 	//std::cout << "Moving world to local memory" << std::endl;
-	indirection_pool_ssbo_.copy(indirection_pool_staging_ssbo_);
-	voxel_type_pool_ssbo_.copy(voxel_type_pool_staging_ssbo_);
+	octree_pool_ssbo_.copy(octree_pool_staging_ssbo_);
 	//std::cout << "Done!" << std::endl;
 	std::cout << "Time to load world: " << timer.stop() << "ms" << std::endl;
 	return;
@@ -638,16 +634,9 @@ void Anthrax::createBuffers()
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
-	indirection_pool_staging_ssbo_ = Buffer(
+	octree_pool_staging_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			world_->getMaxIndirectionPoolSize(),
-			Buffer::STORAGE_TYPE,
-			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-			);
-	voxel_type_pool_staging_ssbo_ = Buffer(
-			vulkan_manager_->getDevice(),
-			world_->getMaxVoxelTypePoolSize(),
+			world_->getMaxOctreePoolSize(),
 			Buffer::STORAGE_TYPE,
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
@@ -660,16 +649,9 @@ void Anthrax::createBuffers()
 			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 			);
-	indirection_pool_ssbo_ = Buffer(
+	octree_pool_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
-			world_->getMaxIndirectionPoolSize(),
-			Buffer::STORAGE_TYPE,
-			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-			);
-	voxel_type_pool_ssbo_ = Buffer(
-			vulkan_manager_->getDevice(),
-			world_->getMaxVoxelTypePoolSize(),
+			world_->getMaxOctreePoolSize(),
 			Buffer::STORAGE_TYPE,
 			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
@@ -775,22 +757,21 @@ void Anthrax::createDescriptors()
 	// main compute pass
 	buffers.clear();
 	images.clear();
-	buffers.resize(12);
+	buffers.resize(11);
 	images.resize(1);
 	main_compute_descriptors_.clear();
 	
 	buffers[0] = materials_ssbo_;
-	buffers[1] = indirection_pool_ssbo_;
-	buffers[2] = voxel_type_pool_ssbo_;
-	buffers[3] = num_levels_ubo_;
-	buffers[4] = focal_distance_ubo_;
-	buffers[5] = screen_width_ubo_;
-	buffers[6] = screen_height_ubo_;
-	buffers[7] = camera_position_ubo_;
-	buffers[8] = camera_right_ubo_;
-	buffers[9] = camera_up_ubo_;
-	buffers[10] = camera_forward_ubo_;
-	buffers[11] = sunlight_ubo_;
+	buffers[1] = octree_pool_ssbo_;
+	buffers[2] = num_levels_ubo_;
+	buffers[3] = focal_distance_ubo_;
+	buffers[4] = screen_width_ubo_;
+	buffers[5] = screen_height_ubo_;
+	buffers[6] = camera_position_ubo_;
+	buffers[7] = camera_right_ubo_;
+	buffers[8] = camera_up_ubo_;
+	buffers[9] = camera_forward_ubo_;
+	buffers[10] = sunlight_ubo_;
 	for (unsigned int i = 0; i < raymarched_images_.size(); i++)
 	{
 		images[0] = raymarched_images_[i];

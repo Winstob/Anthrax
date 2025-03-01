@@ -37,12 +37,14 @@ public:
 	VoxelTypeElement getMaterialType()
 	{
 		if (isRoot()) return 0;
-		return (*voxel_type_pool_)[(parent_->pool_index_<<3)+this_child_index_];
+		//return (*voxel_type_pool_)[(parent_->pool_index_<<3)+this_child_index_];
+		return (*octree_pool_)[(parent_->pool_index_<<3)+this_child_index_].voxel_type;
 	}
 	void setMaterialType(VoxelTypeElement material_type)
 	{
 		if (isRoot()) return;
-		(*voxel_type_pool_)[(parent_->pool_index_<<3)+this_child_index_] = material_type;
+		//(*voxel_type_pool_)[(parent_->pool_index_<<3)+this_child_index_] = material_type;
+		(*octree_pool_)[(parent_->pool_index_<<3)+this_child_index_].voxel_type = material_type;
 		return;
 	}
 	int getLayer() { return layer_; }
@@ -61,10 +63,13 @@ public:
 	};
 	void setSplitMode(SplitMode mode) { *split_mode_ = mode; }
 
-	IndirectionElement *getIndirectionPool() { return indirection_pool_->data(); }
-	VoxelTypeElement *getVoxelTypePool() { return voxel_type_pool_->data(); }
-	size_t getIndirectionPoolSize() { return indirection_pool_->size(); }
-	size_t getVoxelTypePoolSize() { return voxel_type_pool_->size(); }
+	struct OctreeNode
+	{
+		alignas(sizeof(IndirectionElement)) IndirectionElement indirection;
+		alignas(sizeof(VoxelTypeElement)) VoxelTypeElement voxel_type;
+	};
+	OctreeNode *getOctreePool() { return octree_pool_->data(); }
+	size_t getOctreePoolSize() { return octree_pool_->size(); }
 private:
 	int layer_;
 	Octree *parent_;
@@ -79,26 +84,28 @@ private:
 	void split();
 
 	Freelist *pool_freelist_;
-	std::vector<IndirectionElement> *indirection_pool_;
-	std::vector<VoxelTypeElement> *voxel_type_pool_;
+	std::vector<OctreeNode> *octree_pool_;
 	size_t pool_index_;
 	void setUniformity(bool uniformity)
 	{
 		if (isRoot()) return;
+		//IndirectionElement tmp = (uniformity) ? 0 : pool_index_;
 		IndirectionElement tmp = (uniformity) ? 0 : pool_index_;
-		(*indirection_pool_)[(parent_->pool_index_<<3)+this_child_index_] = tmp;
+		//(*indirection_pool_)[(parent_->pool_index_<<3)+this_child_index_] = tmp;
+		(*octree_pool_)[(parent_->pool_index_<<3)+this_child_index_].indirection = tmp;
 		return;
 	}
 	bool getUniformity()
 	{
 		if (isRoot()) return false;
-		return ((*indirection_pool_)[(parent_->pool_index_<<3)+this_child_index_]
-				== 0);
+		//return ((*indirection_pool_)[(parent_->pool_index_<<3)+this_child_index_] == 0);
+		return ((*octree_pool_)[(parent_->pool_index_<<3)+this_child_index_].indirection == 0);
 	}
 	void setIndirection(int child_index, IndirectionElement pool_location)
 	{
 		if (isRoot()) return;
-		(*indirection_pool_)[(parent_->pool_index_<<3)+child_index] = pool_location;
+		//(*indirection_pool_)[(parent_->pool_index_<<3)+child_index] = pool_location;
+		(*octree_pool_)[(parent_->pool_index_<<3)+child_index].indirection = pool_location;
 		return;
 	}
 
