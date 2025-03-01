@@ -37,6 +37,7 @@ public:
 
 	void init();
 	void setDescriptors(std::vector<Descriptor> descriptors) { descriptors_ = descriptors; }
+	void updateDescriptors(std::vector<Descriptor> descriptors);
 
 	void selectDescriptor(int descriptor_index) { descriptor_index_ = descriptor_index; }
 	void recordCommandBuffer(VkCommandBuffer command_buffer, unsigned int x_work_groups, unsigned int y_work_groups, unsigned int z_work_groups);

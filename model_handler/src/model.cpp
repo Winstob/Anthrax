@@ -12,14 +12,9 @@
 namespace Anthrax
 {
 
+extern Device *anthrax_gpu;
+
 Model::Model(size_t size_x, size_t size_y, size_t size_z)
-{
-	mainSetup(size_x, size_y, size_z);
-	return;
-}
-
-
-void Model::mainSetup(size_t size_x, size_t size_y, size_t size_z)
 {
 	// since models can rotate, we need to set the octree size to
 	// the maximum possible size when rotated (longest diagonal)
@@ -38,6 +33,11 @@ void Model::mainSetup(size_t size_x, size_t size_y, size_t size_z)
 	original_octree_ = new Octree(num_layers);
 	octree_ = new Octree(num_layers);
 	current_rotation_ = Quaternion();
+
+	rotation_shader_manager_ = ComputeShaderManager(*anthrax_gpu,
+			std::string(xstr(SHADER_DIRECTORY)) + "model_rotation_c.spv");
+	rotation_shader_manager_.init();
+
 	return;
 }
 
@@ -54,6 +54,9 @@ Model::~Model()
 		delete octree_;
 		octree_ = nullptr;
 	}
+	rotation_shader_manager_.destroy();
+	rotation_input_buffer_.destroy();
+	rotation_output_buffer_.destroy();
 	return;
 }
 
@@ -346,5 +349,42 @@ void Model::addToWorld(World *world, unsigned int x, unsigned int y, unsigned in
 	return;
 }
 */
+
+void Model::rotateGPU()
+{
+	// start at the lowest layer
+	// - find the necessary sizes for the buffers
+	// - set up buffers
+	rotation_input_buffer_ = Buffer(
+			*anthrax_gpu,
+			8,
+			Buffer::STORAGE_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	rotation_output_buffer_ = Buffer(
+			*anthrax_gpu,
+			8,
+			Buffer::STORAGE_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	// set up descriptors
+	std::vector<Buffer> buffers;
+	std::vector<Image> images;
+	buffers.clear();
+	images.clear();
+	buffers.push_back(rotation_input_buffer_);
+	buffers.push_back(rotation_output_buffer_);
+	rotation_shader_descriptors_.clear();
+	rotation_shader_descriptors_.push_back(Descriptor(*anthrax_gpu,
+			Descriptor::ShaderStage::COMPUTE, buffers, images));
+	rotation_shader_manager_.updateDescriptors(rotation_shader_descriptors_);
+	
+	// initialize the shader module
+	//rotation_shader_manager_.init();
+	return;
+}
+
 
 } // namespace Anthrax

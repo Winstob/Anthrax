@@ -1,0 +1,19 @@
+/* ---------------------------------------------------------------- *\
+ * model_rotation.comp
+ * Author: Gavin Ralston
+ * Date Created: 2025-03-01
+\* ---------------------------------------------------------------- */
+#version 460
+
+#define WORKGROUP_SIZE 8
+
+layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = 1) in;
+
+layout (std430, binding = 0) readonly buffer input_ssbo
+{
+	int tmp[];
+};
+
+void main()
+{
+}

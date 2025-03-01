@@ -84,6 +84,12 @@ void ComputeShaderManager::destroy()
 }
 
 
+void ComputeShaderManager::updateDescriptors(std::vector<Descriptor> descriptors)
+{
+	// TODO
+	return;
+}
+
 void ComputeShaderManager::recordCommandBuffer(VkCommandBuffer command_buffer, unsigned int x_work_groups, unsigned int y_work_groups, unsigned int z_work_groups)
 {
 	VkCommandBufferBeginInfo begin_info{};

@@ -37,8 +37,6 @@ public:
 	Octree *getOctree() { return octree_; }
 
 private:
-	void mainSetup(size_t size_x, size_t size_y, size_t size_z);
-
 	Octree *original_octree_;
 	size_t size_;
 	Octree *octree_;
@@ -57,6 +55,12 @@ private:
 	void unrotateVoxelYaw(int *x, int *y, int *z, float angle);
 	void unrotateVoxelPitch(int *x, int *y, int *z, float angle);
 	void unrotateVoxelRoll(int *x, int *y, int *z, float angle);
+	void rotateGPU();
+
+	ComputeShaderManager rotation_shader_manager_;
+	Buffer rotation_input_buffer_, rotation_output_buffer_;
+	std::vector<Descriptor> rotation_shader_descriptors_;
+	void rotationShaderSetup();
 };
 
 } // namespace Anthrax

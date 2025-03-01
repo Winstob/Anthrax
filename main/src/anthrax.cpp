@@ -25,6 +25,7 @@ unsigned int Anthrax::window_width_ = 0;
 unsigned int Anthrax::window_height_ = 0;
 bool Anthrax::window_size_changed_ = false;
 
+Device *anthrax_gpu;
 
 Anthrax::Anthrax()
 {
@@ -79,6 +80,7 @@ int Anthrax::init()
 {
 	vulkan_manager_->setMultiBuffering(multibuffering_value_);
 	vulkan_manager_->init();
+	anthrax_gpu = vulkan_manager_->getDevicePtr();
 	createTestModel();
 	createWorld();
 	createBuffers();

@@ -38,6 +38,7 @@ public:
 	void setMultiBuffering(int max_frames_in_flight);
 
 	Device getDevice() { return device_; }
+	Device *getDevicePtr() { return &device_; }
 
 	int getWindowWidth() { return window_width_; }
 	int getWindowHeight() { return window_height_; }
