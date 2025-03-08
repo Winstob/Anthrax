@@ -63,6 +63,8 @@ Buffer::Buffer(Device device, size_t size, BufferType buffer_type, VkBufferUsage
 	{
 		vkMapMemory(device_.logical, buffer_memory_, 0, size_, 0, &buffer_memory_mapped_);
 	}
+
+	initialized_ = true;
 	return;
 }
 
@@ -79,6 +81,8 @@ void Buffer::destroy()
 {
 	vkDestroyBuffer(device_.logical, buffer_, nullptr);
 	vkFreeMemory(device_.logical, buffer_memory_, nullptr);
+
+	initialized_ = false;
 
 	return;
 }

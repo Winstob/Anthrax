@@ -42,6 +42,8 @@ public:
 
 	void copy(Buffer other);
 
+	bool initialized() { return initialized_; }
+
 private:
 	uint32_t findMemoryType(uint32_t type_filter, VkMemoryPropertyFlags properties);
 
@@ -52,6 +54,7 @@ private:
 	void *buffer_memory_mapped_;
 	BufferType type_;
 
+	bool initialized_ = false;
 	size_t size_; // The size of the buffer in bytes
 
 };

@@ -21,6 +21,7 @@ Device::Device(VkInstance instance, VkSurfaceKHR surface)
 	queue_family_indices_ = findQueueFamilies(physical);
 
 	createCommandPool();
+	createComputeCommandPool();
 	createTransferCommandPool();
 }
 
@@ -42,6 +43,7 @@ Device& Device::operator=(const Device &rhs_device)
 void Device::destroy()
 {
 	vkDestroyCommandPool(logical, command_pool_, nullptr);
+	vkDestroyCommandPool(logical, compute_command_pool_, nullptr);
 	vkDestroyCommandPool(logical, transfer_command_pool_, nullptr);
 	vkDestroyDevice(logical, nullptr);
 	return;
@@ -295,6 +297,19 @@ void Device::createCommandPool()
 }
 
 
+void Device::createComputeCommandPool()
+{
+	VkCommandPoolCreateInfo pool_info{};
+	pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	pool_info.queueFamilyIndex = queue_family_indices_.compute_family.value();
+	if (vkCreateCommandPool(logical, &pool_info, nullptr, &compute_command_pool_) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to create compute command pool");
+	}
+}
+
+
 void Device::createTransferCommandPool()
 {
 	VkCommandPoolCreateInfo pool_info{};
@@ -305,6 +320,43 @@ void Device::createTransferCommandPool()
 	{
 		throw std::runtime_error("Failed to create transfer command pool");
 	}
+}
+
+
+/**
+ * @brief Create a new command pool.
+ *
+ * @param type The command type.
+ *
+ * @return The newly created command pool. Must be cleaned up with vkDestroyCommandPool().
+ */
+VkCommandPool Device::newCommandPool(CommandType type)
+{
+	VkCommandPool new_command_pool;
+
+	VkCommandPoolCreateInfo pool_info{};
+	pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	switch (type)
+	{
+		case CommandType::GRAPHICS:
+			pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+			pool_info.queueFamilyIndex = queue_family_indices_.graphics_family.value();
+			break;
+		case CommandType::COMPUTE:
+			pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+			pool_info.queueFamilyIndex = queue_family_indices_.compute_family.value();
+			break;
+		case CommandType::TRANSFER:
+			pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+			pool_info.queueFamilyIndex = queue_family_indices_.transfer_family.value();
+			break;
+	}
+	if (vkCreateCommandPool(logical, &pool_info, nullptr, &new_command_pool) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to create command pool");
+	}
+
+	return new_command_pool;
 }
 
 } // namespace Anthrax

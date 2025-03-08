@@ -3,6 +3,7 @@
  * Author: Gavin Ralston
  * Date Created: 2024-12-12
 \* ---------------------------------------------------------------- */
+//TODO: destroy rotation shader stuff on exit
 
 #include "model.hpp"
 
@@ -13,6 +14,8 @@ namespace Anthrax
 {
 
 extern Device *anthrax_gpu;
+
+Model::RotationStuff Model::rotation_stuff_;
 
 Model::Model(size_t size_x, size_t size_y, size_t size_z)
 {
@@ -28,15 +31,19 @@ Model::Model(size_t size_x, size_t size_y, size_t size_z)
 			num_layers++;
 		}
 	}
-	size_ = 1u << num_layers;
+	octree_width_ = 1u << num_layers;
 
 	original_octree_ = new Octree(num_layers);
 	octree_ = new Octree(num_layers);
 	current_rotation_ = Quaternion();
 
-	rotation_shader_manager_ = ComputeShaderManager(*anthrax_gpu,
-			std::string(xstr(SHADER_DIRECTORY)) + "model_rotation_c.spv");
-	rotation_shader_manager_.init();
+	// if needed, set up stuff necessary for gpu rotation
+	rotation_stuff_.mutex.lock();
+	if (!rotation_stuff_.initialized)
+	{
+		rotationStuffSetup();
+	}
+	rotation_stuff_.mutex.unlock();
 
 	return;
 }
@@ -54,9 +61,6 @@ Model::~Model()
 		delete octree_;
 		octree_ = nullptr;
 	}
-	rotation_shader_manager_.destroy();
-	rotation_input_buffer_.destroy();
-	rotation_output_buffer_.destroy();
 	return;
 }
 
@@ -94,6 +98,8 @@ void Model::setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type)
 
 void Model::rotate(Quaternion quat)
 {
+	rotateGPU(quat);
+	return;
 	current_rotation_ = quat;
 	octree_->clear();
 	//int precision = original_octree_->getLayer()-7;
@@ -350,39 +356,173 @@ void Model::addToWorld(World *world, unsigned int x, unsigned int y, unsigned in
 }
 */
 
-void Model::rotateGPU()
+void Model::rotationStuffSetup()
 {
+	// TODO: clean all this stuff up at the end somehow
+	rotation_stuff_.shader_manager = ComputeShaderManager(*anthrax_gpu,
+			std::string(xstr(SHADER_DIRECTORY)) + "model_rotation_c.spv");
+
+	// allocate command pool
+	rotation_stuff_.command_pool = anthrax_gpu->newCommandPool(Device::CommandType::COMPUTE);
+
+	// allocate command buffer
+	VkCommandBufferAllocateInfo alloc_info{};
+	alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	alloc_info.commandPool = rotation_stuff_.command_pool;
+	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	alloc_info.commandBufferCount = 1;
+	vkAllocateCommandBuffers(anthrax_gpu->logical, &alloc_info, &rotation_stuff_.command_buffer);
+
+	// set up fence
+	VkFenceCreateInfo fence_info{};
+	fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+	vkCreateFence(anthrax_gpu->logical, &fence_info, nullptr, &rotation_stuff_.fence);
+	vkResetFences(anthrax_gpu->logical, 1, &rotation_stuff_.fence);
+
+	rotation_stuff_.buffer_size = 64;
+	recreateRotationShaders();
+
+	return;
+}
+
+void Model::rotateGPU(Quaternion quat)
+{
+	std::lock_guard<std::mutex> guard(rotation_stuff_.mutex);
 	// start at the lowest layer
 	// - find the necessary sizes for the buffers
 	// - set up buffers
-	rotation_input_buffer_ = Buffer(
+
+	// The maximum number of *elements* in the octree pool is represented by the equation:
+	//   \sum_{i=1}^{n}{2^{3i}}
+	// which simplifies to:
+	//   (2^{3n}-1)/7*8
+	// where n represents the depth of the octree (width = 2^n). We must also multiply this
+	// by the size of a single element to get the maximum size of the buffer.
+	size_t necessary_buffer_size = ((1 << (3*octree_->getLayer())) - 1) / 7 * 8;
+	necessary_buffer_size *= sizeof(Octree::OctreeNode);
+	if (necessary_buffer_size > rotation_stuff_.buffer_size)
+	{
+		// initialize (or recreate) the shader module if needed
+		rotation_stuff_.buffer_size = necessary_buffer_size;
+		recreateRotationShaders();
+		std::cout << "recreating buffers with size " << (necessary_buffer_size >> 20) << "MB (width " << octree_width_ << ")" << std::endl;
+	}
+	rotation_stuff_.shader_manager.selectDescriptor(0);
+
+	// copy octree over to gpu memory
+	memcpy(rotation_stuff_.cpu_ssbo.getMappedPtr(), octree_->getOctreePool(), octree_->getOctreePoolSize());
+	// TODO: add the rest of the stuff
+
+	// stage 1: populate lowest layer octree data
+	vkResetCommandBuffer(rotation_stuff_.command_buffer, 0);
+	rotation_stuff_.shader_manager.recordCommandBuffer(rotation_stuff_.command_buffer, octree_width_, octree_width_, octree_width_);
+	VkSubmitInfo compute_submit_info{};
+	compute_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	compute_submit_info.commandBufferCount = 1;
+	compute_submit_info.pCommandBuffers = &(rotation_stuff_.command_buffer);
+	compute_submit_info.signalSemaphoreCount = 0;
+
+	Timer timer;
+	timer.start();
+	vkQueueSubmit(anthrax_gpu->getComputeQueue(), 1, &compute_submit_info, rotation_stuff_.fence);
+	vkWaitForFences(anthrax_gpu->logical, 1, &rotation_stuff_.fence, VK_TRUE, UINT64_MAX);
+	std::cout << timer.stop() << std::endl;
+	vkResetFences(anthrax_gpu->logical, 1, &rotation_stuff_.fence);
+
+	// stage 2: rebuild the higher layers of the octree
+	// loop through higher layers until the root node is reached
+	for (unsigned int layer = octree_->getLayer()-1; layer > 0; layer--)
+	{
+		// rebuild this layer of the octree
+	}
+	
+	// stage 3: defragment
+
+	// copy octree data back to the octree member on the cpu
+
+	return;
+}
+
+
+void Model::recreateRotationShaders()
+{
+	if (rotation_stuff_.shader_manager.initialized())
+		rotation_stuff_.shader_descriptors[0].destroy();
+
+	if (rotation_stuff_.cpu_ssbo.initialized())
+		rotation_stuff_.cpu_ssbo.destroy();
+
+	if (rotation_stuff_.gpu_ssbo.initialized())
+		rotation_stuff_.gpu_ssbo.destroy();
+
+	if (rotation_stuff_.freelist_ssbo.initialized())
+		rotation_stuff_.freelist_ssbo.destroy();
+
+	rotation_stuff_.cpu_ssbo = Buffer(
 			*anthrax_gpu,
-			8,
+			rotation_stuff_.buffer_size,
 			Buffer::STORAGE_TYPE,
 			0,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
-	rotation_output_buffer_ = Buffer(
+	rotation_stuff_.gpu_ssbo = Buffer(
 			*anthrax_gpu,
-			8,
+			rotation_stuff_.buffer_size,
 			Buffer::STORAGE_TYPE,
 			0,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 			);
+	rotation_stuff_.freelist_ssbo = Buffer(
+			*anthrax_gpu,
+			rotation_stuff_.buffer_size / sizeof(Octree::OctreeNode) / 8,
+			Buffer::STORAGE_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+			);
+	// UBOs will never need to be recreated once created for the first time
+	if (!rotation_stuff_.rotation_angles_ubo.initialized())
+	{
+		rotation_stuff_.rotation_angles_ubo = Buffer(
+				*anthrax_gpu,
+				sizeof(RotationAngles),
+				Buffer::UNIFORM_TYPE,
+				0,
+				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+				);
+	}
+	if (!rotation_stuff_.octree_depth_ubo.initialized())
+	{
+		rotation_stuff_.octree_depth_ubo = Buffer(
+				*anthrax_gpu,
+				4,
+				Buffer::UNIFORM_TYPE,
+				0,
+				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+				);
+	}
 	// set up descriptors
 	std::vector<Buffer> buffers;
 	std::vector<Image> images;
 	buffers.clear();
 	images.clear();
-	buffers.push_back(rotation_input_buffer_);
-	buffers.push_back(rotation_output_buffer_);
-	rotation_shader_descriptors_.clear();
-	rotation_shader_descriptors_.push_back(Descriptor(*anthrax_gpu,
+	buffers.push_back(rotation_stuff_.cpu_ssbo);
+	buffers.push_back(rotation_stuff_.gpu_ssbo);
+	buffers.push_back(rotation_stuff_.freelist_ssbo);
+	buffers.push_back(rotation_stuff_.rotation_angles_ubo);
+	buffers.push_back(rotation_stuff_.octree_depth_ubo);
+	rotation_stuff_.shader_descriptors.clear();
+	rotation_stuff_.shader_descriptors.push_back(Descriptor(*anthrax_gpu,
 			Descriptor::ShaderStage::COMPUTE, buffers, images));
-	rotation_shader_manager_.updateDescriptors(rotation_shader_descriptors_);
-	
-	// initialize the shader module
-	//rotation_shader_manager_.init();
+	if (rotation_stuff_.shader_manager.initialized())
+	{
+		rotation_stuff_.shader_manager.updateDescriptors(rotation_stuff_.shader_descriptors);
+	}
+	else
+	{
+		rotation_stuff_.shader_manager.setDescriptors(rotation_stuff_.shader_descriptors);
+		rotation_stuff_.shader_manager.init();
+	}
 	return;
 }
 

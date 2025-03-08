@@ -68,10 +68,19 @@ public:
 	VkQueue getPresentQueue() { return present_queue_; }
 	VkQueue getComputeQueue() { return compute_queue_; }
 	VkQueue getTransferQueue() { return transfer_queue_; }
+	VkCommandPool getComputeCommandPool() { return compute_command_pool_; }
 	VkCommandPool getTransferCommandPool() { return transfer_command_pool_; }
 
 	VkDevice logical;
 	VkPhysicalDevice physical;
+
+	enum class CommandType
+	{
+		GRAPHICS,
+		COMPUTE,
+		TRANSFER
+	};
+	VkCommandPool newCommandPool(CommandType type);
 
 private:
 	VkPhysicalDevice pickPhysicalDevice();
@@ -84,6 +93,8 @@ private:
 
 	void createCommandPool();
 	VkCommandPool command_pool_;
+	void createComputeCommandPool();
+	VkCommandPool compute_command_pool_;
 	void createTransferCommandPool();
 	VkCommandPool transfer_command_pool_;
 

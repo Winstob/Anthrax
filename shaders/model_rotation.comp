@@ -2,18 +2,275 @@
  * model_rotation.comp
  * Author: Gavin Ralston
  * Date Created: 2025-03-01
+ * 
+ * Even though the main rendering code uses uints to model the
+ * octree and the corner of the octree is 0, we need to use ints
+ * and have 0 represent the center here to avoid overflow
+ * (underflow?).
 \* ---------------------------------------------------------------- */
 #version 460
 
-#define WORKGROUP_SIZE 8
+#define WORKGROUP_SIZE 2
 
-layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = 1) in;
+#define PI 3.14
+
+layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = WORKGROUP_SIZE) in;
+
+struct OctreeNode
+{
+	int indirection;
+	uint voxel_type;
+};
 
 layout (std430, binding = 0) readonly buffer input_ssbo
 {
-	int tmp[];
+	OctreeNode input_octree[];
 };
 
+layout (std430, binding = 1) writeonly buffer output_ssbo
+{
+	OctreeNode output_octree[];
+};
+
+layout (std430, binding = 2) writeonly buffer freelist_ssbo
+{
+	uint freelist[];
+};
+
+layout (std140, binding = 3) readonly uniform rotation_angles_ubo
+{
+	// euler angles
+	vec3 old_rotation;
+	vec3 rotation;
+};
+
+layout (std140, binding = 4) readonly uniform octree_depth_ubo
+{
+	uint octree_depth;
+};
+
+uint getOldPoolIndexByPosition(in ivec3 pos);
+uint getNewPoolIndexByPosition(in ivec3 pos);
+uint readIndirectionPool(in uint base_location, in uint node_index);
+uint readUniformityPool(in uint base_location, in uint node_index);
+uint readVoxelTypePool(in uint base_location, in uint node_index);
+void rotateVoxelYaw(inout ivec3 pos);
+void rotateVoxelPitch(inout ivec3 pos);
+void rotateVoxelRoll(inout ivec3 pos);
+void unrotateVoxelYaw(inout ivec3 pos);
+void unrotateVoxelPitch(inout ivec3 pos);
+void unrotateVoxelRoll(inout ivec3 pos);
+void rotateVoxelSingleAxis(inout ivec3 pos, float angle, int axis, int mode);
+void insertFreelistVal(in uint index, in bool val);
+
+uint octree_width = 1u << octree_depth;
+int half_octree_width = int(octree_width >> 1);
+
+// There will be problems with octree_width values approaching UINT_MAX, but i really
+// dont think models that large will be rotated anyway.
+// If my math is correct the largest octree width that could posibly work is 2^28, but
+// even then im pretty sure the octree pool would be too large to be represented with
+// 32-bit unsigned ints.
 void main()
 {
+	// calculate pos from instance index
+	ivec3 pos = ivec3(gl_GlobalInvocationID - half_octree_width);
+
+	// calculate the pool index in the input octree
+	uint old_pool_index = getOldPoolIndexByPosition(pos);	
+
+	// ensure all pool values are initially set to 0
+	uint new_pool_index = getNewPoolIndexByPosition(pos);	
+	output_octree[new_pool_index].indirection = 0;
+	output_octree[new_pool_index].voxel_type = 0;
+	insertFreelistVal(new_pool_index, true);
+
+	// do the rotation
+	unrotateVoxelYaw(pos);
+	unrotateVoxelPitch(pos);
+	unrotateVoxelRoll(pos);
+	rotateVoxelYaw(pos);
+	rotateVoxelPitch(pos);
+	rotateVoxelRoll(pos);
+
+	new_pool_index = getNewPoolIndexByPosition(pos);	
+	
+	if (min(pos, ivec3(half_octree_width)) == pos &&
+	    max(pos, ivec3(half_octree_width*-1)) == pos)
+	{
+		// if the rotated voxel is within the bounds of the octree
+		output_octree[new_pool_index].voxel_type = input_octree[old_pool_index].voxel_type;
+		insertFreelistVal(new_pool_index, false);
+	}
+	else
+	{
+		// if the rotated voxel is outside the bounds of the octree
+	}
+	return;
+}
+
+
+uint getOldPoolIndexByPosition(in ivec3 pos)
+{
+	// TODO
+	uint indirection = 0;
+	uint current_node_index = 0;
+	uint layer = octree_depth - 1;
+	for (; layer >= 0;)
+	{
+		current_node_index = 0;
+		current_node_index |= ((pos.x >> layer) & 1u);
+		current_node_index |= ((pos.y >> layer) & 1u) << 1;
+		current_node_index |= ((pos.z >> layer) & 1u) << 2;
+		if (layer == 0) break;
+
+		if (readUniformityPool(indirection, current_node_index) == 1)
+		{
+			break;
+		}
+
+		uint next_indirection_pointer = readIndirectionPool(indirection, current_node_index);
+		if (next_indirection_pointer == 0)
+		{
+			break;
+		}
+		indirection = next_indirection_pointer;
+		layer--;
+	}
+	return (indirection << 3) + current_node_index;
+}
+
+
+uint getNewPoolIndexByPosition(in ivec3 pos)
+{
+	uint base_offset = ((1 << (3*(octree_depth-1))) - 1) / 7 * 8;
+	uint index = 0u;
+	uvec3 upos = uvec3(pos + half_octree_width);
+	for (int i = 0; i < 10; i++)
+	{
+		index = bitfieldInsert(index, bitfieldExtract(upos.x, i, 1), i*3, 1);
+		index = bitfieldInsert(index, bitfieldExtract(upos.y, i, 1), i*3+1, 1);
+		index = bitfieldInsert(index, bitfieldExtract(upos.z, i, 1), i*3+2, 1);
+	}
+	return base_offset + index;
+}
+
+
+void rotateVoxelYaw(inout ivec3 pos)
+{
+	rotateVoxelSingleAxis(pos, rotation[0], 1, 0);
+	return;
+}
+
+
+void rotateVoxelPitch(inout ivec3 pos)
+{
+	rotateVoxelSingleAxis(pos, rotation[1], 0, 0);
+	return;
+}
+
+void rotateVoxelRoll(inout ivec3 pos)
+{
+	rotateVoxelSingleAxis(pos, rotation[2], 2, 0);
+	return;
+}
+
+
+void unrotateVoxelYaw(inout ivec3 pos)
+{
+	rotateVoxelSingleAxis(pos, old_rotation[0], 1, 1);
+	return;
+}
+
+
+void unrotateVoxelPitch(inout ivec3 pos)
+{
+	rotateVoxelSingleAxis(pos, old_rotation[1], 0, 1);
+	return;
+}
+
+
+void unrotateVoxelRoll(inout ivec3 pos)
+{
+	rotateVoxelSingleAxis(pos, old_rotation[2], 2, 1);
+	return;
+}
+
+
+void rotateVoxelSingleAxis(inout ivec3 pos, float angle, int axis, int mode)
+{
+	float half_pi = PI/2.0;
+
+	int primary_axis = axis;
+	int secondary_axis = (axis + 1) % 3;
+	int tertiary_axis = (axis + 2) % 3;
+
+	vec3 new_pos = pos + 0.5;
+
+	while (angle > PI) angle -= 2.0*PI;
+	while (angle < -PI) angle += 2.0*PI;
+
+	bool swap = false;
+	if (angle > PI/2.0)
+	{
+		swap = true;
+		angle -= PI;
+	}
+	if (angle < -PI/2.0)
+	{
+		swap = true;
+		angle += PI;
+	}
+	if (swap)
+	{
+		new_pos[secondary_axis] *= -1.0;
+		new_pos[tertiary_axis] *= -1.0;
+	}
+
+	float secondary_shear = -tan(angle/2.0);
+	float tertiary_shear = sin(angle);
+
+	switch (mode)
+	{
+		case 0:
+			new_pos[secondary_axis] += round(new_pos[tertiary_axis]*secondary_shear);
+			new_pos[tertiary_axis] += round(new_pos[secondary_axis]*tertiary_shear);
+			new_pos[secondary_axis] += round(new_pos[tertiary_axis]*secondary_shear);
+			break;
+		case 1:
+			new_pos[secondary_axis] -= round(new_pos[tertiary_axis]*secondary_shear);
+			new_pos[tertiary_axis] -= round(new_pos[secondary_axis]*tertiary_shear);
+			new_pos[secondary_axis] -= round(new_pos[tertiary_axis]*secondary_shear);
+			break;
+	}
+
+	pos = ivec3(floor(new_pos));
+	return;
+}
+
+
+void insertFreelistVal(in uint index, in bool val)
+{
+	// TODO
+	return;
+}
+
+
+uint readIndirectionPool(in uint base_location, in uint node_index)
+{
+	return input_octree[(base_location << 3) | node_index].indirection;
+}
+
+
+uint readUniformityPool(in uint base_location, in uint node_index)
+{
+	uint tmp = input_octree[(base_location << 3) | node_index].indirection;
+	if (tmp == 0u) return 1u;
+	return 0u;
+}
+
+
+uint readVoxelTypePool(in uint base_location, in uint node_index)
+{
+	return input_octree[(base_location << 3) | node_index].voxel_type;
 }

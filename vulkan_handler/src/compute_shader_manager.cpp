@@ -87,6 +87,9 @@ void ComputeShaderManager::destroy()
 void ComputeShaderManager::updateDescriptors(std::vector<Descriptor> descriptors)
 {
 	// TODO
+	destroy();
+	setDescriptors(descriptors);
+	init();
 	return;
 }
 

@@ -36,6 +36,7 @@ public:
 	void destroy();
 
 	void init();
+	bool initialized() { return pipeline_ != VK_NULL_HANDLE; }
 	void setDescriptors(std::vector<Descriptor> descriptors) { descriptors_ = descriptors; }
 	void updateDescriptors(std::vector<Descriptor> descriptors);
 

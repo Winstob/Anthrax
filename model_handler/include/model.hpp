@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <cstdint>
 #include <string>
+#include <mutex>
 
 #include "octree.hpp"
 #include "quaternion.hpp"
@@ -38,7 +39,7 @@ public:
 
 private:
 	Octree *original_octree_;
-	size_t size_;
+	size_t octree_width_;
 	Octree *octree_;
 
 	// rotation stuff
@@ -55,12 +56,31 @@ private:
 	void unrotateVoxelYaw(int *x, int *y, int *z, float angle);
 	void unrotateVoxelPitch(int *x, int *y, int *z, float angle);
 	void unrotateVoxelRoll(int *x, int *y, int *z, float angle);
-	void rotateGPU();
 
-	ComputeShaderManager rotation_shader_manager_;
-	Buffer rotation_input_buffer_, rotation_output_buffer_;
-	std::vector<Descriptor> rotation_shader_descriptors_;
-	void rotationShaderSetup();
+	// Rotation buffers will naturally be large, so this whole operation is made static
+	void rotateGPU(Quaternion quat);
+	void recreateRotationShaders();
+	struct RotationStuff
+	{
+		std::mutex mutex;
+		size_t buffer_size;
+		ComputeShaderManager shader_manager;
+		Buffer cpu_ssbo, gpu_ssbo, freelist_ssbo;
+		Buffer rotation_angles_ubo, octree_depth_ubo;
+		std::vector<Descriptor> shader_descriptors;
+		VkFence fence;
+		VkCommandPool command_pool;
+		VkCommandBuffer command_buffer;
+		bool initialized = false;;
+	};
+	static RotationStuff rotation_stuff_;
+	void rotationStuffSetup();
+	struct RotationAngles
+	{
+		alignas(16) glm::vec3 old_angles;
+		alignas(16) glm::vec3 new_angles;
+	};
+	Quaternion old_rotation_;
 };
 
 } // namespace Anthrax
