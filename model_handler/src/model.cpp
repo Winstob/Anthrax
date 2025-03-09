@@ -361,6 +361,8 @@ void Model::rotationStuffSetup()
 	// TODO: clean all this stuff up at the end somehow
 	rotation_stuff_.shader_manager = ComputeShaderManager(*anthrax_gpu,
 			std::string(xstr(SHADER_DIRECTORY)) + "model_rotation_c.spv");
+	rotation_stuff_.octree_rebuild_shader = ComputeShaderManager(*anthrax_gpu,
+			std::string(xstr(SHADER_DIRECTORY)) + "octree_rebuild_c.spv");
 
 	// allocate command pool
 	rotation_stuff_.command_pool = anthrax_gpu->newCommandPool(Device::CommandType::COMPUTE);
@@ -408,13 +410,19 @@ void Model::rotateGPU(Quaternion quat)
 		recreateRotationShaders();
 		std::cout << "recreating buffers with size " << (necessary_buffer_size >> 20) << "MB (width " << octree_width_ << ")" << std::endl;
 	}
-	rotation_stuff_.shader_manager.selectDescriptor(0);
 
 	// copy octree over to gpu memory
 	memcpy(rotation_stuff_.cpu_ssbo.getMappedPtr(), octree_->getOctreePool(), octree_->getOctreePoolSize());
 	// TODO: add the rest of the stuff
+	reinterpret_cast<RotationAngles*>(rotation_stuff_.rotation_angles_ubo.getMappedPtr())->old_angles
+			= glm::make_vec3(old_rotation_.eulerAngles().data());
+	reinterpret_cast<RotationAngles*>(rotation_stuff_.rotation_angles_ubo.getMappedPtr())->new_angles
+			= glm::make_vec3(quat.eulerAngles().data());
+	*(reinterpret_cast<uint32_t*>(rotation_stuff_.octree_depth_ubo.getMappedPtr()))
+			= octree_->getLayer();
 
 	// stage 1: populate lowest layer octree data
+	rotation_stuff_.shader_manager.selectDescriptor(0);
 	vkResetCommandBuffer(rotation_stuff_.command_buffer, 0);
 	rotation_stuff_.shader_manager.recordCommandBuffer(rotation_stuff_.command_buffer, octree_width_, octree_width_, octree_width_);
 	VkSubmitInfo compute_submit_info{};
@@ -427,20 +435,35 @@ void Model::rotateGPU(Quaternion quat)
 	timer.start();
 	vkQueueSubmit(anthrax_gpu->getComputeQueue(), 1, &compute_submit_info, rotation_stuff_.fence);
 	vkWaitForFences(anthrax_gpu->logical, 1, &rotation_stuff_.fence, VK_TRUE, UINT64_MAX);
-	std::cout << timer.stop() << std::endl;
 	vkResetFences(anthrax_gpu->logical, 1, &rotation_stuff_.fence);
 
 	// stage 2: rebuild the higher layers of the octree
+	rotation_stuff_.octree_rebuild_shader.selectDescriptor(0);
 	// loop through higher layers until the root node is reached
 	for (unsigned int layer = octree_->getLayer()-1; layer > 0; layer--)
 	{
 		// rebuild this layer of the octree
+		*(reinterpret_cast<uint32_t*>(rotation_stuff_.octree_depth_ubo.getMappedPtr()))
+				= layer;
+		unsigned int layer_width = 1u << layer;
+		vkResetCommandBuffer(rotation_stuff_.command_buffer, 0);
+		rotation_stuff_.octree_rebuild_shader.recordCommandBuffer(rotation_stuff_.command_buffer, layer_width, layer_width, layer_width);
+		VkSubmitInfo compute_submit_info{};
+		compute_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		compute_submit_info.commandBufferCount = 1;
+		compute_submit_info.pCommandBuffers = &(rotation_stuff_.command_buffer);
+		compute_submit_info.signalSemaphoreCount = 0;
+		vkQueueSubmit(anthrax_gpu->getComputeQueue(), 1, &compute_submit_info, rotation_stuff_.fence);
+		vkWaitForFences(anthrax_gpu->logical, 1, &rotation_stuff_.fence, VK_TRUE, UINT64_MAX);
+		vkResetFences(anthrax_gpu->logical, 1, &rotation_stuff_.fence);
 	}
 	
 	// stage 3: defragment
 
 	// copy octree data back to the octree member on the cpu
 
+	std::cout << timer.stop() << std::endl;
+	old_rotation_ = quat;
 	return;
 }
 
@@ -449,6 +472,8 @@ void Model::recreateRotationShaders()
 {
 	if (rotation_stuff_.shader_manager.initialized())
 		rotation_stuff_.shader_descriptors[0].destroy();
+	if (rotation_stuff_.octree_rebuild_shader.initialized())
+		rotation_stuff_.octree_rebuild_descriptors[0].destroy();
 
 	if (rotation_stuff_.cpu_ssbo.initialized())
 		rotation_stuff_.cpu_ssbo.destroy();
@@ -501,7 +526,7 @@ void Model::recreateRotationShaders()
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 				);
 	}
-	// set up descriptors
+	// set up stage 1 descriptors
 	std::vector<Buffer> buffers;
 	std::vector<Image> images;
 	buffers.clear();
@@ -523,6 +548,25 @@ void Model::recreateRotationShaders()
 		rotation_stuff_.shader_manager.setDescriptors(rotation_stuff_.shader_descriptors);
 		rotation_stuff_.shader_manager.init();
 	}
+	// set up stage 2 descriptors
+	buffers.clear();
+	images.clear();
+	buffers.push_back(rotation_stuff_.gpu_ssbo);
+	buffers.push_back(rotation_stuff_.freelist_ssbo);
+	buffers.push_back(rotation_stuff_.octree_depth_ubo);
+	rotation_stuff_.octree_rebuild_descriptors.clear();
+	rotation_stuff_.octree_rebuild_descriptors.push_back(Descriptor(*anthrax_gpu,
+			Descriptor::ShaderStage::COMPUTE, buffers, images));
+	if (rotation_stuff_.octree_rebuild_shader.initialized())
+	{
+		rotation_stuff_.octree_rebuild_shader.updateDescriptors(rotation_stuff_.octree_rebuild_descriptors);
+	}
+	else
+	{
+		rotation_stuff_.octree_rebuild_shader.setDescriptors(rotation_stuff_.octree_rebuild_descriptors);
+		rotation_stuff_.octree_rebuild_shader.init();
+	}
+
 	return;
 }
 

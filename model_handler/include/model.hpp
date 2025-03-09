@@ -65,9 +65,11 @@ private:
 		std::mutex mutex;
 		size_t buffer_size;
 		ComputeShaderManager shader_manager;
+		ComputeShaderManager octree_rebuild_shader;
 		Buffer cpu_ssbo, gpu_ssbo, freelist_ssbo;
 		Buffer rotation_angles_ubo, octree_depth_ubo;
 		std::vector<Descriptor> shader_descriptors;
+		std::vector<Descriptor> octree_rebuild_descriptors;
 		VkFence fence;
 		VkCommandPool command_pool;
 		VkCommandBuffer command_buffer;

@@ -18,7 +18,7 @@ layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size
 
 struct OctreeNode
 {
-	int indirection;
+	uint indirection;
 	uint voxel_type;
 };
 
@@ -251,7 +251,10 @@ void rotateVoxelSingleAxis(inout ivec3 pos, float angle, int axis, int mode)
 
 void insertFreelistVal(in uint index, in bool val)
 {
-	// TODO
+	uint bit = (val) ? 1u : 0u;
+	uint list_index = index >> 5;
+	int bit_offset = 31 - int(index % 32);
+	freelist[list_index] = bitfieldInsert(freelist[list_index], bit, bit_offset, 1);
 	return;
 }
 
