@@ -9,6 +9,7 @@
 
 #include <iostream>
 #include <vector>
+#include <unistd.h>
 
 namespace Anthrax
 {
@@ -98,8 +99,7 @@ void Model::setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type)
 
 void Model::rotate(Quaternion quat)
 {
-	rotateGPU(quat);
-	return;
+	rotateGPU(quat); return;
 	current_rotation_ = quat;
 	octree_->clear();
 	//int precision = original_octree_->getLayer()-7;
@@ -363,6 +363,8 @@ void Model::rotationStuffSetup()
 			std::string(xstr(SHADER_DIRECTORY)) + "model_rotation_c.spv");
 	rotation_stuff_.octree_rebuild_shader = ComputeShaderManager(*anthrax_gpu,
 			std::string(xstr(SHADER_DIRECTORY)) + "octree_rebuild_c.spv");
+	rotation_stuff_.octree_defrag_shader = ComputeShaderManager(*anthrax_gpu,
+			std::string(xstr(SHADER_DIRECTORY)) + "octree_defrag_c.spv");
 
 	// allocate command pool
 	rotation_stuff_.command_pool = anthrax_gpu->newCommandPool(Device::CommandType::COMPUTE);
@@ -390,7 +392,16 @@ void Model::rotationStuffSetup()
 
 void Model::rotateGPU(Quaternion quat)
 {
+	int octree_layers = octree_->getLayer();
 	std::lock_guard<std::mutex> guard(rotation_stuff_.mutex);
+
+	vkResetCommandBuffer(rotation_stuff_.command_buffer, 0);
+	VkCommandBufferBeginInfo begin_info{};
+	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	if (vkBeginCommandBuffer(rotation_stuff_.command_buffer, &begin_info) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to begin recording model rotation compute command buffer!");
+	}
 	// start at the lowest layer
 	// - find the necessary sizes for the buffers
 	// - set up buffers
@@ -401,7 +412,7 @@ void Model::rotateGPU(Quaternion quat)
 	//   (2^{3n}-1)/7*8
 	// where n represents the depth of the octree (width = 2^n). We must also multiply this
 	// by the size of a single element to get the maximum size of the buffer.
-	size_t necessary_buffer_size = ((1 << (3*octree_->getLayer())) - 1) / 7 * 8;
+	size_t necessary_buffer_size = ((1 << (3*octree_layers)) - 1) / 7 * 8;
 	necessary_buffer_size *= sizeof(Octree::OctreeNode);
 	if (necessary_buffer_size > rotation_stuff_.buffer_size)
 	{
@@ -412,57 +423,121 @@ void Model::rotateGPU(Quaternion quat)
 	}
 
 	// copy octree over to gpu memory
-	memcpy(rotation_stuff_.cpu_ssbo.getMappedPtr(), octree_->getOctreePool(), octree_->getOctreePoolSize());
-	// TODO: add the rest of the stuff
+	rotation_stuff_.cpu_ssbo.map();
+	memcpy(rotation_stuff_.cpu_ssbo.getMappedPtr(), octree_->getOctreePool(), octree_->getOctreePoolSize()*sizeof(Octree::OctreeNode));
+	rotation_stuff_.cpu_ssbo.flush();
+	rotation_stuff_.cpu_ssbo.unmap();
 	reinterpret_cast<RotationAngles*>(rotation_stuff_.rotation_angles_ubo.getMappedPtr())->old_angles
 			= glm::make_vec3(old_rotation_.eulerAngles().data());
 	reinterpret_cast<RotationAngles*>(rotation_stuff_.rotation_angles_ubo.getMappedPtr())->new_angles
 			= glm::make_vec3(quat.eulerAngles().data());
+	rotation_stuff_.rotation_angles_ubo.flush();
 	*(reinterpret_cast<uint32_t*>(rotation_stuff_.octree_depth_ubo.getMappedPtr()))
-			= octree_->getLayer();
+			= octree_layers;
+	rotation_stuff_.octree_depth_ubo.flush();
+
+	// ensure the octree data is fully copied over before using it
+	vkCmdPipelineBarrier(rotation_stuff_.command_buffer,
+			VK_PIPELINE_STAGE_HOST_BIT,
+			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			0,
+			0, nullptr,
+			1, &(rotation_stuff_.cpu_to_gpu_mem_barrier),
+			0, nullptr);
 
 	// stage 1: populate lowest layer octree data
 	rotation_stuff_.shader_manager.selectDescriptor(0);
-	vkResetCommandBuffer(rotation_stuff_.command_buffer, 0);
-	rotation_stuff_.shader_manager.recordCommandBuffer(rotation_stuff_.command_buffer, octree_width_, octree_width_, octree_width_);
-	VkSubmitInfo compute_submit_info{};
-	compute_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	compute_submit_info.commandBufferCount = 1;
-	compute_submit_info.pCommandBuffers = &(rotation_stuff_.command_buffer);
-	compute_submit_info.signalSemaphoreCount = 0;
+	//rotation_stuff_.shader_manager.recordCommandBuffer(rotation_stuff_.command_buffer, octree_width_/2, octree_width_/2, octree_width_/2);
+	unsigned int octree_width = 1u << octree_layers;
+	rotation_stuff_.shader_manager.recordCommandBufferNoBegin(rotation_stuff_.command_buffer, octree_width/2, octree_width/2, octree_width/2);
 
 	Timer timer;
 	timer.start();
-	vkQueueSubmit(anthrax_gpu->getComputeQueue(), 1, &compute_submit_info, rotation_stuff_.fence);
-	vkWaitForFences(anthrax_gpu->logical, 1, &rotation_stuff_.fence, VK_TRUE, UINT64_MAX);
-	vkResetFences(anthrax_gpu->logical, 1, &rotation_stuff_.fence);
+
+	// ensure the lowest layer of the octree has been stored in the buffer before continuing
+	vkCmdPipelineBarrier(rotation_stuff_.command_buffer,
+			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			0,
+			0, nullptr,
+			1, &(rotation_stuff_.gpu_mem_barrier),
+			0, nullptr);
 
 	// stage 2: rebuild the higher layers of the octree
 	rotation_stuff_.octree_rebuild_shader.selectDescriptor(0);
 	// loop through higher layers until the root node is reached
-	for (unsigned int layer = octree_->getLayer()-1; layer > 0; layer--)
+	for (int depth = octree_layers-1; depth > 0; depth--)
 	{
 		// rebuild this layer of the octree
-		*(reinterpret_cast<uint32_t*>(rotation_stuff_.octree_depth_ubo.getMappedPtr()))
-				= layer;
-		unsigned int layer_width = 1u << layer;
-		vkResetCommandBuffer(rotation_stuff_.command_buffer, 0);
-		rotation_stuff_.octree_rebuild_shader.recordCommandBuffer(rotation_stuff_.command_buffer, layer_width, layer_width, layer_width);
-		VkSubmitInfo compute_submit_info{};
-		compute_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		compute_submit_info.commandBufferCount = 1;
-		compute_submit_info.pCommandBuffers = &(rotation_stuff_.command_buffer);
-		compute_submit_info.signalSemaphoreCount = 0;
-		vkQueueSubmit(anthrax_gpu->getComputeQueue(), 1, &compute_submit_info, rotation_stuff_.fence);
-		vkWaitForFences(anthrax_gpu->logical, 1, &rotation_stuff_.fence, VK_TRUE, UINT64_MAX);
-		vkResetFences(anthrax_gpu->logical, 1, &rotation_stuff_.fence);
+		//std::cout << "rebuilding " << depth << std::endl;
+		unsigned int layer_width = 1u << depth;
+		rotation_stuff_.octree_rebuild_shader.recordCommandBufferNoBegin(rotation_stuff_.command_buffer, layer_width/2, layer_width/2, layer_width/2);
+
+		// each layer depends on the layer below it, so make sure that layer is fully written
+		// to the buffer before proceeding to the next layer.
+		vkCmdPipelineBarrier(rotation_stuff_.command_buffer,
+				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+				0,
+				0, nullptr,
+				1, &(rotation_stuff_.gpu_mem_barrier),
+				0, nullptr);
 	}
 	
 	// stage 3: defragment
+	// TODO: fix these work group sizes to be better
+	size_t x_work_group_size = 64;
+	size_t yz_work_groups = rotation_stuff_.buffer_size/sizeof(Octree::OctreeNode)/x_work_group_size + 1;
+	size_t y_work_groups = (yz_work_groups <= 32) ? yz_work_groups : 32;
+	size_t z_work_groups = yz_work_groups/y_work_groups + 1;
+	rotation_stuff_.octree_defrag_shader.selectDescriptor(0);
+	*(reinterpret_cast<uint32_t*>(rotation_stuff_.last_pool_index_ssbo.getMappedPtr()))
+			= 0;
+	rotation_stuff_.last_pool_index_ssbo.flush();
+	*(reinterpret_cast<uint32_t*>(rotation_stuff_.pool_size_ubo.getMappedPtr()))
+			= rotation_stuff_.buffer_size/sizeof(Octree::OctreeNode);
+	rotation_stuff_.pool_size_ubo.flush();
+	rotation_stuff_.octree_defrag_shader.recordCommandBufferNoBegin(rotation_stuff_.command_buffer, 1, y_work_groups, z_work_groups);
+	//rotation_stuff_.octree_defrag_shader.recordCommandBufferNoBegin(rotation_stuff_.command_buffer, rotation_stuff_.buffer_size/sizeof(Octree::OctreeNode)/64, 1, 1);
+
+	// ensure the compute shaders have fully written the data to the buffer before reading
+	vkCmdPipelineBarrier(rotation_stuff_.command_buffer,
+			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			VK_PIPELINE_STAGE_HOST_BIT,
+			0,
+			0, nullptr,
+			1, &(rotation_stuff_.gpu_to_cpu_mem_barrier),
+			0, nullptr);
+
+	if (vkEndCommandBuffer(rotation_stuff_.command_buffer) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to record model rotation compute command buffer!");
+	}
+
+	VkSubmitInfo compute_submit_info = {};
+	compute_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	compute_submit_info.commandBufferCount = 1;
+	compute_submit_info.pCommandBuffers = &(rotation_stuff_.command_buffer);
+	compute_submit_info.signalSemaphoreCount = 0;
+	vkQueueSubmit(anthrax_gpu->getComputeQueue(), 1, &compute_submit_info, rotation_stuff_.fence);
+	vkWaitForFences(anthrax_gpu->logical, 1, &rotation_stuff_.fence, VK_TRUE, UINT64_MAX);
+	vkResetFences(anthrax_gpu->logical, 1, &rotation_stuff_.fence);
 
 	// copy octree data back to the octree member on the cpu
+	rotation_stuff_.last_pool_index_ssbo.unmap();
+	rotation_stuff_.last_pool_index_ssbo.map();
+	uint32_t new_size = *(reinterpret_cast<uint32_t*>(rotation_stuff_.last_pool_index_ssbo.getMappedPtr()))+1;
+	rotation_stuff_.cpu_ssbo.map();
+	Octree::OctreeNode *octree_data = reinterpret_cast<Octree::OctreeNode*>(rotation_stuff_.cpu_ssbo.getMappedPtr());
+	octree_->clear();
+	octree_->layer_ = octree_layers;
+	octree_->octree_pool_->resize(new_size);
+	memcpy(octree_->octree_pool_->data(), octree_data, new_size*sizeof(Octree::OctreeNode));
+	//octree_->pool_freelist_->setRange(0, new_size, true); // TODO implement this!!!!
+	rotation_stuff_.cpu_ssbo.unmap();
+	std::cout << (new_size*sizeof(Octree::OctreeNode) >> 10) << "KB" << std::endl;
 
-	std::cout << timer.stop() << std::endl;
+	std::cout << "Time to rotate model (width " << (1u << octree_layers) << "): " << timer.stop() << "ms" << std::endl;
 	old_rotation_ = quat;
 	return;
 }
@@ -474,6 +549,8 @@ void Model::recreateRotationShaders()
 		rotation_stuff_.shader_descriptors[0].destroy();
 	if (rotation_stuff_.octree_rebuild_shader.initialized())
 		rotation_stuff_.octree_rebuild_descriptors[0].destroy();
+	if (rotation_stuff_.octree_defrag_shader.initialized())
+		rotation_stuff_.octree_defrag_descriptors[0].destroy();
 
 	if (rotation_stuff_.cpu_ssbo.initialized())
 		rotation_stuff_.cpu_ssbo.destroy();
@@ -489,8 +566,9 @@ void Model::recreateRotationShaders()
 			rotation_stuff_.buffer_size,
 			Buffer::STORAGE_TYPE,
 			0,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 			);
+	rotation_stuff_.cpu_ssbo.unmap();
 	rotation_stuff_.gpu_ssbo = Buffer(
 			*anthrax_gpu,
 			rotation_stuff_.buffer_size,
@@ -519,6 +597,26 @@ void Model::recreateRotationShaders()
 	if (!rotation_stuff_.octree_depth_ubo.initialized())
 	{
 		rotation_stuff_.octree_depth_ubo = Buffer(
+				*anthrax_gpu,
+				4,
+				Buffer::UNIFORM_TYPE,
+				0,
+				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+				);
+	}
+	if (!rotation_stuff_.last_pool_index_ssbo.initialized())
+	{
+		rotation_stuff_.last_pool_index_ssbo = Buffer(
+				*anthrax_gpu,
+				4,
+				Buffer::STORAGE_TYPE,
+				0,
+				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+				);
+	}
+	if (!rotation_stuff_.pool_size_ubo.initialized())
+	{
+		rotation_stuff_.pool_size_ubo = Buffer(
 				*anthrax_gpu,
 				4,
 				Buffer::UNIFORM_TYPE,
@@ -566,6 +664,61 @@ void Model::recreateRotationShaders()
 		rotation_stuff_.octree_rebuild_shader.setDescriptors(rotation_stuff_.octree_rebuild_descriptors);
 		rotation_stuff_.octree_rebuild_shader.init();
 	}
+	// set up stage 3 descriptors
+	buffers.clear();
+	images.clear();
+	buffers.push_back(rotation_stuff_.gpu_ssbo);
+	buffers.push_back(rotation_stuff_.cpu_ssbo);
+	buffers.push_back(rotation_stuff_.freelist_ssbo);
+	buffers.push_back(rotation_stuff_.last_pool_index_ssbo);
+	buffers.push_back(rotation_stuff_.pool_size_ubo);
+	rotation_stuff_.octree_defrag_descriptors.clear();
+	rotation_stuff_.octree_defrag_descriptors.push_back(Descriptor(*anthrax_gpu,
+			Descriptor::ShaderStage::COMPUTE, buffers, images));
+	if (rotation_stuff_.octree_defrag_shader.initialized())
+	{
+		rotation_stuff_.octree_defrag_shader.updateDescriptors(rotation_stuff_.octree_defrag_descriptors);
+	}
+	else
+	{
+		rotation_stuff_.octree_defrag_shader.setDescriptors(rotation_stuff_.octree_defrag_descriptors);
+		rotation_stuff_.octree_defrag_shader.init();
+	}
+
+	// set up memory barriers
+	rotation_stuff_.cpu_to_gpu_mem_barrier = {};
+	rotation_stuff_.cpu_to_gpu_mem_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	rotation_stuff_.cpu_to_gpu_mem_barrier.pNext = nullptr;
+	rotation_stuff_.cpu_to_gpu_mem_barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;  // Wait for the write access from the first shader
+	rotation_stuff_.cpu_to_gpu_mem_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;   // Ensure that second shader can read the data
+	rotation_stuff_.cpu_to_gpu_mem_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	rotation_stuff_.cpu_to_gpu_mem_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	rotation_stuff_.cpu_to_gpu_mem_barrier.buffer = rotation_stuff_.cpu_ssbo.data();  // The buffer being written by the first shader
+	rotation_stuff_.cpu_to_gpu_mem_barrier.offset = 0;       // Offset into the buffer
+	rotation_stuff_.cpu_to_gpu_mem_barrier.size = VK_WHOLE_SIZE;  // Size of the entire buffer
+
+	rotation_stuff_.gpu_mem_barrier = {};
+	rotation_stuff_.gpu_mem_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	rotation_stuff_.gpu_mem_barrier.pNext = nullptr;
+	rotation_stuff_.gpu_mem_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;  // Wait for the write access from the first shader
+	rotation_stuff_.gpu_mem_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;   // Ensure that second shader can read the data
+	rotation_stuff_.gpu_mem_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	rotation_stuff_.gpu_mem_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	rotation_stuff_.gpu_mem_barrier.buffer = rotation_stuff_.gpu_ssbo.data();  // The buffer being written by the first shader
+	rotation_stuff_.gpu_mem_barrier.offset = 0;       // Offset into the buffer
+	rotation_stuff_.gpu_mem_barrier.size = VK_WHOLE_SIZE;  // Size of the entire buffer
+																												 //
+	rotation_stuff_.gpu_to_cpu_mem_barrier = {};
+	rotation_stuff_.gpu_to_cpu_mem_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	rotation_stuff_.gpu_to_cpu_mem_barrier.pNext = nullptr;
+	rotation_stuff_.gpu_to_cpu_mem_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;  // Wait for the write access from the first shader
+	rotation_stuff_.gpu_to_cpu_mem_barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;   // Ensure that second shader can read the data
+	rotation_stuff_.gpu_to_cpu_mem_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	rotation_stuff_.gpu_to_cpu_mem_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	rotation_stuff_.gpu_to_cpu_mem_barrier.buffer = rotation_stuff_.cpu_ssbo.data();  // The buffer being written by the first shader
+	rotation_stuff_.gpu_to_cpu_mem_barrier.offset = 0;       // Offset into the buffer
+	rotation_stuff_.gpu_to_cpu_mem_barrier.size = VK_WHOLE_SIZE;  // Size of the entire buffer
+
 
 	return;
 }

@@ -70,6 +70,8 @@ public:
 	};
 	OctreeNode *getOctreePool() { return octree_pool_->data(); }
 	size_t getOctreePoolSize() { return octree_pool_->size(); }
+
+	friend class Model;
 private:
 	int layer_;
 	Octree *parent_;

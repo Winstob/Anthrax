@@ -1,12 +1,7 @@
 /* ---------------------------------------------------------------- *\
- * model_rotation.comp
+ * octree_rebuild.comp
  * Author: Gavin Ralston
- * Date Created: 2025-03-01
- * 
- * Even though the main rendering code uses uints to model the
- * octree and the corner of the octree is 0, we need to use ints
- * and have 0 represent the center here to avoid overflow
- * (underflow?).
+ * Date Created: 2025-03-08
 \* ---------------------------------------------------------------- */
 #version 460
 
@@ -32,20 +27,20 @@ layout (std430, binding = 1) buffer freelist_ssbo
 	uint freelist[];
 };
 
-layout (std140, binding = 2) readonly uniform octree_layer_ubo
+layout (std140, binding = 2) readonly uniform octree_depth_ubo
 {
-	uint octree_layer;
+	uint octree_depth_bad;
 };
 
-uint getPoolIndex(in uint layer, in uvec3 pos);
+uint getPoolIndex(in uint depth, in uvec3 pos);
 uint readIndirectionPool(in uint base_location, in uint node_index);
 uint readUniformityPool(in uint base_location, in uint node_index);
 uint readVoxelTypePool(in uint base_location, in uint node_index);
-void rotateVoxelSingleAxis(inout ivec3 pos, float angle, int axis, int mode);
 void insertFreelistVal(in uint index, in bool val);
 
-uint octree_width = 1u << octree_layer;
-int half_octree_width = int(octree_width >> 1);
+uint octree_depth;
+uint octree_width;
+int half_octree_width;
 
 // There will be problems with octree_width values approaching UINT_MAX, but i really
 // dont think models that large will be rotated anyway.
@@ -54,20 +49,34 @@ int half_octree_width = int(octree_width >> 1);
 // 32-bit unsigned ints.
 void main()
 {
+	octree_width = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+	//octree_width = 1u << octree_depth;
+	half_octree_width = int(octree_width >> 1);
+	//for (octree_depth = 1u; 1u << octree_depth != octree_width; octree_depth++);
+	octree_depth = 1u;
+	while (1u << octree_depth != octree_width)
+	{
+		octree_depth++;
+	}
+
 	// calculate pos from instance index
 	uvec3 pos = uvec3(gl_GlobalInvocationID);
 
 	// calculate the pool index in the input octree
-	uint pool_index = getPoolIndex(octree_layer, pos);	
+	uint pool_index = getPoolIndex(octree_depth, pos);	
 
-	// loop through all children
-	uint child_pool_index_base = getPoolIndex(octree_layer+1, pos*2);
+	// loop through all children and check if they are of the same type
+	uint child_pool_index_base = getPoolIndex(octree_depth+1, pos*2);
 	uint voxel_type = octree[child_pool_index_base].voxel_type;
 	bool can_merge = true;
 	for (uint child = 0; child < 8; child++)
 	{
-		if (voxel_type != octree[child_pool_index_base+child].voxel_type)
+		if (octree[child_pool_index_base+child].voxel_type != voxel_type
+		    || octree[child_pool_index_base+child].indirection != 0)
+		{
 			can_merge = false;
+			break;
+		}
 	}
 	if (can_merge)
 	{
@@ -76,12 +85,13 @@ void main()
 		for (uint child = 0; child < 8; child++)
 		{
 			insertFreelistVal(child_pool_index_base+child, true);
+			//octree[child_pool_index_base+child].voxel_type = 0;
 		}
 	}
 	else
 	{
-		octree[pool_index].voxel_type = voxel_type;
-		octree[pool_index].indirection = child_pool_index_base;
+		octree[pool_index].voxel_type = 0; // TODO: LOD?
+		octree[pool_index].indirection = child_pool_index_base >> 3;
 	}
 	insertFreelistVal(pool_index, false);
 	
@@ -89,9 +99,9 @@ void main()
 }
 
 
-uint getPoolIndex(in uint layer, in uvec3 pos)
+uint getPoolIndex(in uint depth, in uvec3 pos)
 {
-	uint base_offset = ((1 << (3*(layer-1))) - 1) / 7 * 8;
+	uint base_offset = ((1 << (3*(depth-1))) - 1) / 7 * 8;
 	uint index = 0u;
 	for (int i = 0; i < 10; i++)
 	{
@@ -105,9 +115,23 @@ uint getPoolIndex(in uint layer, in uvec3 pos)
 
 void insertFreelistVal(in uint index, in bool val)
 {
+/*
+	// NOTE: doesn't work because of multithread stuff
 	uint bit = (val) ? 1u : 0u;
 	uint list_index = index >> 5;
-	int bit_offset = 31 - int(index % 32);
+	int bit_offset = 31 - int(index & 31u);
 	freelist[list_index] = bitfieldInsert(freelist[list_index], bit, bit_offset, 1);
+*/
+	uint list_index = index >> 5;
+	int bit_offset = 31 - int(index & 31u);
+	uint bitfield = bitfieldInsert(0u, 1, bit_offset, 1);
+	if (val)
+	{
+		atomicOr(freelist[list_index], bitfield);
+	}
+	else
+	{
+		atomicAnd(freelist[list_index], ~bitfield);
+	}
 	return;
 }

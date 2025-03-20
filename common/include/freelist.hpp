@@ -23,6 +23,7 @@ public:
 	void copy(const Freelist &other);
 	size_t alloc();
 	void free(size_t index);
+	void setRange(size_t offset, size_t num_elements, bool val);
 
 private:
 	std::vector<uint64_t> freelist_;

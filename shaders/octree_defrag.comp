@@ -1,0 +1,172 @@
+/* ---------------------------------------------------------------- *\
+ * octree_defrag.comp
+ * Author: Gavin Ralston
+ * Date Created: 2025-03-08
+\* ---------------------------------------------------------------- */
+#version 460
+
+#define WORKGROUP_SIZE 64
+
+#define PI 3.14
+
+layout (local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+struct OctreeNode
+{
+	uint indirection;
+	uint voxel_type;
+};
+
+layout (std430, binding = 0) readonly buffer input_octree_ssbo
+{
+	OctreeNode input_octree[];
+};
+
+layout (std430, binding = 1) writeonly coherent buffer output_octree_ssbo
+{
+	OctreeNode output_octree[];
+};
+
+layout (std430, binding = 2) readonly buffer freelist_ssbo
+{
+	uint freelist[];
+};
+
+layout (std430, binding = 3) writeonly coherent buffer last_pool_index_ssbo
+{
+	uint last_pool_index;
+};
+
+layout (std140, binding = 4) readonly uniform pool_size_ubo
+{
+	uint pool_size;
+};
+
+uint readFreelist(in uint index);
+bool readFreelistBool(in uint index);
+void findLastPoolIndex(in uint index);
+
+// There will be problems with octree_width values approaching UINT_MAX, but i really
+// dont think models that large will be rotated anyway.
+// If my math is correct the largest octree width that could posibly work is 2^28, but
+// even then im pretty sure the octree pool would be too large to be represented with
+// 32-bit unsigned ints.
+void main()
+{
+	// calculate pos from instance index
+	uint pool_index = uint(gl_GlobalInvocationID.x + WORKGROUP_SIZE*gl_GlobalInvocationID.y + WORKGROUP_SIZE*gl_NumWorkGroups.y*gl_GlobalInvocationID.z); 
+	//uint pool_index = uint(gl_GlobalInvocationID.x); // TODO: temp!
+
+	// can exit early if this pool index has no value
+	/* no you cant stupid
+	if (readFreelistBool(pool_index))
+	{
+		return;
+	}
+	*/
+	// gotta prevent those invalid memory accesses
+	if (pool_index >= pool_size)
+	{
+		return;
+	}
+
+
+
+
+	// TODO: fix everything so you can remove this
+	output_octree[pool_index] = input_octree[pool_index];
+	findLastPoolIndex(pool_index);
+return;
+
+
+
+
+
+
+
+
+
+	uint num_free_indices = 0;
+	uint parent_old_index = 0;
+	uint parent_new_index = 0;
+	bool found_parent = false;
+	for (uint i = 0; i < pool_index; i++)
+	{
+		num_free_indices += readFreelist(i);
+		if (input_octree[i].indirection == pool_index/8)
+		{
+			parent_old_index = i;
+			parent_new_index = i - num_free_indices;
+			found_parent = true;
+		}
+	}
+	uint new_pool_index = pool_index - num_free_indices;
+	output_octree[new_pool_index].voxel_type = input_octree[pool_index].voxel_type;
+	if (readFreelistBool(pool_index))
+	{
+		if (found_parent && pool_index % 8 == 0)
+			output_octree[parent_new_index].indirection = 0;
+		return;
+	}
+	else
+	{
+		if (pool_index % 8 == 0)
+			output_octree[parent_new_index].indirection = new_pool_index;
+		findLastPoolIndex(new_pool_index);
+	}
+
+	return;
+}
+
+
+uint readFreelist(in uint index)
+{
+	uint list_index = index >> 5;
+	int bit_offset = 31 - int(index & 31u);
+	return bitfieldExtract(freelist[list_index], bit_offset, 1);
+}
+
+
+bool readFreelistBool(in uint index)
+{
+	return (readFreelist(index) == 1u);
+}
+
+
+#ifdef POOP
+void findLastPoolIndex(in uint index)
+{
+	return;
+}
+#else
+// find the max index value across all threads
+shared uint local_max_index[WORKGROUP_SIZE];
+void findLastPoolIndex(in uint index)
+{
+	atomicMax(last_pool_index, index);
+	return;
+
+	uint local_id = gl_LocalInvocationID.x;  // local thread id
+
+	// load the thread value into shared memory
+	local_max_index[local_id] = index;
+	barrier();  // ensure all threads have written their values to local_max_index[]
+
+	// perform a reduction using a binary tree pattern
+	for (uint stride = 1; stride < gl_WorkGroupSize.x; stride *= 2) {
+		uint partner = local_id ^ stride;  // Find the partner thread
+
+		if (partner < gl_WorkGroupSize.x) {
+			local_max_index[local_id] = max(local_max_index[local_id], local_max_index[partner]);
+		}
+
+		barrier();  // Synchronize after each reduction step
+	}
+
+	// Write the final result to the output if localId is 0 (first thread in workgroup)
+	if (local_id == 0) {
+		//finalMax = localMax[0];  // Final maximum value for the workgroup
+		atomicMax(last_pool_index, local_max_index[0]);
+	}	
+}
+#endif

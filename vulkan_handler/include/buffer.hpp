@@ -39,6 +39,9 @@ public:
 
 	size_t size() { return size_; }
 	void* getMappedPtr();
+	void map();
+	void unmap();
+	void flush();
 
 	void copy(Buffer other);
 

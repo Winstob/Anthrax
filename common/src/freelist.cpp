@@ -64,4 +64,10 @@ size_t Freelist::findNextFreeIndex()
 	return (static_cast<size_t>(freelist_.size()-1)) << 6;
 }
 
+
+void Freelist::setRange(size_t offset, size_t num_elements, bool val)
+{
+	// TODO
+}
+
 } // namespace Anthrax

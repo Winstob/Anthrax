@@ -416,6 +416,11 @@ void Octree::mergeOctree(Octree *other, int32_t x, int32_t y, int32_t z
 
 void Octree::mergeIntoOctree(Octree *other, int32_t x, int32_t y, int32_t z)
 {
+	// TODO: temp!!
+	other->octree_pool_->resize(octree_pool_->size());
+	memcpy(other->octree_pool_->data(), octree_pool_->data(), octree_pool_->size()*sizeof(OctreeNode));
+	return;
+
 	if (isUniform() && getMaterialType() == 0)
 	{
 		return;

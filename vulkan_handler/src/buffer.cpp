@@ -19,6 +19,7 @@ Buffer::Buffer(Device device, size_t size, BufferType buffer_type, VkBufferUsage
 	properties_ = properties;
 	type_ = buffer_type;
 	size_ = size;
+	buffer_memory_mapped_ = nullptr;
 
 	VkBufferUsageFlags type_usage_flag;
 	switch (type_)
@@ -59,10 +60,7 @@ Buffer::Buffer(Device device, size_t size, BufferType buffer_type, VkBufferUsage
 	vkBindBufferMemory(device_.logical, buffer_, buffer_memory_, 0);
 
 	//if (type_ == UNIFORM_TYPE)
-	if (properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-	{
-		vkMapMemory(device_.logical, buffer_memory_, 0, size_, 0, &buffer_memory_mapped_);
-	}
+	map();
 
 	initialized_ = true;
 	return;
@@ -79,11 +77,57 @@ Buffer::~Buffer()
 
 void Buffer::destroy()
 {
+	unmap(); // TODO: necessary?
 	vkDestroyBuffer(device_.logical, buffer_, nullptr);
 	vkFreeMemory(device_.logical, buffer_memory_, nullptr);
 
 	initialized_ = false;
 
+	return;
+}
+
+
+void Buffer::map()
+{
+	if (buffer_memory_mapped_)
+	{
+		throw std::runtime_error("Buffer memory already mapped!");
+	}
+	if (properties_ & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+	{
+		vkMapMemory(device_.logical, buffer_memory_, 0, size_, 0, &buffer_memory_mapped_);
+	}
+	return;
+}
+
+
+void Buffer::unmap()
+{
+	if (buffer_memory_mapped_)
+	{
+		vkUnmapMemory(device_.logical, buffer_memory_);
+		buffer_memory_mapped_ = nullptr;
+	}
+}
+
+
+void Buffer::flush()
+{
+	// TODO: check that the memory is mapped?
+	if ((properties_ & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+	    && (buffer_memory_mapped_))
+	{
+		VkMappedMemoryRange flush_range = {};
+		flush_range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+		flush_range.memory = buffer_memory_;
+		flush_range.offset = 0;
+		flush_range.size = VK_WHOLE_SIZE;
+		vkFlushMappedMemoryRanges(device_.logical, 1, &flush_range);
+	}
+	else
+	{
+		throw std::runtime_error("Buffer::flush() must be called on a host-visible buffer!");
+	}
 	return;
 }
 

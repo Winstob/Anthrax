@@ -73,6 +73,7 @@ void ComputeShaderManager::destroy()
 		vkDestroyPipeline(device_.logical, pipeline_, nullptr);
 	if (pipeline_layout_ != VK_NULL_HANDLE)
 		vkDestroyPipelineLayout(device_.logical, pipeline_layout_, nullptr);
+	pipeline_ = VK_NULL_HANDLE; // just in case this needs to be done
 	/*
 	for (unsigned int i = 0; i < buffers_.size(); i++)
 	{
@@ -86,12 +87,13 @@ void ComputeShaderManager::destroy()
 
 void ComputeShaderManager::updateDescriptors(std::vector<Descriptor> descriptors)
 {
-	// TODO
+	// TODO im pretty sure theres a better less lazy way to do this
 	destroy();
 	setDescriptors(descriptors);
 	init();
 	return;
 }
+
 
 void ComputeShaderManager::recordCommandBuffer(VkCommandBuffer command_buffer, unsigned int x_work_groups, unsigned int y_work_groups, unsigned int z_work_groups)
 {
@@ -114,6 +116,16 @@ void ComputeShaderManager::recordCommandBuffer(VkCommandBuffer command_buffer, u
 		throw std::runtime_error("Failed to record compute command buffer!");
 	}
 
+	return;
+}
+
+
+void ComputeShaderManager::recordCommandBufferNoBegin(VkCommandBuffer command_buffer, unsigned int x_work_groups, unsigned int y_work_groups, unsigned int z_work_groups)
+{
+	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_);
+	vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout_, 0, 1, descriptors_[descriptor_index_].getDescriptorSetPtr(), 0, nullptr);
+
+	vkCmdDispatch(command_buffer, x_work_groups, y_work_groups, z_work_groups);
 	return;
 }
 
