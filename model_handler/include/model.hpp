@@ -63,19 +63,20 @@ private:
 	struct RotationStuff
 	{
 		std::mutex mutex;
+		size_t max_octree_elements;
 		size_t buffer_size;
 		ComputeShaderManager shader_manager;
 		ComputeShaderManager octree_rebuild_shader;
 		ComputeShaderManager octree_defrag_shader;
-		Buffer cpu_ssbo, gpu_ssbo, freelist_ssbo;
-		Buffer rotation_angles_ubo, octree_depth_ubo, last_pool_index_ssbo, pool_size_ubo;
+		Buffer cpu_ssbo, gpu_ssbo, defrag_accel_tree_ssbo;
+		Buffer rotation_angles_ubo, octree_depth_ubo, first_pool_index_ssbo, pool_size_ubo;
 		std::vector<Descriptor> shader_descriptors;
 		std::vector<Descriptor> octree_rebuild_descriptors;
 		std::vector<Descriptor> octree_defrag_descriptors;
 		VkFence fence;
 		VkCommandPool command_pool;
 		VkCommandBuffer command_buffer;
-		VkBufferMemoryBarrier cpu_to_gpu_mem_barrier, gpu_mem_barrier, gpu_to_cpu_mem_barrier;
+		VkBufferMemoryBarrier cpu_to_gpu_mem_barrier, gpu_mem_barrier, gpu_to_cpu_mem_barrier, defrag_accel_tree_mem_barrier;
 		bool initialized = false;
 	};
 	static RotationStuff rotation_stuff_;

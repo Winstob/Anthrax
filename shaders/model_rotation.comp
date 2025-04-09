@@ -32,9 +32,9 @@ layout (std430, binding = 1) writeonly buffer output_ssbo
 	OctreeNode output_octree[];
 };
 
-layout (std430, binding = 2) writeonly buffer freelist_ssbo
+layout (std430, binding = 2) writeonly buffer defrag_accel_tree_ssbo
 {
-	uint freelist[];
+	uint defrag_accel_tree[];
 };
 
 layout (std140, binding = 3) readonly uniform rotation_angles_ubo
@@ -128,6 +128,7 @@ return;
 		// if the rotated voxel is within the bounds of the octree
 		new_pool_index = getNewPoolIndexByPosition(pos);	
 		output_octree[new_pool_index].voxel_type = input_octree[old_pool_index].voxel_type;
+		//defrag_accel_tree[new_pool_index] = 0;
 	}
 	else
 	{
@@ -280,6 +281,7 @@ void rotateVoxelSingleAxis(inout ivec3 pos, in float angle, in int axis, in int 
 
 void insertFreelistVal(in uint index, in bool val)
 {
+/*
 	uint list_index = index >> 5;
 	int bit_offset = 31 - int(index & 31u);
 	uint bitfield = bitfieldInsert(0u, 1, bit_offset, 1);
@@ -292,6 +294,7 @@ void insertFreelistVal(in uint index, in bool val)
 		atomicAnd(freelist[list_index], ~bitfield);
 	}
 	return;
+*/
 }
 
 

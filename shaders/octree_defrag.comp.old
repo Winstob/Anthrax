@@ -1,0 +1,335 @@
+/* ---------------------------------------------------------------- *\
+ * octree_defrag.comp
+ * Author: Gavin Ralston
+ * Date Created: 2025-03-08
+\* ---------------------------------------------------------------- */
+#version 460
+
+#define WORKGROUP_SIZE 2
+
+#define PI 3.14
+
+layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = WORKGROUP_SIZE) in;
+
+struct OctreeNode
+{
+	uint indirection;
+	uint voxel_type;
+};
+
+layout (std430, binding = 0) readonly buffer input_octree_ssbo
+{
+	OctreeNode input_octree[];
+};
+
+layout (std430, binding = 1) writeonly coherent buffer output_octree_ssbo
+{
+	OctreeNode output_octree[];
+};
+
+layout (std430, binding = 2) readonly buffer defrag_accel_tree_ssbo
+{
+	uint defrag_accel_tree[];
+};
+
+layout (std430, binding = 3) writeonly coherent buffer last_pool_index_ssbo
+{
+	uint last_pool_index;
+};
+
+layout (std140, binding = 4) readonly uniform pool_size_ubo
+{
+	uint pool_size;
+};
+
+uint getExpandedPoolIndexByPosition(in uint depth, in uvec3 pos);
+uint readFreelist(in uint index);
+bool readFreelistBool(in uint index);
+void findLastPoolIndex(in uint index);
+
+int octree_depth;
+uint octree_width;
+int half_octree_width;
+
+// There will be problems with octree_width values approaching UINT_MAX, but i really
+// dont think models that large will be rotated anyway.
+// If my math is correct the largest octree width that could posibly work is 2^28, but
+// even then im pretty sure the octree pool would be too large to be represented with
+// 32-bit unsigned ints.
+void main()
+{
+	octree_width = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+	//octree_width = 1u << octree_depth;
+	half_octree_width = int(octree_width >> 1);
+	//for (octree_depth = 1u; 1u << octree_depth != octree_width; octree_depth++);
+	octree_depth = 1;
+	while (1u << octree_depth != octree_width)
+	{
+		octree_depth++;
+	}
+
+	// calculate pos from instance index
+	uvec3 pos = uvec3(gl_GlobalInvocationID);
+
+	uint indirection = 0;
+	int layer = octree_depth-1;
+	uint num_free_indices_ahead_children = 0u;
+	uint last_parent_pool_index = 0u;
+	for (; layer >= 0;)
+	{
+		uint current_node_index = 0u;
+		current_node_index |= ((pos.x >> layer) & 1u);
+		current_node_index |= ((pos.y >> layer) & 1u) << 1;
+		current_node_index |= ((pos.z >> layer) & 1u) << 2;
+
+		//int next_indirection = input_octree[old_pool_index].indirection;
+		
+		for (uint child = 7; child > current_node_index; child--)
+		{
+			num_free_indices_ahead_children += defrag_accel_tree[indirection*8+child];
+		}
+		// the children shouldnt include the freelist values from the current
+		// octree node but the current calculation should.
+		uint num_free_indices_ahead = num_free_indices_ahead_children
+				+ defrag_accel_tree[indirection*8+current_node_index];
+		//uint old_pool_index = getExpandedPoolIndexByPosition(layer, pos);
+		uint old_pool_index = indirection*8+current_node_index;
+		uint new_pool_index = old_pool_index + num_free_indices_ahead;
+
+		uint zeroth_voxel_bits = 0xFFFFFFFFu >> (31-layer); // helper to find the threads
+																												// that need to actually
+																												// write to the output octree
+		if (layer == 0) zeroth_voxel_bits = 0u;
+
+		if ((pos & zeroth_voxel_bits) == uvec3(0))
+		{
+			output_octree[new_pool_index] = input_octree[old_pool_index];
+			if (layer != octree_depth-1)
+			{
+				output_octree[last_parent_pool_index].indirection = new_pool_index << 3;
+			}
+			last_parent_pool_index = new_pool_index;
+		}
+			
+		indirection = input_octree[old_pool_index].indirection;
+		if (indirection == 0) break;
+		layer--;
+	}
+	if (pos == uvec3(0))
+	{
+		last_pool_index = 0u;
+		for (int child = 0; child < 8; child++)
+		{
+			last_pool_index += defrag_accel_tree[child];
+		}
+	}
+	return;
+}
+
+
+void mainOld()
+{
+	octree_width = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+	//octree_width = 1u << octree_depth;
+	half_octree_width = int(octree_width >> 1);
+	//for (octree_depth = 1u; 1u << octree_depth != octree_width; octree_depth++);
+	octree_depth = 1;
+	while (1u << octree_depth != octree_width)
+	{
+		octree_depth++;
+	}
+
+	// calculate pos from instance index
+	uvec3 pos = uvec3(gl_GlobalInvocationID);
+
+	uint num_free_indices = 0;
+	int layer = octree_depth-1;
+	uint next_needed_pool_index = 0;
+	next_needed_pool_index |= ((pos.x >> layer) & 1u);
+	next_needed_pool_index |= ((pos.y >> layer) & 1u) << 1;
+	next_needed_pool_index |= ((pos.z >> layer) & 1u) << 2;
+	uint last_discovered_parent_pool_index;
+	uint i;
+	uint new_index = 0;
+	for (i = 0; i < pool_size; i++)
+	{
+		if (readFreelistBool(i))
+		{
+			num_free_indices++;
+			continue;
+		}
+		if (i == next_needed_pool_index)
+		{
+			// found the next index in the sequence, so we can move it back and start 
+			// searching for the next one
+
+			uint zeroth_voxel_bits = 0xFFFFFFFFu >> (31-layer); // helper to find the threads
+																													// that need to actually
+																													// write to the output octree
+			new_index = i - num_free_indices;
+			// only let one thread set the output octree values
+			if ((pos & zeroth_voxel_bits) == uvec3(0))
+			{
+				if (layer != octree_depth-2)
+				{
+					// root node wont have a parent
+					output_octree[last_discovered_parent_pool_index].indirection = (new_index >> 3);
+				}
+				output_octree[new_index].voxel_type = input_octree[i].voxel_type;
+			}
+			if (input_octree[i].indirection == 0)
+			{
+				// only let one thread set the output octree values
+				if ((pos & zeroth_voxel_bits) == uvec3(0))
+					output_octree[new_index].indirection = 0;
+				break;
+			}
+			else
+			{
+				layer--;
+				next_needed_pool_index = input_octree[i].indirection << 3;
+				next_needed_pool_index |= ((pos.x >> layer) & 1u);
+				next_needed_pool_index |= ((pos.y >> layer) & 1u) << 1;
+				next_needed_pool_index |= ((pos.z >> layer) & 1u) << 2;
+			}
+
+			last_discovered_parent_pool_index = new_index;
+		}
+	}
+	
+	findLastPoolIndex(new_index);
+	return;
+
+/*
+
+
+	uint indirection = 0;
+	uint current_node_index = 0;
+	int layer = int(octree_depth) - 1;
+	for (; layer >= 0;)
+	{
+		current_node_index = 0;
+		current_node_index |= ((pos.x >> layer) & 1u);
+		current_node_index |= ((pos.y >> layer) & 1u) << 1;
+		current_node_index |= ((pos.z >> layer) & 1u) << 2;
+		if (layer == 0) break;
+
+		if (readUniformityPool(indirection, current_node_index))
+		{
+			break;
+		}
+
+		uint next_indirection_pointer = readIndirectionPool(indirection, current_node_index);
+		if (next_indirection_pointer == 0)
+		{
+			break;
+		}
+		indirection = next_indirection_pointer;
+		layer--;
+	}
+	return (indirection << 3) + current_node_index;
+
+
+
+`
+
+	uint parent_old_index = 0;
+	uint parent_new_index = 0;
+	bool found_parent = false;
+	for (uint i = 0; i < pool_index; i++)
+	{
+		num_free_indices += readFreelist(i);
+		if (input_octree[i].indirection == pool_index/8)
+		{
+			parent_old_index = i;
+			parent_new_index = i - num_free_indices;
+			found_parent = true;
+		}
+	}
+	uint new_pool_index = pool_index - num_free_indices;
+	output_octree[new_pool_index].voxel_type = input_octree[pool_index].voxel_type;
+	if (readFreelistBool(pool_index))
+	{
+		if (found_parent && pool_index % 8 == 0)
+			output_octree[parent_new_index].indirection = 0;
+		return;
+	}
+	else
+	{
+		if (pool_index % 8 == 0)
+			output_octree[parent_new_index].indirection = new_pool_index;
+		findLastPoolIndex(new_pool_index);
+	}
+
+	return;
+*/
+}
+
+uint getExpandedPoolIndexByPosition(in uint depth, in uvec3 pos)
+{
+	uint base_offset = ((1 << (3*(depth-1))) - 1) / 7 * 8;
+	uint index = 0u;
+	for (int i = 0; i < 10; i++)
+	{
+		index = bitfieldInsert(index, bitfieldExtract(pos.x, i, 1), i*3, 1);
+		index = bitfieldInsert(index, bitfieldExtract(pos.y, i, 1), i*3+1, 1);
+		index = bitfieldInsert(index, bitfieldExtract(pos.z, i, 1), i*3+2, 1);
+	}
+	return base_offset + index;
+}
+
+
+uint readFreelist(in uint index)
+{
+/*
+	uint list_index = index >> 5;
+	int bit_offset = 31 - int(index & 31u);
+	return bitfieldExtract(freelist[list_index], bit_offset, 1);
+*/
+return 0;
+}
+
+
+bool readFreelistBool(in uint index)
+{
+	return (readFreelist(index) == 1u);
+}
+
+
+#ifdef POOP
+void findLastPoolIndex(in uint index)
+{
+	return;
+}
+#else
+// find the max index value across all threads
+shared uint local_max_index[WORKGROUP_SIZE];
+void findLastPoolIndex(in uint index)
+{
+	atomicMax(last_pool_index, index);
+	return;
+
+	uint local_id = gl_LocalInvocationID.x;  // local thread id
+
+	// load the thread value into shared memory
+	local_max_index[local_id] = index;
+	barrier();  // ensure all threads have written their values to local_max_index[]
+
+	// perform a reduction using a binary tree pattern
+	for (uint stride = 1; stride < gl_WorkGroupSize.x; stride *= 2) {
+		uint partner = local_id ^ stride;  // Find the partner thread
+
+		if (partner < gl_WorkGroupSize.x) {
+			local_max_index[local_id] = max(local_max_index[local_id], local_max_index[partner]);
+		}
+
+		barrier();  // Synchronize after each reduction step
+	}
+
+	// Write the final result to the output if localId is 0 (first thread in workgroup)
+	if (local_id == 0) {
+		//finalMax = localMax[0];  // Final maximum value for the workgroup
+		atomicMax(last_pool_index, local_max_index[0]);
+	}	
+}
+#endif

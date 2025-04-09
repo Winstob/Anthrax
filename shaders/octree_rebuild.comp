@@ -2,6 +2,9 @@
  * octree_rebuild.comp
  * Author: Gavin Ralston
  * Date Created: 2025-03-08
+ * 
+ * NOTE: Don't try to invoke this shader with octree depth = 0.
+ * Remember that the model starts at layer 1.
 \* ---------------------------------------------------------------- */
 #version 460
 
@@ -22,14 +25,14 @@ layout (std430, binding = 0) buffer octree_ssbo
 	OctreeNode octree[];
 };
 
-layout (std430, binding = 1) buffer freelist_ssbo
+layout (std430, binding = 1) buffer defrag_accel_tree_ssbo
 {
-	uint freelist[];
+	uint defrag_accel_tree[];
 };
 
-layout (std140, binding = 2) readonly uniform octree_depth_ubo
+layout (std140, binding = 2) readonly uniform num_octree_layers_ubo
 {
-	uint octree_depth_bad;
+	uint num_octree_layers;
 };
 
 uint getPoolIndex(in uint depth, in uvec3 pos);
@@ -37,6 +40,9 @@ uint readIndirectionPool(in uint base_location, in uint node_index);
 uint readUniformityPool(in uint base_location, in uint node_index);
 uint readVoxelTypePool(in uint base_location, in uint node_index);
 void insertFreelistVal(in uint index, in bool val);
+uint calculatePoolSize(in uint depth);
+uint calculateDefragAccelTreeOffset(in uint depth);
+void rebuildDefragAccelTree(in uint depth, in uvec3 pos);
 
 uint octree_depth;
 uint octree_width;
@@ -68,6 +74,8 @@ void main()
 	// loop through all children and check if they are of the same type
 	uint child_pool_index_base = getPoolIndex(octree_depth+1, pos*2);
 	uint voxel_type = octree[child_pool_index_base].voxel_type;
+	uint defrag_accel_tree_index = calculateDefragAccelTreeOffset(octree_depth)
+			+ pool_index;
 	bool can_merge = true;
 	for (uint child = 0; child < 8; child++)
 	{
@@ -75,25 +83,35 @@ void main()
 		    || octree[child_pool_index_base+child].indirection != 0)
 		{
 			can_merge = false;
-			break;
 		}
 	}
 	if (can_merge)
 	{
 		octree[pool_index].voxel_type = voxel_type;
 		octree[pool_index].indirection = 0;
+/*
 		for (uint child = 0; child < 8; child++)
 		{
 			insertFreelistVal(child_pool_index_base+child, true);
 			//octree[child_pool_index_base+child].voxel_type = 0;
 		}
+*/
+		defrag_accel_tree[defrag_accel_tree_index] = 1;
 	}
 	else
 	{
 		octree[pool_index].voxel_type = 0; // TODO: LOD?
 		octree[pool_index].indirection = child_pool_index_base >> 3;
+		defrag_accel_tree[defrag_accel_tree_index] = 0;
 	}
-	insertFreelistVal(pool_index, false);
+	//insertFreelistVal(pool_index, false);
+	
+	for (uint tmp_depth = num_octree_layers-1;
+	     tmp_depth > octree_depth;
+	     tmp_depth--)
+	{
+		rebuildDefragAccelTree(tmp_depth, pos);
+	}
 	
 	return;
 }
@@ -101,9 +119,11 @@ void main()
 
 uint getPoolIndex(in uint depth, in uvec3 pos)
 {
-	uint base_offset = ((1 << (3*(depth-1))) - 1) / 7 * 8;
+	//uint base_offset = ((1 << (3*(depth-1))) - 1) / 7 * 8;
+	uint base_offset = calculatePoolSize(depth-1);
 	uint index = 0u;
-	for (int i = 0; i < 10; i++)
+	//for (int i = 0; i < 10; i++)
+	for (int i = 0; i < depth; i++)
 	{
 		index = bitfieldInsert(index, bitfieldExtract(pos.x, i, 1), i*3, 1);
 		index = bitfieldInsert(index, bitfieldExtract(pos.y, i, 1), i*3+1, 1);
@@ -122,6 +142,7 @@ void insertFreelistVal(in uint index, in bool val)
 	int bit_offset = 31 - int(index & 31u);
 	freelist[list_index] = bitfieldInsert(freelist[list_index], bit, bit_offset, 1);
 */
+/*
 	uint list_index = index >> 5;
 	int bit_offset = 31 - int(index & 31u);
 	uint bitfield = bitfieldInsert(0u, 1, bit_offset, 1);
@@ -133,5 +154,48 @@ void insertFreelistVal(in uint index, in bool val)
 	{
 		atomicAnd(freelist[list_index], ~bitfield);
 	}
+	return;
+*/
+}
+
+
+uint calculatePoolSize(in uint depth)
+{
+	return ((1 << (3*depth)) - 1) / 7 * 8;
+}
+
+
+uint calculateDefragAccelTreeOffset(in uint depth)
+{
+	//uint previous_layer_pool_size = ((1 << (3*(depth-1))) - 1) / 7 * 8;
+/*
+	uint previous_layer_pool_size = calculatePoolSize(depth-1);
+	return (previous_layer_pool_size*(previous_layer_pool_size+1))/2;
+*/
+	// TODO: derecursivify this equation
+	uint ret = 0u;
+	for (uint i = 1; i < depth; i++)
+	{
+		ret += calculatePoolSize(i);
+	}
+	return ret;
+}
+
+
+void rebuildDefragAccelTree(in uint depth, in uvec3 pos)
+{
+	uint pool_index = calculateDefragAccelTreeOffset(depth);
+	pool_index += getPoolIndex(octree_depth, pos);	
+	//uint child_pool_base_index = calculateDefragAccelTreeOffset(depth+1);
+	uint child_pool_base_index = calculateDefragAccelTreeOffset(depth);
+	child_pool_base_index += getPoolIndex(octree_depth+1, pos*2);	
+	
+	uint num_free_indices = 0u;
+	for (uint child = 0; child < 8; child++)
+	{
+		num_free_indices += defrag_accel_tree[child_pool_base_index+child];
+	}
+	defrag_accel_tree[pool_index] = num_free_indices;
+
 	return;
 }

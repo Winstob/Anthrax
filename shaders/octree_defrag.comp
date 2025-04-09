@@ -5,11 +5,11 @@
 \* ---------------------------------------------------------------- */
 #version 460
 
-#define WORKGROUP_SIZE 64
+#define WORKGROUP_SIZE 2
 
 #define PI 3.14
 
-layout (local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = WORKGROUP_SIZE) in;
 
 struct OctreeNode
 {
@@ -27,14 +27,14 @@ layout (std430, binding = 1) writeonly coherent buffer output_octree_ssbo
 	OctreeNode output_octree[];
 };
 
-layout (std430, binding = 2) readonly buffer freelist_ssbo
+layout (std430, binding = 2) readonly buffer defrag_accel_tree_ssbo
 {
-	uint freelist[];
+	uint defrag_accel_tree[];
 };
 
 layout (std430, binding = 3) writeonly coherent buffer last_pool_index_ssbo
 {
-	uint last_pool_index;
+	uint first_pool_index;
 };
 
 layout (std140, binding = 4) readonly uniform pool_size_ubo
@@ -42,9 +42,18 @@ layout (std140, binding = 4) readonly uniform pool_size_ubo
 	uint pool_size;
 };
 
-uint readFreelist(in uint index);
-bool readFreelistBool(in uint index);
-void findLastPoolIndex(in uint index);
+uint getExpandedPoolIndexByPosition(in uint depth, in uvec3 pos);
+
+uint calculatePoolSize(in uint depth);
+uint calculateDefragAccelTreeOffset(in uint depth);
+uint calculateNumFreeIndicesInLayer(in int depth, in uvec3 pos);
+uint calculateNumFreeIndicesInFullLayer(in int depth);
+uint mortonOrder(in uvec3 pos);
+
+
+int octree_depth;
+uint octree_width;
+int half_octree_width;
 
 // There will be problems with octree_width values approaching UINT_MAX, but i really
 // dont think models that large will be rotated anyway.
@@ -53,120 +62,171 @@ void findLastPoolIndex(in uint index);
 // 32-bit unsigned ints.
 void main()
 {
+	octree_width = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+	//octree_width = 1u << octree_depth;
+	half_octree_width = int(octree_width >> 1);
+	//for (octree_depth = 1u; 1u << octree_depth != octree_width; octree_depth++);
+	octree_depth = 1;
+	while (1u << octree_depth != octree_width)
+	{
+		octree_depth++;
+	}
+
+	if (octree_depth == 1)
+	{
+		// no defragmentation can be done on an octree of this size, since it is the
+		// smallest possible octree and can have no merged children.
+		return;
+	}
+
 	// calculate pos from instance index
-	uint pool_index = uint(gl_GlobalInvocationID.x + WORKGROUP_SIZE*gl_GlobalInvocationID.y + WORKGROUP_SIZE*gl_NumWorkGroups.y*gl_GlobalInvocationID.z); 
-	//uint pool_index = uint(gl_GlobalInvocationID.x); // TODO: temp!
+	uvec3 pos = uvec3(gl_GlobalInvocationID);
 
-	// can exit early if this pool index has no value
-	/* no you cant stupid
-	if (readFreelistBool(pool_index))
+	// calculate the negative offset of the indirection pointers
+	// TODO: this calculation is done twice. Is there a way to only do it once?
+	uint indirection_neg_offset = 0u;
+	for (int i = octree_depth; i > 0; i--)
 	{
-		return;
+		indirection_neg_offset += calculateNumFreeIndicesInFullLayer(i);
 	}
-	*/
-	// gotta prevent those invalid memory accesses
-	if (pool_index >= pool_size)
+	indirection_neg_offset /= 8;
+
+	uint num_free_indices = 0u;
+	uint child_indirection = 0u;
+	uint new_pool_index = 0u;
+	uvec3 layer_pos = pos;
+	for (int depth = octree_depth;
+	     depth > 0;
+	     depth--)
 	{
-		return;
-	}
-
-
-
-
-	// TODO: fix everything so you can remove this
-	output_octree[pool_index] = input_octree[pool_index];
-	findLastPoolIndex(pool_index);
-return;
-
-
-
-
-
-
-
-
-
-	uint num_free_indices = 0;
-	uint parent_old_index = 0;
-	uint parent_new_index = 0;
-	bool found_parent = false;
-	for (uint i = 0; i < pool_index; i++)
-	{
-		num_free_indices += readFreelist(i);
-		if (input_octree[i].indirection == pool_index/8)
+		if (depth == 1
+		    || defrag_accel_tree[calculateDefragAccelTreeOffset(depth-1)+getExpandedPoolIndexByPosition(depth-1, layer_pos/2)] == 0)
 		{
-			parent_old_index = i;
-			parent_new_index = i - num_free_indices;
-			found_parent = true;
-		}
-	}
-	uint new_pool_index = pool_index - num_free_indices;
-	output_octree[new_pool_index].voxel_type = input_octree[pool_index].voxel_type;
-	if (readFreelistBool(pool_index))
-	{
-		if (found_parent && pool_index % 8 == 0)
-			output_octree[parent_new_index].indirection = 0;
-		return;
-	}
-	else
-	{
-		if (pool_index % 8 == 0)
-			output_octree[parent_new_index].indirection = new_pool_index;
-		findLastPoolIndex(new_pool_index);
-	}
-
-	return;
-}
-
-
-uint readFreelist(in uint index)
-{
-	uint list_index = index >> 5;
-	int bit_offset = 31 - int(index & 31u);
-	return bitfieldExtract(freelist[list_index], bit_offset, 1);
-}
-
-
-bool readFreelistBool(in uint index)
-{
-	return (readFreelist(index) == 1u);
-}
-
-
-#ifdef POOP
-void findLastPoolIndex(in uint index)
-{
-	return;
-}
-#else
-// find the max index value across all threads
-shared uint local_max_index[WORKGROUP_SIZE];
-void findLastPoolIndex(in uint index)
-{
-	atomicMax(last_pool_index, index);
-	return;
-
-	uint local_id = gl_LocalInvocationID.x;  // local thread id
-
-	// load the thread value into shared memory
-	local_max_index[local_id] = index;
-	barrier();  // ensure all threads have written their values to local_max_index[]
-
-	// perform a reduction using a binary tree pattern
-	for (uint stride = 1; stride < gl_WorkGroupSize.x; stride *= 2) {
-		uint partner = local_id ^ stride;  // Find the partner thread
-
-		if (partner < gl_WorkGroupSize.x) {
-			local_max_index[local_id] = max(local_max_index[local_id], local_max_index[partner]);
+			uint pool_index = getExpandedPoolIndexByPosition(depth, layer_pos);
+			new_pool_index = pool_index
+					+ num_free_indices
+					+ calculateNumFreeIndicesInLayer(depth, layer_pos);
+			//new_pool_index = pool_index; // test: no defragmentation
+			output_octree[new_pool_index].voxel_type = input_octree[pool_index].voxel_type;
+			output_octree[new_pool_index].indirection = child_indirection;
+			// TODO: why does this happen?
+			if (input_octree[pool_index].indirection == 0u)
+				output_octree[new_pool_index].indirection = 0u;
 		}
 
-		barrier();  // Synchronize after each reduction step
+		if ((layer_pos & 1u) != uvec3(0u))
+		{
+			return;
+		}
+		//child_indirection = new_pool_index / 8;
+		child_indirection = new_pool_index / 8 - indirection_neg_offset;
+
+		num_free_indices += calculateNumFreeIndicesInFullLayer(depth);
+		layer_pos = (layer_pos >> 1);
 	}
 
-	// Write the final result to the output if localId is 0 (first thread in workgroup)
-	if (local_id == 0) {
-		//finalMax = localMax[0];  // Final maximum value for the workgroup
-		atomicMax(last_pool_index, local_max_index[0]);
-	}	
+	if (pos == uvec3(0u))
+	{
+		first_pool_index = new_pool_index;
+		//first_pool_index = indirection_neg_offset*8;
+	}
+
+	return;
 }
-#endif
+
+
+uint getExpandedPoolIndexByPosition(in uint depth, in uvec3 pos)
+{
+	//uint base_offset = ((1 << (3*(depth-1))) - 1) / 7 * 8;
+	uint base_offset = calculatePoolSize(depth-1);
+	uint index = 0u;
+	for (int i = 0; i < depth; i++)
+	{
+		index = bitfieldInsert(index, bitfieldExtract(pos.x, i, 1), i*3, 1);
+		index = bitfieldInsert(index, bitfieldExtract(pos.y, i, 1), i*3+1, 1);
+		index = bitfieldInsert(index, bitfieldExtract(pos.z, i, 1), i*3+2, 1);
+	}
+	return base_offset + index;
+}
+
+
+uint calculatePoolSize(in uint depth)
+{
+	return ((1 << (3*depth)) - 1) / 7 * 8;
+}
+
+
+uint calculateDefragAccelTreeOffset(in uint depth)
+{
+	//uint previous_layer_pool_size = ((1 << (3*(depth-1))) - 1) / 7 * 8;
+/*
+	uint previous_layer_pool_size = calculatePoolSize(depth-1);
+	return (previous_layer_pool_size*(previous_layer_pool_size+1))/2;
+*/
+	// TODO: derecursivify this equation
+	uint ret = 0u;
+	for (uint i = 1; i < depth; i++)
+	{
+		ret += calculatePoolSize(i);
+	}
+	return ret;
+}
+
+
+uint calculateNumFreeIndicesInLayer(in int depth, in uvec3 pos)
+{
+	// need to go up a layer. The acceleration tree essentially tracks the
+	// number of merged nodes in any given layer, so the bottom layer will
+	// not actually have any data, instead it will be stored by its parent.
+	// This value then needs to be multiplied by 8 since there are 8 children.
+	depth--;
+	pos /= 2;
+
+	if (depth == 0)
+		return 0;
+
+	uint num_free_indices = 0u;
+	uint offset = calculateDefragAccelTreeOffset(depth);
+	for (int sub_depth = 1; sub_depth <= depth; sub_depth++)
+	{
+		uvec3 layer_pos = (pos >> (depth-sub_depth));
+		uint sub_index = getExpandedPoolIndexByPosition(sub_depth, (layer_pos & (~1u)));
+		uint this_child = mortonOrder(layer_pos & 1u);
+		for (uint child = 7; child > this_child; child--)
+		{
+			num_free_indices += defrag_accel_tree[offset+sub_index+child];
+		}
+	}
+	return num_free_indices*8;
+}
+
+
+uint calculateNumFreeIndicesInFullLayer(in int depth)
+{
+	// NOTE: this function can only be called when depth >= 2. Octrees must
+	// always be at least 1 layer deep, and since the merged node data is stored
+	// by the parent, depth 1 will have no data.
+	if (depth < 2)
+		return 0u;
+
+	uint num_free_indices = 0u;
+	uint offset = calculateDefragAccelTreeOffset(depth-1);
+	for (uint child = 0; child < 8; child++)
+	{
+		num_free_indices += defrag_accel_tree[offset+child];
+	}
+	return num_free_indices*8;
+}
+
+
+uint mortonOrder(in uvec3 pos)
+{
+	uint ret = 0u;
+	for (int i = 0; i < 10; i++)
+	{
+		ret = bitfieldInsert(ret, bitfieldExtract(pos.x, i, 1), i*3, 1);
+		ret = bitfieldInsert(ret, bitfieldExtract(pos.y, i, 1), i*3+1, 1);
+		ret = bitfieldInsert(ret, bitfieldExtract(pos.z, i, 1), i*3+2, 1);
+	}
+	return ret;
+}

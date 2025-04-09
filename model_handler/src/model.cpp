@@ -385,6 +385,7 @@ void Model::rotationStuffSetup()
 	vkResetFences(anthrax_gpu->logical, 1, &rotation_stuff_.fence);
 
 	rotation_stuff_.buffer_size = 64;
+	rotation_stuff_.max_octree_elements = 8;
 	recreateRotationShaders();
 
 	return;
@@ -392,8 +393,10 @@ void Model::rotationStuffSetup()
 
 void Model::rotateGPU(Quaternion quat)
 {
-	int octree_layers = octree_->getLayer();
 	std::lock_guard<std::mutex> guard(rotation_stuff_.mutex);
+
+	int octree_layers = octree_->getLayer();
+	unsigned int octree_width = 1u << octree_layers;
 
 	vkResetCommandBuffer(rotation_stuff_.command_buffer, 0);
 	VkCommandBufferBeginInfo begin_info{};
@@ -412,14 +415,14 @@ void Model::rotateGPU(Quaternion quat)
 	//   (2^{3n}-1)/7*8
 	// where n represents the depth of the octree (width = 2^n). We must also multiply this
 	// by the size of a single element to get the maximum size of the buffer.
-	size_t necessary_buffer_size = ((1 << (3*octree_layers)) - 1) / 7 * 8;
-	necessary_buffer_size *= sizeof(Octree::OctreeNode);
-	if (necessary_buffer_size > rotation_stuff_.buffer_size)
+	size_t max_octree_elements = ((1 << (3*octree_layers)) - 1) / 7 * 8;
+	if (max_octree_elements > rotation_stuff_.max_octree_elements)
 	{
 		// initialize (or recreate) the shader module if needed
-		rotation_stuff_.buffer_size = necessary_buffer_size;
+		rotation_stuff_.max_octree_elements = max_octree_elements;
+		rotation_stuff_.buffer_size = max_octree_elements * sizeof(Octree::OctreeNode);
 		recreateRotationShaders();
-		std::cout << "recreating buffers with size " << (necessary_buffer_size >> 20) << "MB (width " << octree_width_ << ")" << std::endl;
+		//std::cout << "recreating buffers with size " << (necessary_buffer_size >> 20) << "MB (width " << octree_width_ << ")" << std::endl;
 	}
 
 	// copy octree over to gpu memory
@@ -448,7 +451,6 @@ void Model::rotateGPU(Quaternion quat)
 	// stage 1: populate lowest layer octree data
 	rotation_stuff_.shader_manager.selectDescriptor(0);
 	//rotation_stuff_.shader_manager.recordCommandBuffer(rotation_stuff_.command_buffer, octree_width_/2, octree_width_/2, octree_width_/2);
-	unsigned int octree_width = 1u << octree_layers;
 	rotation_stuff_.shader_manager.recordCommandBufferNoBegin(rotation_stuff_.command_buffer, octree_width/2, octree_width/2, octree_width/2);
 
 	Timer timer;
@@ -482,23 +484,25 @@ void Model::rotateGPU(Quaternion quat)
 				0, nullptr,
 				1, &(rotation_stuff_.gpu_mem_barrier),
 				0, nullptr);
+		vkCmdPipelineBarrier(rotation_stuff_.command_buffer,
+				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+				0,
+				0, nullptr,
+				1, &(rotation_stuff_.defrag_accel_tree_mem_barrier),
+				0, nullptr);
 	}
 	
 	// stage 3: defragment
-	// TODO: fix these work group sizes to be better
-	size_t x_work_group_size = 64;
-	size_t yz_work_groups = rotation_stuff_.buffer_size/sizeof(Octree::OctreeNode)/x_work_group_size + 1;
-	size_t y_work_groups = (yz_work_groups <= 32) ? yz_work_groups : 32;
-	size_t z_work_groups = yz_work_groups/y_work_groups + 1;
 	rotation_stuff_.octree_defrag_shader.selectDescriptor(0);
-	*(reinterpret_cast<uint32_t*>(rotation_stuff_.last_pool_index_ssbo.getMappedPtr()))
+	*(reinterpret_cast<uint32_t*>(rotation_stuff_.first_pool_index_ssbo.getMappedPtr()))
 			= 0;
-	rotation_stuff_.last_pool_index_ssbo.flush();
+	rotation_stuff_.first_pool_index_ssbo.flush();
 	*(reinterpret_cast<uint32_t*>(rotation_stuff_.pool_size_ubo.getMappedPtr()))
-			= rotation_stuff_.buffer_size/sizeof(Octree::OctreeNode);
+			= rotation_stuff_.max_octree_elements;
 	rotation_stuff_.pool_size_ubo.flush();
-	rotation_stuff_.octree_defrag_shader.recordCommandBufferNoBegin(rotation_stuff_.command_buffer, 1, y_work_groups, z_work_groups);
-	//rotation_stuff_.octree_defrag_shader.recordCommandBufferNoBegin(rotation_stuff_.command_buffer, rotation_stuff_.buffer_size/sizeof(Octree::OctreeNode)/64, 1, 1);
+	rotation_stuff_.octree_defrag_shader.recordCommandBufferNoBegin(rotation_stuff_.command_buffer, octree_width/2, octree_width/2, octree_width/2);
+	//rotation_stuff_.octree_defrag_shader.recordCommandBufferNoBegin(rotation_stuff_.command_buffer, rotation_stuff_.max_octree_elements/64, 1, 1);
 
 	// ensure the compute shaders have fully written the data to the buffer before reading
 	vkCmdPipelineBarrier(rotation_stuff_.command_buffer,
@@ -524,18 +528,22 @@ void Model::rotateGPU(Quaternion quat)
 	vkResetFences(anthrax_gpu->logical, 1, &rotation_stuff_.fence);
 
 	// copy octree data back to the octree member on the cpu
-	rotation_stuff_.last_pool_index_ssbo.unmap();
-	rotation_stuff_.last_pool_index_ssbo.map();
-	uint32_t new_size = *(reinterpret_cast<uint32_t*>(rotation_stuff_.last_pool_index_ssbo.getMappedPtr()))+1;
+	rotation_stuff_.first_pool_index_ssbo.unmap();
+	rotation_stuff_.first_pool_index_ssbo.map();
+	uint32_t new_pool_start = *(reinterpret_cast<uint32_t*>(rotation_stuff_.first_pool_index_ssbo.getMappedPtr()));
 	rotation_stuff_.cpu_ssbo.map();
 	Octree::OctreeNode *octree_data = reinterpret_cast<Octree::OctreeNode*>(rotation_stuff_.cpu_ssbo.getMappedPtr());
 	octree_->clear();
 	octree_->layer_ = octree_layers;
-	octree_->octree_pool_->resize(new_size);
-	memcpy(octree_->octree_pool_->data(), octree_data, new_size*sizeof(Octree::OctreeNode));
+	uint32_t num_elements = rotation_stuff_.max_octree_elements - new_pool_start;
+	octree_->octree_pool_->resize(num_elements);
+	//TODO: fix name for new_size and first_pool_index_ssbo
+	//memcpy(octree_->octree_pool_->data(), octree_data, new_size*sizeof(Octree::OctreeNode));
+	memcpy(octree_->octree_pool_->data(), octree_data+new_pool_start, (num_elements)*sizeof(Octree::OctreeNode));
 	//octree_->pool_freelist_->setRange(0, new_size, true); // TODO implement this!!!!
 	rotation_stuff_.cpu_ssbo.unmap();
-	std::cout << (new_size*sizeof(Octree::OctreeNode) >> 10) << "KB" << std::endl;
+	std::cout << "Expanded size: " << (rotation_stuff_.max_octree_elements*sizeof(Octree::OctreeNode) >> 10) << "KB" << std::endl;
+	std::cout << "Defragmented size: " << (num_elements*sizeof(Octree::OctreeNode) >> 10) << "KB" << std::endl;
 
 	std::cout << "Time to rotate model (width " << (1u << octree_layers) << "): " << timer.stop() << "ms" << std::endl;
 	old_rotation_ = quat;
@@ -558,12 +566,13 @@ void Model::recreateRotationShaders()
 	if (rotation_stuff_.gpu_ssbo.initialized())
 		rotation_stuff_.gpu_ssbo.destroy();
 
-	if (rotation_stuff_.freelist_ssbo.initialized())
-		rotation_stuff_.freelist_ssbo.destroy();
+	if (rotation_stuff_.defrag_accel_tree_ssbo.initialized())
+		rotation_stuff_.defrag_accel_tree_ssbo.destroy();
 
 	rotation_stuff_.cpu_ssbo = Buffer(
 			*anthrax_gpu,
-			rotation_stuff_.buffer_size,
+			//rotation_stuff_.buffer_size,
+			rotation_stuff_.max_octree_elements * sizeof(Octree::OctreeNode),
 			Buffer::STORAGE_TYPE,
 			0,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
@@ -571,14 +580,17 @@ void Model::recreateRotationShaders()
 	rotation_stuff_.cpu_ssbo.unmap();
 	rotation_stuff_.gpu_ssbo = Buffer(
 			*anthrax_gpu,
-			rotation_stuff_.buffer_size,
+			//rotation_stuff_.buffer_size,
+			rotation_stuff_.max_octree_elements * sizeof(Octree::OctreeNode),
 			Buffer::STORAGE_TYPE,
 			0,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 			);
-	rotation_stuff_.freelist_ssbo = Buffer(
+	rotation_stuff_.defrag_accel_tree_ssbo = Buffer(
 			*anthrax_gpu,
-			rotation_stuff_.buffer_size / sizeof(Octree::OctreeNode) / 8,
+			// TODO: this actually doesnt need to be quite this big. figure out a
+			// fast algorithm to compute the actual size.
+			rotation_stuff_.max_octree_elements * sizeof(IndirectionElement),
 			Buffer::STORAGE_TYPE,
 			0,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
@@ -604,9 +616,9 @@ void Model::recreateRotationShaders()
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 				);
 	}
-	if (!rotation_stuff_.last_pool_index_ssbo.initialized())
+	if (!rotation_stuff_.first_pool_index_ssbo.initialized())
 	{
-		rotation_stuff_.last_pool_index_ssbo = Buffer(
+		rotation_stuff_.first_pool_index_ssbo = Buffer(
 				*anthrax_gpu,
 				4,
 				Buffer::STORAGE_TYPE,
@@ -631,7 +643,7 @@ void Model::recreateRotationShaders()
 	images.clear();
 	buffers.push_back(rotation_stuff_.cpu_ssbo);
 	buffers.push_back(rotation_stuff_.gpu_ssbo);
-	buffers.push_back(rotation_stuff_.freelist_ssbo);
+	buffers.push_back(rotation_stuff_.defrag_accel_tree_ssbo);
 	buffers.push_back(rotation_stuff_.rotation_angles_ubo);
 	buffers.push_back(rotation_stuff_.octree_depth_ubo);
 	rotation_stuff_.shader_descriptors.clear();
@@ -650,7 +662,7 @@ void Model::recreateRotationShaders()
 	buffers.clear();
 	images.clear();
 	buffers.push_back(rotation_stuff_.gpu_ssbo);
-	buffers.push_back(rotation_stuff_.freelist_ssbo);
+	buffers.push_back(rotation_stuff_.defrag_accel_tree_ssbo);
 	buffers.push_back(rotation_stuff_.octree_depth_ubo);
 	rotation_stuff_.octree_rebuild_descriptors.clear();
 	rotation_stuff_.octree_rebuild_descriptors.push_back(Descriptor(*anthrax_gpu,
@@ -669,8 +681,8 @@ void Model::recreateRotationShaders()
 	images.clear();
 	buffers.push_back(rotation_stuff_.gpu_ssbo);
 	buffers.push_back(rotation_stuff_.cpu_ssbo);
-	buffers.push_back(rotation_stuff_.freelist_ssbo);
-	buffers.push_back(rotation_stuff_.last_pool_index_ssbo);
+	buffers.push_back(rotation_stuff_.defrag_accel_tree_ssbo);
+	buffers.push_back(rotation_stuff_.first_pool_index_ssbo);
 	buffers.push_back(rotation_stuff_.pool_size_ubo);
 	rotation_stuff_.octree_defrag_descriptors.clear();
 	rotation_stuff_.octree_defrag_descriptors.push_back(Descriptor(*anthrax_gpu,
@@ -712,12 +724,23 @@ void Model::recreateRotationShaders()
 	rotation_stuff_.gpu_to_cpu_mem_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
 	rotation_stuff_.gpu_to_cpu_mem_barrier.pNext = nullptr;
 	rotation_stuff_.gpu_to_cpu_mem_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;  // Wait for the write access from the first shader
-	rotation_stuff_.gpu_to_cpu_mem_barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;   // Ensure that second shader can read the data
+	rotation_stuff_.gpu_to_cpu_mem_barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;   // Ensure that host can read the data
 	rotation_stuff_.gpu_to_cpu_mem_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	rotation_stuff_.gpu_to_cpu_mem_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	rotation_stuff_.gpu_to_cpu_mem_barrier.buffer = rotation_stuff_.cpu_ssbo.data();  // The buffer being written by the first shader
 	rotation_stuff_.gpu_to_cpu_mem_barrier.offset = 0;       // Offset into the buffer
 	rotation_stuff_.gpu_to_cpu_mem_barrier.size = VK_WHOLE_SIZE;  // Size of the entire buffer
+																																//
+	rotation_stuff_.defrag_accel_tree_mem_barrier = {};
+	rotation_stuff_.defrag_accel_tree_mem_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	rotation_stuff_.defrag_accel_tree_mem_barrier.pNext = nullptr;
+	rotation_stuff_.defrag_accel_tree_mem_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;  // Wait for the write access from the first shader
+	rotation_stuff_.defrag_accel_tree_mem_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;   // Ensure that second shader can read the data
+	rotation_stuff_.defrag_accel_tree_mem_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	rotation_stuff_.defrag_accel_tree_mem_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	rotation_stuff_.defrag_accel_tree_mem_barrier.buffer = rotation_stuff_.defrag_accel_tree_ssbo.data();  // The buffer being written by the first shader
+	rotation_stuff_.defrag_accel_tree_mem_barrier.offset = 0;       // Offset into the buffer
+	rotation_stuff_.defrag_accel_tree_mem_barrier.size = VK_WHOLE_SIZE;  // Size of the entire buffer
 
 
 	return;
