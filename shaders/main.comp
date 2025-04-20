@@ -21,7 +21,7 @@
 #define NUM_MASKS_PER_ELEMENT 10 // ceil(UINT_BITS/MASK_SIZE)
 #define NUM_MLI_PER_ELEMENT 16 // ceil(UINT_BITS/MASKLIST_INDEX_SIZE)
 
-//#define VISUALIZE_INTERSECTIONS 150
+#define VISUALIZE_INTERSECTIONS 150
 
 layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = 1) in;
 
@@ -168,11 +168,6 @@ void main()
 	//voxel_type = rayMarch(ray);
 	voxel_type = rayMarchHero(ray);
 	color = materials[voxel_type].color;
-#ifdef VISUALIZE_INTERSECTIONS
-	vec4 intersections_visualization = vec4(vec3(float(ray.num_intersections)/VISUALIZE_INTERSECTIONS), 1.0);
-	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), intersections_visualization);
-	return;
-#endif // VISUALIZE_INTERSECTIONS
 	/*
 	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.world_location.dec_component, 1.0));
 	return;
@@ -186,12 +181,17 @@ void main()
 		color *= 0.5;
 		color.w = 1.0;
 	}
-	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), color);
 	//if (voxel_type != 0) imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.world_location.dec_component, 1.0));
 	//max_steps = 32;
 	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec3(float(num_steps)/float(max_steps)), 1.0));
 	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec3(ray.distance_traveled/float(1u<<(LOG2K*num_layers))), 1.0));
 	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.direction, 1.0));
+#ifdef VISUALIZE_INTERSECTIONS
+	vec4 intersections_visualization = vec4(vec3(float(ray.num_intersections)/VISUALIZE_INTERSECTIONS), 1.0);
+	color += intersections_visualization;
+#endif // VISUALIZE_INTERSECTIONS
+
+	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), color);
 	return;
 }
 

@@ -9,6 +9,8 @@
 
 #define PI 3.14
 
+//#define DISABLE
+
 layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = WORKGROUP_SIZE) in;
 
 struct OctreeNode
@@ -99,27 +101,29 @@ void main()
 	     depth > 0;
 	     depth--)
 	{
-		if (depth == 1
-		    || defrag_accel_tree[calculateDefragAccelTreeOffset(depth-1)+getExpandedPoolIndexByPosition(depth-1, layer_pos/2)] == 0)
+		if (depth == 1 || input_octree[getExpandedPoolIndexByPosition(depth-1, layer_pos/2)].indirection != 0)
 		{
 			uint pool_index = getExpandedPoolIndexByPosition(depth, layer_pos);
 			new_pool_index = pool_index
 					+ num_free_indices
 					+ calculateNumFreeIndicesInLayer(depth, layer_pos);
-			//new_pool_index = pool_index; // test: no defragmentation
+#ifdef DISABLE
+			new_pool_index = pool_index; // test: no defragmentation
+#endif // DISABLE
 			output_octree[new_pool_index].voxel_type = input_octree[pool_index].voxel_type;
 			output_octree[new_pool_index].indirection = child_indirection;
-			// TODO: why does this happen?
-			if (input_octree[pool_index].indirection == 0u)
-				output_octree[new_pool_index].indirection = 0u;
+
+#ifdef DISABLE
+			child_indirection = new_pool_index / 8;
+#else
+			child_indirection = new_pool_index / 8 - indirection_neg_offset;
+#endif // DISABLE
 		}
 
 		if ((layer_pos & 1u) != uvec3(0u))
 		{
 			return;
 		}
-		//child_indirection = new_pool_index / 8;
-		child_indirection = new_pool_index / 8 - indirection_neg_offset;
 
 		num_free_indices += calculateNumFreeIndicesInFullLayer(depth);
 		layer_pos = (layer_pos >> 1);
@@ -128,7 +132,6 @@ void main()
 	if (pos == uvec3(0u))
 	{
 		first_pool_index = new_pool_index;
-		//first_pool_index = indirection_neg_offset*8;
 	}
 
 	return;
