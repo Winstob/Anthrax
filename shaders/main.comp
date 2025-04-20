@@ -168,6 +168,9 @@ void main()
 	//voxel_type = rayMarch(ray);
 	voxel_type = rayMarchHero(ray);
 	color = materials[voxel_type].color;
+#ifdef VISUALIZE_INTERSECTIONS
+	vec4 intersections_visualization = vec4(vec3(float(ray.num_intersections)/VISUALIZE_INTERSECTIONS), 1.0);
+#endif // VISUALIZE_INTERSECTIONS
 	/*
 	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.world_location.dec_component, 1.0));
 	return;
@@ -187,7 +190,6 @@ void main()
 	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec3(ray.distance_traveled/float(1u<<(LOG2K*num_layers))), 1.0));
 	//imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(ray.direction, 1.0));
 #ifdef VISUALIZE_INTERSECTIONS
-	vec4 intersections_visualization = vec4(vec3(float(ray.num_intersections)/VISUALIZE_INTERSECTIONS), 1.0);
 	color += intersections_visualization;
 #endif // VISUALIZE_INTERSECTIONS
 

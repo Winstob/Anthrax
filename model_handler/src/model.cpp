@@ -75,9 +75,13 @@ void Model::copy(const Model& other)
 
 void Model::setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type)
 {
+	uint32_t new_x, new_y, new_z;
+	Octree::convertToUnsignedLoc(octree_->getLayer(),
+			x, y, z,
+			&new_x, &new_y, &new_z);
 	if (original_octree_)
 	{
-		original_octree_->setVoxel(x, y, z, material_type);
+		original_octree_->setVoxel(new_x, new_y, new_z, material_type);
 	}
 	else
 	{
@@ -86,7 +90,7 @@ void Model::setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type)
 
 	if (octree_)
 	{
-		octree_->setVoxel(x, y, z, material_type);
+		octree_->setVoxel(new_x, new_y, new_z, material_type);
 	}
 	else
 	{
@@ -110,9 +114,9 @@ void Model::rotate(Quaternion quat)
 			lowest_rotated_layer_ > precision;
 			lowest_rotated_layer_--)
 	{
-		octree_->setSplitMode(Octree::SPLIT_MODE_AIRFILL);
+		octree_->setSplitMode(Octree::SplitMode::AIRFILL);
 		rotateOnLayer(quat, lowest_rotated_layer_-1);
-		octree_->setSplitMode(Octree::SPLIT_MODE_NORMAL);
+		octree_->setSplitMode(Octree::SplitMode::NORMAL);
 	}
 	return;
 }
@@ -120,6 +124,10 @@ void Model::rotate(Quaternion quat)
 
 void Model::rotateOnLayer(Quaternion quat, int layer)
 {
+	// TODO: update cpu rotation to use unsigned octree
+
+
+
 	if (layer >= original_octree_->getLayer())
 	{
 		return;

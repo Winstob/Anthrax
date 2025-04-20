@@ -19,4 +19,11 @@ unsigned int log2(unsigned int val)
 	return ret;
 }
 
+
+uint32_t int32ToUint32(int32_t in)
+{
+	return (in < 0) ? (0x7FFFFFFF - abs(in)) : (0x80000000 | in);
+}
+
+
 } // namespace Anthrax

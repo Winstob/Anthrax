@@ -42,10 +42,7 @@ public:
 	// TODO: variable buffers/descriptors?
 
 	void generate();
-	void setVoxel(int32_t x, int32_t y, int32_t z, int32_t voxel_type)
-	{
-		octree_->setVoxel(x, y, z, voxel_type);
-	}
+	void setVoxel(int32_t x, int32_t y, int32_t z, int32_t voxel_type);
 	void clear() { octree_->clear(); }
 	void addModel(Model *model, int32_t x_offset, int32_t y_offset,
 			int32_t z_offset);

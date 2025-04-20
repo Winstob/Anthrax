@@ -198,7 +198,7 @@ void GltfHandler::insertMesh(Node node)
 							vertex_indices[current_vertex_index] = std::any_cast<unsigned int>((*indices_accessor)[j*3+current_vertex_index]);
 							break;
 						default:
-							throw std::runtime_error("Invalid incides accessor component_type!");
+							throw std::runtime_error("Invalid indices accessor component_type!");
 					}
 				}
 				// find the vertex positions

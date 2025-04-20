@@ -16,212 +16,141 @@
 namespace Anthrax
 {
 
-Octree::Octree(Octree *parent, int layer, int this_child_index)
+Octree::Octree(int num_layers)
 {
-	parent_ = parent;
-	layer_ = layer;
-	this_child_index_ = this_child_index;
+	pool_freelist_ = new Freelist();
+	octree_pool_ = new std::vector<OctreeNode>();
+	layer_ = num_layers;
+	split_mode_ = SplitMode::NORMAL;
 
-	if (isRoot())
+	if (pool_freelist_->alloc() != 0)
 	{
-		// This is the root octree node - need to set up buffers
-		pool_freelist_ = new Freelist();
-		octree_pool_ = new std::vector<OctreeNode>();
-		split_mode_ = new SplitMode(SPLIT_MODE_NORMAL);
+		throw std::runtime_error("Octree freelist generated incorrectly!");
 	}
-	else
+	octree_pool_->resize(8);
+	for (unsigned int i = 0; i < 8; i++)
 	{
-		pool_freelist_ = parent_->pool_freelist_;
-		octree_pool_ = parent_->octree_pool_;
-		split_mode_ = parent_->split_mode_;
-	}
-	pool_index_ = pool_freelist_->alloc();
-	if (isRoot() && pool_index_ != 0)
-	{
-		throw std::runtime_error("Pool index of Octree root node is not 0!");
-	}
-	// Ensure pools have sufficient sizes
-	if (octree_pool_->size() <= pool_index_*8)
-	{
-		octree_pool_->resize((pool_index_+1)*8);
+		(*octree_pool_)[i].indirection = 0;
+		(*octree_pool_)[i].voxel_type = 0;
 	}
 
-	if (!isRoot())
-	{
-		//parent_->setIndirection(this_child_index_, pool_index_);
-		setIndirection(this_child_index_, pool_index_);
-	}
-
-	setUniformity(true);
-	setMaterialType(0);
-	children_ = nullptr;
-
-	if (isRoot())
-	{
-		split();
-	}
 	return;
 }
 
 
 Octree::~Octree()
 {
-	if (children_)
-	{
-		for (unsigned int i = 0; i < 8; i++)
-			children_[i].~Octree();
-		free(children_);
-		children_ = nullptr;
-	}
-	pool_freelist_->free(pool_index_);
-	if (isRoot())
-	{
-		delete pool_freelist_;
-		delete octree_pool_;
-		delete split_mode_;
-	}
+	delete pool_freelist_;
+	delete octree_pool_;
 	return;
 }
 
 
 void Octree::copy(const Octree& other)
 {
+	// TODO
 	// NOTE: shallow copy
 	layer_ = other.layer_;
-	parent_ = other.parent_;
-	children_ = other.children_;
 	split_mode_ = other.split_mode_;
 
 	pool_freelist_ = other.pool_freelist_;
 	octree_pool_ = other.octree_pool_;
-	pool_index_ = other.pool_index_;
 	return;
 }
 
 
 void Octree::clear()
 {
-	if (isRoot())
+	octree_pool_->resize(8);
+	pool_freelist_->clear();
+	if (pool_freelist_->alloc() != 0)
 	{
-		for (unsigned int i = 0; i < 8; i++)
-		{
-			children_[i].clear();
-		}
+		throw std::runtime_error("Octree freelist regenerated incorrectly!");
 	}
-	else
+	for (int i = 0; i < 8; i++)
 	{
-		if (children_)
-		{
-			for (unsigned int i = 0; i < 8; i++)
-				children_[i].~Octree();
-			free(children_);
-			children_ = nullptr;
-		}
-		setMaterialType(0);
-		setUniformity(true);
+		(*octree_pool_)[i].indirection = 0;
+		(*octree_pool_)[i].voxel_type = 0;
 	}
+	
 	return;
 }
 
 
-void Octree::setVoxel(int32_t x, int32_t y, int32_t z, uint16_t material_type)
+void Octree::setVoxel(uint32_t x, uint32_t y, uint32_t z, VoxelTypeElement voxel_type)
 {
-	return setVoxelAtLayer(x, y, z, material_type, 0);
+	return setVoxelAtLayer(x, y, z, voxel_type, 0);
 }
 
 
 /* ---------------------------------------------------------------- *\
  * Set a voxel at a specific layer/precision. The octree is treated
  * as if <layer> was layer 0, and coordinates are adjusted
- * accordingly. Beware that this will remove any octree data at a
- * lower precision.
+ * accordingly. Beware that this will remove any octree data at
+ * lower layers.
 \* ---------------------------------------------------------------- */
-void Octree::setVoxelAtLayer(int32_t x, int32_t y, int32_t z,
-		uint16_t material_type, int layer)
+void Octree::setVoxelAtLayer(uint32_t x, uint32_t y, uint32_t z,
+		VoxelTypeElement voxel_type, int layer)
 {
-	if (layer < 0)
+	layer = layer_ - layer - 1;
+	if (layer > layer_)
 	{
-		throw std::runtime_error("Cannot set voxel at layer with negative value!");
+		throw std::runtime_error("Layer must be at most num_layers of octree!");
 	}
+	IndirectionElement indirection = 0;
+	IndirectionElement pool_index;
+	for (; layer >= 0; layer--)
+	{
+		uint32_t tmp_x = x >> layer;
+		uint32_t tmp_y = y >> layer;
+		uint32_t tmp_z = z >> layer;
+		//IndirectionElement child = (x & 1u) | ((y & 1u) << 1) | ((z & 1u) << 2);
+		IndirectionElement child = (tmp_x & 1u) | ((tmp_y & 1u) << 1) | ((tmp_z & 1u) << 2);
+		pool_index = (indirection << 3) | child;
+		if (layer == 0)
+			break;
 
-	if (isUniform() && material_type == getMaterialType())
-	{
-		// no change
-		return;
+		IndirectionElement next_indirection = (*octree_pool_)[pool_index].indirection;
+		if (next_indirection == 0)
+		{
+			VoxelTypeElement old_voxel_type = (*octree_pool_)[pool_index].voxel_type;
+			if (old_voxel_type == voxel_type)
+			{
+				// Nothing to be done here
+				return;
+			}
+			next_indirection = pool_freelist_->alloc();
+			if (octree_pool_->size() < (next_indirection<<3)+8)
+			{
+				octree_pool_->resize((next_indirection<<3)+8);
+			}
+			(*octree_pool_)[pool_index].indirection = next_indirection;
+			// inherit the child voxel types from the split parent
+			for (IndirectionElement child_pool_index = (next_indirection << 3);
+			     child_pool_index < (next_indirection << 3)+8;
+			     child_pool_index++)
+			{
+				(*octree_pool_)[child_pool_index].indirection = 0;
+				(*octree_pool_)[child_pool_index].voxel_type = old_voxel_type;
+			}
+		}
+		indirection = next_indirection;
 	}
-	if (layer_ == layer)
+	(*octree_pool_)[pool_index].voxel_type = voxel_type;
+	// now clear out data at layers underneath this, if needed
+	if ((*octree_pool_)[pool_index].indirection != 0)
 	{
-		if (x != 0 || y != 0 || z != 0)
-		{
-			throw std::runtime_error("setVoxel() out of bounds of octree!");
-		}
-		clear();
-		setMaterialType(material_type);
-		if (parent_)
-		{
-			parent_->simpleUpdateLOD();
-			parent_->simpleMerge(); // NOTE: this always has to come last since it
-															// might destroy this octree object
-		}
-		return;
+		// TODO
+		(*octree_pool_)[pool_index].indirection = 0;
 	}
-	else
-	{
-		if (isUniform())
-		{
-			split();
-		}
-		int relative_layer = layer_ - layer;
-		unsigned int quarter_axis_size;
-		unsigned int adder;
-		unsigned int subtracter;
-		if (relative_layer == 1)
-		{
-			quarter_axis_size = 0;
-			adder = 1;
-			subtracter = 0;
-		}
-		else
-		{
-			quarter_axis_size = (1u << (relative_layer -2));
-			adder = quarter_axis_size;
-			subtracter = quarter_axis_size;
-		}
-		unsigned int child_index = 0;
-		if (x < 0)
-		{
-			x += adder;
-		}
-		else
-		{
-			child_index |= 1u;
-			x -= subtracter;
-		}
-		if (y < 0)
-		{
-			y += adder;
-		}
-		else
-		{
-			child_index |= 2u;
-			y -= subtracter;
-		}
-		if (z < 0)
-		{
-			z += adder;
-		}
-		else
-		{
-			child_index |= 4u;
-			z -= subtracter;
-		}
-		children_[child_index].setVoxelAtLayer(x, y, z, material_type, layer);
-	}
+	// merge if possible
+	// TODO
+
 	return;
 }
 
 
-VoxelTypeElement Octree::getVoxel(int32_t x, int32_t y, int32_t z)
+VoxelTypeElement Octree::getVoxel(uint32_t x, uint32_t y, uint32_t z)
 {
 	return getVoxelAtLayer(x, y, z, 0);
 }
@@ -233,65 +162,33 @@ VoxelTypeElement Octree::getVoxel(int32_t x, int32_t y, int32_t z)
  * In order for this to work properly, material_type_ must be set
  * properly at all layers of this octree.
 \* ---------------------------------------------------------------- */
-VoxelTypeElement Octree::getVoxelAtLayer(int32_t x, int32_t y, int32_t z, int layer)
+VoxelTypeElement Octree::getVoxelAtLayer(uint32_t x, uint32_t y, uint32_t z, int layer)
 {
-	if (layer < 0)
+	layer = layer_ - layer - 1;
+	if (layer > layer_)
 	{
-		throw std::runtime_error("Cannot get voxel at layer with negative value!");
+		throw std::runtime_error("Layer must be at most num_layers of octree!");
 	}
+	IndirectionElement indirection = 0;
+	IndirectionElement pool_index;
+	for (; layer >= 0; layer--)
+	{
+		uint32_t tmp_x = x >> layer;
+		uint32_t tmp_y = y >> layer;
+		uint32_t tmp_z = z >> layer;
+		IndirectionElement child = (tmp_x & 1u) | ((tmp_y & 1u) << 1) | ((tmp_z & 1u) << 2);
+		pool_index = (indirection << 3) | child;
+		IndirectionElement next_indirection = (*octree_pool_)[pool_index].indirection;
 
-	if (isUniform() || layer_ == layer)
-	{
-		return getMaterialType();
+		if (next_indirection == 0 || layer == 0)
+		{
+			return (*octree_pool_)[pool_index].voxel_type;
+		}
+		indirection = next_indirection;
 	}
-	else
-	{
-		int relative_layer = layer_ - layer;
-		unsigned int quarter_axis_size;
-		unsigned int adder;
-		unsigned int subtracter;
-		if (relative_layer == 1)
-		{
-			quarter_axis_size = 0;
-			adder = 1;
-			subtracter = 0;
-		}
-		else
-		{
-			quarter_axis_size = (1u << (relative_layer-2));
-			adder = quarter_axis_size;
-			subtracter = quarter_axis_size;
-		}
-		unsigned int child_index = 0;
-		if (x < 0)
-		{
-			x += adder;
-		}
-		else
-		{
-			child_index |= 1u;
-			x -= subtracter;
-		}
-		if (y < 0)
-		{
-			y += adder;
-		}
-		else
-		{
-			child_index |= 2u;
-			y -= subtracter;
-		}
-		if (z < 0)
-		{
-			z += adder;
-		}
-		else
-		{
-			child_index |= 4u;
-			z -= subtracter;
-		}
-		return children_[child_index].getVoxelAtLayer(x, y, z, layer);
-	}
+	// should never get here
+	throw std::runtime_error(std::string("Reached end of ") + __func__ + "!");
+	return 0;
 }
 
 
@@ -304,6 +201,9 @@ VoxelTypeElement Octree::getVoxelAtLayer(int32_t x, int32_t y, int32_t z, int la
 \* ---------------------------------------------------------------- */
 void Octree::simpleMerge()
 {
+	// TODO
+	return;
+	/*
 	if (isRoot())
 	{
 		// the root node can never be uniform due to the way the
@@ -337,6 +237,7 @@ void Octree::simpleMerge()
 		}
 	}
 	return;
+	*/
 }
 
 
@@ -346,6 +247,9 @@ void Octree::simpleMerge()
 \* ---------------------------------------------------------------- */
 void Octree::simpleUpdateLOD()
 {
+	// TODO
+	return;
+	/*
 	if (isUniform())
 	{
 		return;
@@ -358,133 +262,113 @@ void Octree::simpleUpdateLOD()
 		parent_->simpleUpdateLOD();
 	}
 	return;
+	*/
 }
 
 
 VoxelTypeElement Octree::calculateMaterialTypeFromChildren()
 {
+	// TODO
+	return 0;
+	/*
 	if (isUniform())
 	{
 		return getMaterialType();
 	}
 	// return the material type of the 0th child
 	return children_[0].getMaterialType();
+	*/
 }
 
 
-unsigned int Octree::prepareForDescent(int32_t *x, int32_t *y, int32_t *z)
-{
-	unsigned int child_index = 0;
-	if (*x < 0)
-	{
-		*x += 1u << (layer_-1);
-	}
-	else
-	{
-		child_index |= 1u;
-		*x -= (1u << (layer_-1)) - 1;
-	}
-	if (*y < 0)
-	{
-		*y += 1u << (layer_-1);
-	}
-	else
-	{
-		child_index |= 2u;
-		*y -= (1u << (layer_-1)) - 1;
-	}
-	if (*z < 0)
-	{
-		*z += 1u << (layer_-1);
-	}
-	else
-	{
-		child_index |= 4u;
-		*z -= (1u << (layer_-1)) - 1;
-	}
-	return child_index;
-}
-
-
-void Octree::mergeOctree(Octree *other, int32_t x, int32_t y, int32_t z
-		)
+void Octree::mergeOctree(Octree *other, uint32_t x, uint32_t y, uint32_t z)
 {
 	other->mergeIntoOctree(this, x, y, z);
 	return;
 }
 
 
-void Octree::mergeIntoOctree(Octree *other, int32_t x, int32_t y, int32_t z)
+void Octree::mergeIntoOctreeRecursive(Octree *other, IndirectionElement indirection, int layer, uint32_t x, uint32_t y, uint32_t z)
 {
-	// TODO: temp!!
-	other->octree_pool_->resize(octree_pool_->size());
-	memcpy(other->octree_pool_->data(), octree_pool_->data(), octree_pool_->size()*sizeof(OctreeNode));
-	return;
-
-	if (isUniform() && getMaterialType() == 0)
+	uint32_t quarter_axis_size;
+	uint32_t adder;
+	uint32_t subtracter;
+	uint32_t upper_end_adder;
+	uint32_t lower_end_subtracter;
+	if (layer == 1)
 	{
-		return;
-	}
-	if (layer_ == 0)
-	{
-		other->setVoxel(x, y, z, getMaterialType());
+		quarter_axis_size = 0;
+		adder = 0;
+		subtracter = 1;
+		upper_end_adder = 0;
+		lower_end_subtracter = 1;
 	}
 	else
 	{
-		int quarter_axis_size;
-		int adder;
-		int subtracter;
-		int upper_end_adder;
-		int lower_end_subtracter;
-		if (layer_ == 1)
+		quarter_axis_size = (1u << (layer-2));
+		adder = quarter_axis_size;
+		subtracter = quarter_axis_size;
+		upper_end_adder = (1u << (layer-1))-1;
+		lower_end_subtracter = (1u << (layer-1));
+	}
+
+	IndirectionElement pool_base_index = indirection << 3;
+	for (int child = 0; child < 8; child++)
+	{
+		if ((*octree_pool_)[pool_base_index+child].indirection == 0)
 		{
-			quarter_axis_size = 0;
-			adder = 0;
-			subtracter = 1;
-			upper_end_adder = 0;
-			lower_end_subtracter = 1;
-		}
-		else
-		{
-			quarter_axis_size = (1u << (layer_-2));
-			adder = quarter_axis_size;
-			subtracter = quarter_axis_size;
-			upper_end_adder = (1u << (layer_-1))-1;
-			lower_end_subtracter = (1u << (layer_-1));
-		}
-		if (isUniform())
-		{
-			// NOTE: experimental
-			other->setVoxelTypeWithinBounds(getMaterialType(),
-					x - lower_end_subtracter,
-					y - lower_end_subtracter,
-					z - lower_end_subtracter,
-					x + upper_end_adder,
-					y + upper_end_adder,
-					z + upper_end_adder
+			uint32_t x_min = (child & 1u) ? (x) : (x - lower_end_subtracter);
+			uint32_t x_max = (child & 1u) ? (x + upper_end_adder) : (x);
+			uint32_t y_min = (child & 2u) ? (y) : (y - lower_end_subtracter);
+			uint32_t y_max = (child & 2u) ? (y + upper_end_adder) : (y);
+			uint32_t z_min = (child & 4u) ? (z) : (z - lower_end_subtracter);
+			uint32_t z_max = (child & 4u) ? (z + upper_end_adder) : (z);
+			other->setVoxelTypeWithinBounds((*octree_pool_)[pool_base_index+child].voxel_type,
+					x_min, y_min, z_min,
+					x_max, y_max, z_max
 					);
 		}
 		else
 		{
-			int child_x, child_y, child_z;
-			for (unsigned int i = 0; i < 8; i++)
-			{
-				if (i & 1u)
-					child_x = x + adder;
-				else
-					child_x = x - subtracter;
-				if (i & 2u)
-					child_y = y + adder;
-				else
-					child_y = y - subtracter;
-				if (i & 4u)
-					child_z = z + adder;
-				else
-					child_z = z - subtracter;
-				children_[i].mergeIntoOctree(other, child_x, child_y, child_z);
-			}
+			uint32_t child_x, child_y, child_z;
+			if (child & 1u)
+				child_x = x + adder;
+			else
+				child_x = x - subtracter;
+			if (child & 2u)
+				child_y = y + adder;
+			else
+				child_y = y - subtracter;
+			if (child & 4u)
+				child_z = z + adder;
+			else
+				child_z = z - subtracter;
+			mergeIntoOctreeRecursive(other, (*octree_pool_)[pool_base_index+child].indirection, layer-1, child_x, child_y, child_z);
 		}
 	}
+	return;
+}
+
+
+void Octree::mergeIntoOctree(Octree *other, uint32_t x, uint32_t y, uint32_t z)
+{
+	/*
+	other->copy(this);
+	return;
+	other->octree_pool_->resize(octree_pool_->size());
+	memcpy(other->octree_pool_->data(), octree_pool_->data(), octree_pool_->size()*sizeof(OctreeNode));
+	return;
+	*/
+	return mergeIntoOctreeRecursive(other, 0, layer_, x, y, z);
+}
+
+
+void Octree::convertToUnsignedLoc(int layer, int32_t x, int32_t y, int32_t z, uint32_t *ux, uint32_t *uy, uint32_t *uz)
+{
+	uint32_t half_max = 0x1u << (layer-1);
+	*ux = (x <= 0) ? (half_max - abs(x)) : (half_max + x);
+	*uy = (y <= 0) ? (half_max - abs(y)) : (half_max + y);
+	*uz = (z <= 0) ? (half_max - abs(z)) : (half_max + z);
 	return;
 }
 
@@ -493,12 +377,12 @@ void Octree::mergeIntoOctree(Octree *other, int32_t x, int32_t y, int32_t z)
  * inclusive
 \* ---------------------------------------------------------------- */
 void Octree::setVoxelTypeWithinBounds(VoxelTypeElement voxel_type,
-		int32_t x_min,
-		int32_t y_min,
-		int32_t z_min,
-		int32_t x_max,
-		int32_t y_max,
-		int32_t z_max
+		uint32_t x_min,
+		uint32_t y_min,
+		uint32_t z_min,
+		uint32_t x_max,
+		uint32_t y_max,
+		uint32_t z_max
 		)
 {
 	/*
@@ -528,25 +412,28 @@ void Octree::setVoxelTypeWithinBounds(VoxelTypeElement voxel_type,
 	uint32_t octree_node_size = min(x_size, min(y_size, z_size));
 	int highest_layer = Anthrax::log2(octree_node_size);
 	octree_node_size = 0x1u << highest_layer;
-	int32_t new_x_min = roundUpToInterval(x_min, octree_node_size);
-	int32_t new_y_min = roundUpToInterval(y_min, octree_node_size);
-	int32_t new_z_min = roundUpToInterval(z_min, octree_node_size);
-	int32_t new_x_max = new_x_min + octree_node_size - 1;
-	int32_t new_y_max = new_y_min + octree_node_size - 1;
-	int32_t new_z_max = new_z_min + octree_node_size - 1;
+	uint32_t new_x_min = roundUpToInterval(x_min, octree_node_size);
+	uint32_t new_y_min = roundUpToInterval(y_min, octree_node_size);
+	uint32_t new_z_min = roundUpToInterval(z_min, octree_node_size);
+	uint32_t new_x_max = new_x_min + octree_node_size - 1;
+	uint32_t new_y_max = new_y_min + octree_node_size - 1;
+	uint32_t new_z_max = new_z_min + octree_node_size - 1;
 
 	// check if this box matches the largest possible nearby octree node
 	if (new_x_min == x_min && new_x_max == x_max &&
 			new_y_min == y_min && new_y_max == y_max &&
 			new_z_min == z_min && new_z_max == z_max)
 	{
+		/*
 		// bit shifts may be implementation specific for negative numbers?
 		//setVoxelAtLayer(new_x_min >> highest_layer, new_y_min >> highest_layer,
 		//		new_z_min >> highest_layer, voxel_type, highest_layer);
-		int32_t factor = 1;
+		uint32_t factor = 1;
 		for (int i = 0; i < highest_layer; i++) factor *= 2;
 		setVoxelAtLayer(new_x_min/factor, new_y_min/factor, new_z_min/factor,
 				voxel_type, highest_layer);
+		*/
+		setVoxelAtLayer(new_x_min >> highest_layer, new_y_min >> highest_layer, new_z_min >> highest_layer, voxel_type, highest_layer);
 		return;
 	}
 
@@ -567,13 +454,13 @@ void Octree::setVoxelTypeWithinBounds(VoxelTypeElement voxel_type,
 	}
 
 	// calculate x separators
-	std::vector<int32_t> x_min_separators, x_max_separators;
+	std::vector<uint32_t> x_min_separators, x_max_separators;
 	if (x_min != new_x_min)
 	{
 		x_min_separators.push_back(x_min);
 		x_max_separators.push_back(new_x_min-1);
 	}
-	for (int i = 1; i*octree_node_size <= x_max - new_x_min + 1; i++)
+	for (uint32_t i = 1; i*octree_node_size <= x_max - new_x_min + 1; i++)
 	{
 		if (x_min_separators.size() == 0)
 			x_min_separators.push_back(x_min);
@@ -587,13 +474,13 @@ void Octree::setVoxelTypeWithinBounds(VoxelTypeElement voxel_type,
 		x_max_separators.push_back(x_max);
 	}
 	// calculate y separators
-	std::vector<int32_t> y_min_separators, y_max_separators;
+	std::vector<uint32_t> y_min_separators, y_max_separators;
 	if (y_min != new_y_min)
 	{
 		y_min_separators.push_back(y_min);
 		y_max_separators.push_back(new_y_min-1);
 	}
-	for (int i = 1; i*octree_node_size <= y_max - new_y_min + 1; i++)
+	for (uint32_t i = 1; i*octree_node_size <= y_max - new_y_min + 1; i++)
 	{
 		if (y_min_separators.size() == 0)
 			y_min_separators.push_back(y_min);
@@ -607,13 +494,13 @@ void Octree::setVoxelTypeWithinBounds(VoxelTypeElement voxel_type,
 		y_max_separators.push_back(y_max);
 	}
 	// calculate z separators
-	std::vector<int32_t> z_min_separators, z_max_separators;
+	std::vector<uint32_t> z_min_separators, z_max_separators;
 	if (z_min != new_z_min)
 	{
 		z_min_separators.push_back(z_min);
 		z_max_separators.push_back(new_z_min-1);
 	}
-	for (int i = 1; i*octree_node_size <= z_max - new_z_min + 1; i++)
+	for (uint32_t i = 1; i*octree_node_size <= z_max - new_z_min + 1; i++)
 	{
 		if (z_min_separators.size() == 0)
 			z_min_separators.push_back(z_min);
@@ -648,47 +535,13 @@ void Octree::setVoxelTypeWithinBounds(VoxelTypeElement voxel_type,
 }
 
 
-int32_t Octree::roundUpToInterval(int32_t val, uint32_t interval)
+uint32_t Octree::roundUpToInterval(uint32_t val, uint32_t interval)
 {
 	if (interval == 0)
 		return val;
 
-	int32_t remainder = abs(val) % interval;
-	if (remainder == 0)
-		return val;
-
-	if (val < 0)
-		return -(abs(val) - remainder);
-	return val + (interval - remainder);
-}
-
-
-void Octree::split()
-{
-	if (!children_)
-	{
-		children_ = reinterpret_cast<Octree*>(malloc(8*sizeof(Octree)));
-	}
-	VoxelTypeElement voxel_type;
-	switch (*split_mode_)
-	{
-		case SPLIT_MODE_NORMAL:
-			voxel_type = getMaterialType();
-			break;
-		case SPLIT_MODE_AIRFILL:
-			voxel_type = static_cast<VoxelTypeElement>(0);
-			break;
-		default:
-			voxel_type = getMaterialType();
-			break;
-	}
-	for (unsigned int i = 0; i < 8; i++)
-	{
-		new (&children_[i]) Octree(this, layer_-1, i);
-		children_[i].setMaterialType(voxel_type);
-	}
-	setUniformity(false);
-	return;
+	uint32_t remainder = val % interval;
+	return val + remainder;
 }
 
 } // namespace Anthrax

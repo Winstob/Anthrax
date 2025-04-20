@@ -287,8 +287,21 @@ void World::addModel(
 		int32_t z_offset
 		)
 {
-	octree_->mergeOctree(model->getOctree(), x_offset, y_offset, z_offset);
-	return;
+	uint32_t new_x, new_y, new_z;
+	Octree::convertToUnsignedLoc(octree_->getLayer(),
+			x_offset, y_offset, z_offset,
+			&new_x, &new_y, &new_z);
+	return octree_->mergeOctree(model->getOctree(), new_x, new_y, new_z);
+}
+
+
+void World::setVoxel(int32_t x, int32_t y, int32_t z, int32_t voxel_type)
+{
+	uint32_t new_x, new_y, new_z;
+	Octree::convertToUnsignedLoc(octree_->getLayer(),
+			x, y, z,
+			&new_x, &new_y, &new_z);
+	return octree_->setVoxel(new_x, new_y, new_z, voxel_type);
 }
 
 

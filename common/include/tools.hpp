@@ -17,6 +17,9 @@
 
 #define PI 3.14159265358979
 
+#include <cstdint>
+#include <cmath>
+
 namespace Anthrax
 {
 
@@ -32,6 +35,8 @@ T max(T left, T right)
 {
 	return (left > right) ? left : right;
 }
+
+uint32_t int32ToUint32(int32_t in);
 
 }
 

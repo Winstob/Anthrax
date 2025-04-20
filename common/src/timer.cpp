@@ -65,6 +65,14 @@ long long Timer::query()
 			time = static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>
 					(time_elapsed).count());
 			break;
+		case MICROSECONDS:
+			time = static_cast<long long>(std::chrono::duration_cast<std::chrono::microseconds>
+					(time_elapsed).count());
+			break;
+		case NANOSECONDS:
+			time = static_cast<long long>(std::chrono::duration_cast<std::chrono::nanoseconds>
+					(time_elapsed).count());
+			break;
 		default:
 			time = static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>
 					(time_elapsed).count());

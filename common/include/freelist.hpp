@@ -24,6 +24,7 @@ public:
 	size_t alloc();
 	void free(size_t index);
 	void setRange(size_t offset, size_t num_elements, bool val);
+	void clear();
 
 private:
 	std::vector<uint64_t> freelist_;

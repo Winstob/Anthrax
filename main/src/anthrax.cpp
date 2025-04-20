@@ -324,6 +324,7 @@ void Anthrax::loadWorld()
 	test_model_->rotate(rot);
 	//test_model_->addToWorld(world_, 2048, 2048, 2048);
 	//world_->addModel(test_model_, 2048, 2048, 2048);
+	//world_->addModel(test_model_, 0, 0, 0);
 	world_->addModel(test_model_, 0, 0, 0);
 
 	//std::cout << "Copying world to staging buffers" << std::endl;

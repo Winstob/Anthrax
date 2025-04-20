@@ -7,6 +7,7 @@
 #include <iostream>
 
 #include "freelist.hpp"
+#include "timer.hpp"
 
 namespace Anthrax
 {
@@ -68,6 +69,13 @@ size_t Freelist::findNextFreeIndex()
 void Freelist::setRange(size_t offset, size_t num_elements, bool val)
 {
 	// TODO
+}
+
+
+void Freelist::clear()
+{
+	freelist_.clear();
+	return;
 }
 
 } // namespace Anthrax

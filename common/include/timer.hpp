@@ -21,7 +21,9 @@ public:
 	enum Interval
 	{
 		SECONDS,
-		MILLISECONDS
+		MILLISECONDS,
+		MICROSECONDS,
+		NANOSECONDS
 	};
 	Timer(Interval interval);
 	Timer() : Timer(MILLISECONDS) {};
