@@ -40,6 +40,12 @@ Octree::Octree(int num_layers)
 
 Octree::~Octree()
 {
+	for (std::list<Accessor>::iterator accessor_iter = accessors_.begin();
+	     accessor_iter != accessors_.end();
+	     accessor_iter++)
+	{
+		accessor_iter->destroy();
+	}
 	delete pool_freelist_;
 	delete octree_pool_;
 	return;
@@ -542,6 +548,70 @@ uint32_t Octree::roundUpToInterval(uint32_t val, uint32_t interval)
 
 	uint32_t remainder = val % interval;
 	return val + remainder;
+}
+
+
+// ================================================================
+// Accessor
+// ================================================================
+
+
+Octree::Accessor *Octree::createAccessor()
+{
+	Octree::Accessor *new_accessor = &accessors_.emplace_back(this);
+	// not thread-safe
+	new_accessor->self_iterator_ = accessors_.end();
+	new_accessor->self_iterator_--;
+
+	new_accessor->indirection_stack_.resize(layer_);
+	new_accessor->indirection_stack_[0] = 0;
+	new_accessor->childnum_stack_.resize(layer_);
+	new_accessor->childnum_stack_[0] = 0; // not actually anything since this is
+	                                      // root node
+	new_accessor->is_being_destroyed_ = false;
+
+	new_accessor->depth_ = 0;
+
+	return new_accessor;
+}
+
+
+Octree::Accessor::~Accessor()
+{
+	destroy();
+	return;
+}
+
+
+void Octree::Accessor::destroy()
+{
+	if (is_being_destroyed_)
+	{
+		return;
+	}
+	is_being_destroyed_ = true;
+	indirection_stack_.clear();
+	childnum_stack_.clear();
+	owner_->accessors_.erase(self_iterator_);
+	return;
+}
+
+
+void Octree::Accessor::descend(int child)
+{
+	IndirectionElement next_octree_index = indirection_stack_.back() << 3 + child;
+	IndirectionElement next_indirection = (*(owner_->octree_pool_))[next_octree_index].indirection;
+	depth_++;
+	indirection_stack_[depth_] = next_indirection;
+	childnum_stack_[depth_] = child;
+	return;
+}
+
+
+void Octree::Accessor::ascend()
+{
+	depth_--;
+	return;
 }
 
 } // namespace Anthrax

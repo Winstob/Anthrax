@@ -11,6 +11,7 @@
 
 #include <stdlib.h>
 #include <cstdint>
+#include <list>
 
 #include "freelist.hpp"
 #include "quaternion.hpp"
@@ -63,6 +64,27 @@ public:
 			uint32_t *ux, uint32_t *uy, uint32_t *uz);
 
 	friend class Model;
+
+	class Accessor
+	{
+	public:
+		//Accessor() : {}
+		Accessor(Octree *owner) : owner_(owner) {};
+		~Accessor();
+		void destroy();
+		void descend(int child);
+		void ascend();
+		friend class Octree;
+	private:
+		Octree *owner_ = nullptr;
+		std::list<Accessor>::iterator self_iterator_;
+		std::vector<IndirectionElement> indirection_stack_;
+		std::vector<int> childnum_stack_;
+		int depth_ = 0;
+		bool is_being_destroyed_ = false;
+	};
+	friend class Accessor;
+	Accessor *createAccessor();
 private:
 	std::vector<OctreeNode> *octree_pool_;
 	Freelist *pool_freelist_;
@@ -79,6 +101,8 @@ private:
 		uint32_t x_min, uint32_t y_min, uint32_t z_min,
 		uint32_t x_max, uint32_t y_max, uint32_t z_max);
 	uint32_t roundUpToInterval(uint32_t val, uint32_t interval);
+
+	std::list<Accessor> accessors_;
 };
 
 } // namespace Anthrax
