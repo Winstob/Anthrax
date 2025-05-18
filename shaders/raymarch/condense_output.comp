@@ -1,0 +1,88 @@
+/* ---------------------------------------------------------------- *\
+ * condense_output.comp
+ * Author: Gavin Ralston
+ * Date Created: 2025-05-12
+\* ---------------------------------------------------------------- */
+#version 460
+
+#define WORKGROUP_SIZE 32
+
+layout (local_size_x = 1, local_size_y = 1, local_size_z = WORKGROUP_SIZE) in;
+
+struct RayMarchOutput
+{
+	uint z_buffer_match_val;
+	uint voxel_type;
+};
+
+layout (std140, binding = 0) uniform screen_dimensions_ubo
+{
+	ivec2 screen_dimensions;
+};
+
+layout (std430, binding = 1) readonly buffer z_buffer_ssbo
+{
+	uint z_buffer[];
+};
+
+layout (std430, binding = 2) readonly buffer ray_march_output_ssbo
+{
+	RayMarchOutput ray_march_output_buffer[];
+};
+
+layout (std430, binding = 3) writeonly buffer ray_march_output_matched_ssbo
+{
+	uint ray_march_output_matched[];
+};
+
+layout (std140, binding = 4) uniform num_model_instances_ubo
+{
+	uint num_model_instances;
+};
+
+int num_layers;
+uint model_buffer_offset;
+vec2 screen_position = vec2(gl_GlobalInvocationID.x, -gl_GlobalInvocationID.y+screen_dimensions.y)/vec2(screen_dimensions.x, screen_dimensions.y)*2.0-1.0;
+
+// forward function declarations
+uint calculateScreenArrayIndex();
+uint calculate3dScreenArrayIndex();
+
+void main()
+{
+	if (gl_GlobalInvocationID.x >= screen_dimensions.x
+	    || gl_GlobalInvocationID.y >= screen_dimensions.y)
+	{
+		return;
+	}
+	if (gl_GlobalInvocationID.z >= num_model_instances)
+	{
+		return;
+	}
+
+	uint screen_array_index = calculateScreenArrayIndex();
+	uint screen_array_index_3d = calculate3dScreenArrayIndex();
+
+	if (ray_march_output_buffer[screen_array_index_3d].z_buffer_match_val
+	    == z_buffer[screen_array_index])
+	{
+		if (atomicExchange(ray_march_output_matched[screen_array_index], 1u) == 0u)
+		{
+			// TODO: important stuff goes here
+		}
+	}
+
+	return;
+}
+
+
+uint calculateScreenArrayIndex()
+{
+	return gl_GlobalInvocationID.y * screen_dimensions.x + gl_GlobalInvocationID.x;
+}
+
+
+uint calculate3dScreenArrayIndex()
+{
+	return (((gl_GlobalInvocationID.y * screen_dimensions.x) +  gl_GlobalInvocationID.x)) * num_model_instances + gl_GlobalInvocationID.z;
+}

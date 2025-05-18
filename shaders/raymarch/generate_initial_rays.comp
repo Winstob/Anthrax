@@ -1,0 +1,101 @@
+/* ---------------------------------------------------------------- *\
+ * generate_inital_rays.comp
+ * Author: Gavin Ralston
+ * Date Created: 2025-05-08
+\* ---------------------------------------------------------------- */
+#version 460
+
+#define WORKGROUP_SIZE 8
+
+layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = 1) in;
+
+struct ufvec3
+{
+  uvec3 int_component;
+  vec3 dec_component;
+};
+
+struct Ray
+{
+	vec3 direction;
+	ufvec3 origin;
+	float distance_traveled;
+	float total_distance_traveled;
+};
+
+layout (std140, binding = 0) uniform screen_dimensions_ubo
+{
+	ivec2 screen_dimensions;
+};
+
+layout (std140, binding = 1) uniform focal_distance_ubo
+{
+	float focal_distance;
+};
+
+layout (std140, binding = 2) uniform camera_position_ubo
+{
+	ufvec3 camera_position;
+};
+
+layout (std140, binding = 3) uniform camera_right_ubo
+{
+	vec3 camera_right;
+};
+
+layout (std140, binding = 4) uniform camera_up_ubo
+{
+	vec3 camera_up;
+};
+
+layout (std140, binding = 5) uniform camera_forward_ubo
+{
+	vec3 camera_forward;
+};
+
+layout (std430, binding = 6) writeonly buffer ray_ssbo
+{
+	Ray rays[];
+};
+
+
+vec2 screen_position = vec2(gl_GlobalInvocationID.x, -gl_GlobalInvocationID.y+screen_dimensions.y)/vec2(screen_dimensions)*2.0-1.0;
+
+// forward function declarations
+uint calculateScreenArrayIndex();
+vec3 calculateMainRayDirection();
+
+void main()
+{
+	if (gl_GlobalInvocationID.x >= screen_dimensions.x
+	    || gl_GlobalInvocationID.y >= screen_dimensions.y)
+	{
+		return;
+	}
+
+	Ray ray;
+	ray.direction = calculateMainRayDirection();
+	ray.origin = camera_position;
+	ray.distance_traveled = 0.0;
+
+	uint array_index = calculateScreenArrayIndex();
+	rays[array_index] = ray;
+
+	return;
+}
+
+
+uint calculateScreenArrayIndex()
+{
+	return gl_GlobalInvocationID.y * screen_dimensions.x + gl_GlobalInvocationID.x;
+}
+
+
+vec3 calculateMainRayDirection()
+{
+  vec3 x = camera_right * screen_position.x;
+  vec3 y = camera_up * screen_position.y * float(screen_dimensions.y)
+	         / float(screen_dimensions.x);
+  vec3 z = camera_forward * focal_distance;
+  return normalize(x + y + z);
+}
