@@ -1,0 +1,82 @@
+/* ---------------------------------------------------------------- *\
+ * draw_z_buffer.comp
+ * Author: Gavin Ralston
+ * Date Created: 2025-05-18
+\* ---------------------------------------------------------------- */
+#version 460
+
+#define WORKGROUP_SIZE 8
+
+layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = 1) in;
+
+struct ufvec3
+{
+  uvec3 int_component;
+  vec3 dec_component;
+};
+
+struct Ray
+{
+	vec3 direction;
+	ufvec3 origin;
+	float distance_traveled;
+	float total_distance_traveled;
+};
+
+struct OctreeNode
+{
+	int indirection;
+	uint voxel_type;
+};
+
+struct ModelInstance
+{
+	uvec3 location;
+	uint model_accessor_id;
+};
+
+struct ModelAccessor
+{
+	uint buffer_offset;
+	int num_layers;
+};
+
+layout (std140, binding = 0) uniform screen_dimensions_ubo
+{
+	ivec2 screen_dimensions;
+};
+
+layout (std430, binding = 1) buffer z_buffer_ssbo
+{
+	float z_buffer[];
+};
+
+layout (rgba32f, binding = 2) uniform image2D out_image;
+
+int num_layers;
+uint model_buffer_offset;
+vec2 screen_position = vec2(gl_GlobalInvocationID.x, -gl_GlobalInvocationID.y+screen_dimensions.y)/vec2(screen_dimensions.x, screen_dimensions.y)*2.0-1.0;
+
+// forward function declarations
+uint calculateScreenArrayIndex();
+
+void main()
+{
+	if (gl_GlobalInvocationID.x >= screen_dimensions.x
+	    || gl_GlobalInvocationID.y >= screen_dimensions.y)
+	{
+		return;
+	}
+
+	uint screen_array_index = calculateScreenArrayIndex();
+	float max_dist = 512.0;
+	imageStore(out_image, ivec2(gl_GlobalInvocationID.xy), vec4(vec3(1.0-z_buffer[screen_array_index]/max_dist), 1.0));
+	z_buffer[screen_array_index] = 100000.0; // reset to render distance ig? TODO: make better: this should be done at the very beginning of the pipeline, not here. also the value should not be hardcoded.
+	return;
+}
+
+
+uint calculateScreenArrayIndex()
+{
+	return gl_GlobalInvocationID.y * screen_dimensions.x + gl_GlobalInvocationID.x;
+}

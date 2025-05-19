@@ -109,7 +109,9 @@ private:
 	VkSurfaceKHR surface_;
 
 	std::vector<const char*> device_extensions_ = {
-		VK_KHR_SWAPCHAIN_EXTENSION_NAME
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME,
+		VK_EXT_SHADER_ATOMIC_FLOAT_2_EXTENSION_NAME
 	};
 
 };

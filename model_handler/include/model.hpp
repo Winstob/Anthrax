@@ -36,6 +36,8 @@ public:
 	//void addToWorld(World *world, unsigned int x, unsigned int y, unsigned int z);
 
 	Octree *getOctree() { return octree_; }
+	Octree::OctreeNode *data() { return octree_->data(); }
+	size_t size() { return octree_->size(); }
 
 private:
 	Octree *original_octree_;

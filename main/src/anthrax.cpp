@@ -43,12 +43,12 @@ Anthrax::Anthrax()
 Anthrax::~Anthrax()
 {
 	vulkan_manager_->wait();
-	for (unsigned int i = 0; i < raymarched_images_.size(); i++)
-		raymarched_images_[i].destroy();
+	for (unsigned int i = 0; i < final_images_.size(); i++)
+		final_images_[i].destroy();
 	materials_staging_ssbo_.destroy();
-	octree_pool_staging_ssbo_.destroy();
+	world_staging_ssbo_.destroy();
 	materials_ssbo_.destroy();
-	octree_pool_ssbo_.destroy();
+	world_ssbo_.destroy();
 	num_levels_ubo_.destroy();
 	focal_distance_ubo_.destroy();
 	screen_width_ubo_.destroy();
@@ -58,6 +58,9 @@ Anthrax::~Anthrax()
 	camera_up_ubo_.destroy();
 	camera_forward_ubo_.destroy();
 	sunlight_ubo_.destroy();
+	screen_dimensions_ubo_.destroy();
+	z_buffer_ssbo_.destroy();
+	rays_ssbo_.destroy();
 	for (unsigned int i = 0; i < main_compute_descriptors_.size(); i++)
 	{
 		main_compute_descriptors_[i].destroy();
@@ -83,11 +86,16 @@ int Anthrax::init()
 	createWorld();
 	createBuffers();
 	createDescriptors();
+	createPipelineBarriers();
+
 
 	vulkan_manager_->start();
 
+	frameDrawObjectsSetup();
+
 	loadWorld();
 	loadMaterials();
+	loadModels();
 
 	/*
 	initializeShaders();
@@ -102,6 +110,41 @@ int Anthrax::init()
 	*/
 
 	return 0;
+}
+
+
+void Anthrax::frameDrawObjectsSetup()
+{
+	// TODO: clean all this stuff up at the end
+	frame_draw_objects_.initial_rays_shader = ComputeShaderManager(*anthrax_gpu,
+			std::string(xstr(SHADER_DIRECTORY)) + "raymarch/generate_initial_rays.spv");
+	frame_draw_objects_.raymarch_shader = ComputeShaderManager(*anthrax_gpu,
+			std::string(xstr(SHADER_DIRECTORY)) + "raymarch/raymarch.spv");
+	frame_draw_objects_.draw_shader = ComputeShaderManager(*anthrax_gpu,
+			std::string(xstr(SHADER_DIRECTORY)) + "raymarch/draw_z_buffer.spv");
+
+	// allocate command pool
+	frame_draw_objects_.compute_command_pool = anthrax_gpu->newCommandPool(Device::CommandType::COMPUTE);
+
+	// allocate command buffer
+	VkCommandBufferAllocateInfo alloc_info{};
+	alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	alloc_info.commandPool = frame_draw_objects_.compute_command_pool;
+	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	alloc_info.commandBufferCount = 1;
+	vkAllocateCommandBuffers(anthrax_gpu->logical, &alloc_info, &frame_draw_objects_.compute_command_buffer);
+
+	// set up shaders
+	frame_draw_objects_.initial_rays_shader.setDescriptors(frame_draw_objects_.initial_rays_descriptors);
+	frame_draw_objects_.initial_rays_shader.init();
+
+	frame_draw_objects_.raymarch_shader.setDescriptors(frame_draw_objects_.raymarch_descriptors);
+	frame_draw_objects_.raymarch_shader.init();
+
+	frame_draw_objects_.draw_shader.setDescriptors(frame_draw_objects_.draw_descriptors);
+	frame_draw_objects_.draw_shader.init();
+
+	return;
 }
 
 
@@ -142,12 +185,19 @@ void Anthrax::renderFrame()
 {
 	updateCamera();
 	loadWorld();
-	
+	loadModels();
+
+	vulkan_manager_->waitForFences();
+
+	int window_x = vulkan_manager_->getWindowWidth();
+	int window_y = vulkan_manager_->getWindowHeight();
+
 	// update buffers
 	*((int*)num_levels_ubo_.getMappedPtr()) = world_->getNumLayers();
 	*((float*)focal_distance_ubo_.getMappedPtr()) = camera_.focal_distance;
-	*((int*)screen_width_ubo_.getMappedPtr()) = vulkan_manager_->getWindowWidth();
-	*((int*)screen_height_ubo_.getMappedPtr()) = vulkan_manager_->getWindowHeight();
+	*((int*)screen_width_ubo_.getMappedPtr()) = window_x;
+	*((int*)screen_height_ubo_.getMappedPtr()) = window_y;
+	*((glm::ivec2*)screen_dimensions_ubo_.getMappedPtr()) = glm::ivec2(window_x, window_y);
 	// TODO: make this less bad
 	Intfloat::vec3 camera_position {
 		iComponents3(camera_.position) + glm::ivec3(std::pow(1 << LOG2K, world_->getNumLayers())/2),
@@ -157,7 +207,85 @@ void Anthrax::renderFrame()
 	*((glm::vec3*)camera_right_ubo_.getMappedPtr()) = camera_.getRightLookDirection();
 	*((glm::vec3*)camera_up_ubo_.getMappedPtr()) = camera_.getUpLookDirection();
 	*((glm::vec3*)camera_forward_ubo_.getMappedPtr()) = camera_.getForwardLookDirection();
-	vulkan_manager_->drawFrame();
+
+
+	// begin main rendering stuff
+	vkResetCommandBuffer(frame_draw_objects_.compute_command_buffer, 0);
+	VkCommandBufferBeginInfo begin_info{};
+	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	if (vkBeginCommandBuffer(frame_draw_objects_.compute_command_buffer, &begin_info) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to begin recording main compute command buffer!");
+	}
+
+	// generate initial rays
+	frame_draw_objects_.initial_rays_shader.selectDescriptor(0);
+	frame_draw_objects_.initial_rays_shader.recordCommandBufferNoBegin(frame_draw_objects_.compute_command_buffer, window_x/8+1, window_y/8+1, 1);
+	
+	// ensure all rays were fully generated and written before using them
+	vkCmdPipelineBarrier(frame_draw_objects_.compute_command_buffer,
+			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			0,
+			0, nullptr,
+			1, &(frame_draw_objects_.rays_mem_barrier),
+			0, nullptr);
+	// ensure all voxel info is fully loaded into the gpu before reading
+	VkBufferMemoryBarrier voxel_memory_barriers[] = {
+		frame_draw_objects_.models_mem_barrier,
+		frame_draw_objects_.model_instances_mem_barrier,
+		frame_draw_objects_.model_accessors_mem_barrier,
+	};
+	vkCmdPipelineBarrier(frame_draw_objects_.compute_command_buffer,
+			VK_PIPELINE_STAGE_HOST_BIT,
+			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			0,
+			0, nullptr,
+			std::size(voxel_memory_barriers), voxel_memory_barriers,
+			0, nullptr);
+
+	// raymarch
+	frame_draw_objects_.raymarch_shader.selectDescriptor(0);
+	frame_draw_objects_.raymarch_shader.recordCommandBufferNoBegin(frame_draw_objects_.compute_command_buffer, window_x, window_y, 1);
+
+	// ensure the z buffer is fully written to before reading
+	vkCmdPipelineBarrier(frame_draw_objects_.compute_command_buffer,
+			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			0,
+			0, nullptr,
+			1, &(frame_draw_objects_.z_buffer_mem_barrier),
+			0, nullptr);
+
+	// draw the z buffer to the final image
+	frame_draw_objects_.draw_shader.selectDescriptor(0);
+	frame_draw_objects_.draw_shader.recordCommandBufferNoBegin(frame_draw_objects_.compute_command_buffer, window_x/8+1, window_y/8+1, 1);
+
+	// ensure the final image is fully written to before reading it
+	vkCmdPipelineBarrier(frame_draw_objects_.compute_command_buffer,
+			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &(frame_draw_objects_.final_image_barrier));
+
+	// send compute stuff over to the gpu
+	if (vkEndCommandBuffer(frame_draw_objects_.compute_command_buffer) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to record main compute command buffer!");
+	}
+	VkSubmitInfo compute_submit_info = {};
+	compute_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	compute_submit_info.commandBufferCount = 1;
+	compute_submit_info.pCommandBuffers = &(frame_draw_objects_.compute_command_buffer);
+	compute_submit_info.signalSemaphoreCount = 1;
+	compute_submit_info.pSignalSemaphores = &(frame_draw_objects_.compute_finished_semaphore);
+	vkQueueSubmit(anthrax_gpu->getComputeQueue(), 1, &compute_submit_info, VK_NULL_HANDLE);
+
+	// TODO: bring this stuff out here?
+	vulkan_manager_->drawFrame(&(frame_draw_objects_.compute_finished_semaphore));
+
 
 	/*
 	if (window_size_changed_)
@@ -311,6 +439,26 @@ void Anthrax::loadWorld()
 	Timer timer(Timer::MILLISECONDS);
 	timer.start();
 	world_->clear();
+	//test_model_->addToWorld(world_, 2048, 2048, 2048);
+	//world_->addModel(test_model_, 2048, 2048, 2048);
+	//world_->addModel(test_model_, 0, 0, 0);
+	//world_->addModel(test_model_, 0, 0, 0);
+
+	//std::cout << "Copying world to staging buffers" << std::endl;
+	memcpy(world_staging_ssbo_.getMappedPtr(), world_->getOctreePool(), world_->getOctreePoolSize());
+
+	//std::cout << "Moving world to local memory" << std::endl;
+	world_ssbo_.copy(world_staging_ssbo_);
+	//std::cout << "Done!" << std::endl;
+	std::cout << "Time to load world: " << timer.stop() << "ms" << std::endl;
+	return;
+}
+
+
+void Anthrax::loadModels()
+{
+	Timer timer(Timer::MILLISECONDS);
+	timer.start();
 	auto time_now = std::chrono::system_clock::now();
 	auto time_since_epoch = time_now.time_since_epoch();
 	auto time_duration = std::chrono::duration_cast<std::chrono::milliseconds>(time_since_epoch);
@@ -322,18 +470,23 @@ void Anthrax::loadWorld()
 	Quaternion rot(yaw, pitch, roll);
 	rot.normalize();
 	test_model_->rotate(rot);
-	//test_model_->addToWorld(world_, 2048, 2048, 2048);
-	//world_->addModel(test_model_, 2048, 2048, 2048);
-	//world_->addModel(test_model_, 0, 0, 0);
-	world_->addModel(test_model_, 0, 0, 0);
 
-	//std::cout << "Copying world to staging buffers" << std::endl;
-	memcpy(octree_pool_staging_ssbo_.getMappedPtr(), world_->getOctreePool(), world_->getOctreePoolSize());
+	// TODO: make generic
+	memcpy(models_ssbo_.getMappedPtr(), test_model_->data(), test_model_->size()*sizeof(Octree::OctreeNode));
+	void *model_instances = model_instances_ssbo_.getMappedPtr();
+	void *model_accessors= model_accessors_ssbo_.getMappedPtr();
+	for (unsigned int i = 0; i < 64; i++)
+	{
+		*(reinterpret_cast<glm::uvec3*>(model_instances)) = glm::uvec3(2048 + i*10); // in-world location
+		*(reinterpret_cast<unsigned int*>(model_instances+16)) = static_cast<unsigned int>(0); // model accessor ID
+		*(reinterpret_cast<unsigned int*>(model_accessors)) = static_cast<unsigned int>(0); // buffer offset
+		*(reinterpret_cast<int*>(model_accessors+4)) = static_cast<int>(test_model_->getOctree()->getLayer()); // num layers
+		model_instances += 20;
+		model_accessors += 8;
+	}
+	*(reinterpret_cast<int*>(num_model_instances_ubo_.getMappedPtr())) = 64; // num model instances
 
-	//std::cout << "Moving world to local memory" << std::endl;
-	octree_pool_ssbo_.copy(octree_pool_staging_ssbo_);
-	//std::cout << "Done!" << std::endl;
-	std::cout << "Time to load world: " << timer.stop() << "ms" << std::endl;
+	std::cout << "Time to load models: " << timer.stop() << "ms" << std::endl;
 	return;
 }
 
@@ -635,7 +788,7 @@ void Anthrax::createBuffers()
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
-	octree_pool_staging_ssbo_ = Buffer(
+	world_staging_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			world_->getMaxOctreePoolSize(),
 			Buffer::STORAGE_TYPE,
@@ -650,12 +803,49 @@ void Anthrax::createBuffers()
 			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 			);
-	octree_pool_ssbo_ = Buffer(
+	world_ssbo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			world_->getMaxOctreePoolSize(),
 			Buffer::STORAGE_TYPE,
 			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+			);
+	// TODO: recreate these on window resize?
+	z_buffer_ssbo_ = Buffer(
+			*anthrax_gpu,
+			MAX_WINDOW_X * MAX_WINDOW_Y * sizeof(float),
+			Buffer::STORAGE_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+			);
+	rays_ssbo_ = Buffer(
+			*anthrax_gpu,
+			MAX_WINDOW_X * MAX_WINDOW_Y * 56,
+			Buffer::STORAGE_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+			);
+	// TODO: recreate these when more space is needed?
+	models_ssbo_ = Buffer(
+			*anthrax_gpu,
+			MB(20),
+			Buffer::STORAGE_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	model_instances_ssbo_ = Buffer(
+			*anthrax_gpu,
+			MB(1),
+			Buffer::STORAGE_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
+	model_accessors_ssbo_ = Buffer(
+			*anthrax_gpu,
+			MB(1),
+			Buffer::STORAGE_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 
 	// ubos
@@ -673,6 +863,13 @@ void Anthrax::createBuffers()
 			0,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
+	screen_dimensions_ubo_ = Buffer(
+			*anthrax_gpu,
+			8,
+			Buffer::UNIFORM_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
 	screen_width_ubo_ = Buffer(
 			vulkan_manager_->getDevice(),
 			4,
@@ -681,7 +878,7 @@ void Anthrax::createBuffers()
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
 	screen_height_ubo_ = Buffer(
-			vulkan_manager_->getDevice(),
+		vulkan_manager_->getDevice(),
 			4,
 			Buffer::UNIFORM_TYPE,
 			0,
@@ -722,10 +919,17 @@ void Anthrax::createBuffers()
 			0,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			);
+	num_model_instances_ubo_ = Buffer(
+			*anthrax_gpu,
+			4,
+			Buffer::UNIFORM_TYPE,
+			0,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			);
 
 	for (unsigned int i = 0; i < multibuffering_value_; i++)
 	{
-		raymarched_images_.push_back(Image(vulkan_manager_->getDevice(),
+		final_images_.push_back(Image(vulkan_manager_->getDevice(),
 				MAX_WINDOW_X,
 				MAX_WINDOW_Y,
 				VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -742,18 +946,57 @@ void Anthrax::createDescriptors()
 	std::vector<Buffer> buffers;
 	std::vector<Image> images;
 
-	// main render pass
+	// ray generation compute pass
 	buffers.clear();
 	images.clear();
-	buffers.resize(0);
-	images.resize(1);
-	main_graphics_descriptors_.clear();
-	for (unsigned int i = 0; i < raymarched_images_.size(); i++)
+	frame_draw_objects_.initial_rays_descriptors.clear();
+	buffers.resize(7);
+	buffers[0] = screen_dimensions_ubo_;
+	buffers[1] = focal_distance_ubo_;
+	buffers[2] = camera_position_ubo_;
+	buffers[3] = camera_right_ubo_;
+	buffers[4] = camera_up_ubo_;
+	buffers[5] = camera_forward_ubo_;
+	buffers[6] = rays_ssbo_;
+	for (unsigned int i = 0; i < multibuffering_value_; i++)
 	{
-		images[0] = raymarched_images_[i];
-		main_graphics_descriptors_.push_back(Descriptor(vulkan_manager_->getDevice(), Descriptor::ShaderStage::FRAGMENT, buffers, images));
+		frame_draw_objects_.initial_rays_descriptors.push_back(Descriptor(vulkan_manager_->getDevice(), Descriptor::ShaderStage::COMPUTE, buffers, images));
 	}
-	vulkan_manager_->renderPassSetDescriptors(main_graphics_descriptors_);
+	frame_draw_objects_.initial_rays_shader.setDescriptors(frame_draw_objects_.initial_rays_descriptors);
+
+	// raymarching compute pass
+	buffers.clear();
+	images.clear();
+	frame_draw_objects_.raymarch_descriptors.clear();
+	buffers.resize(8);
+	buffers[0] = screen_dimensions_ubo_;
+	buffers[1] = rays_ssbo_;
+	buffers[2] = world_ssbo_;
+	buffers[3] = models_ssbo_;
+	buffers[4] = model_instances_ssbo_;
+	buffers[5] = model_accessors_ssbo_;
+	buffers[6] = num_model_instances_ubo_;
+	buffers[7] = z_buffer_ssbo_;
+	for (unsigned int i = 0; i < multibuffering_value_; i++)
+	{
+		frame_draw_objects_.raymarch_descriptors.push_back(Descriptor(vulkan_manager_->getDevice(), Descriptor::ShaderStage::COMPUTE, buffers, images));
+	}
+	frame_draw_objects_.raymarch_shader.setDescriptors(frame_draw_objects_.raymarch_descriptors);
+
+	// draw compute pass
+	buffers.clear();
+	images.clear();
+	frame_draw_objects_.draw_descriptors.clear();
+	buffers.resize(2);
+	images.resize(1);
+	buffers[0] = screen_dimensions_ubo_;
+	buffers[1] = z_buffer_ssbo_;
+	images[0] = final_images_[0];
+	for (unsigned int i = 0; i < multibuffering_value_; i++)
+	{
+		frame_draw_objects_.draw_descriptors.push_back(Descriptor(vulkan_manager_->getDevice(), Descriptor::ShaderStage::COMPUTE, buffers, images));
+	}
+	frame_draw_objects_.draw_shader.setDescriptors(frame_draw_objects_.draw_descriptors);
 
 	// main compute pass
 	buffers.clear();
@@ -763,7 +1006,7 @@ void Anthrax::createDescriptors()
 	main_compute_descriptors_.clear();
 	
 	buffers[0] = materials_ssbo_;
-	buffers[1] = octree_pool_ssbo_;
+	buffers[1] = world_ssbo_;
 	buffers[2] = num_levels_ubo_;
 	buffers[3] = focal_distance_ubo_;
 	buffers[4] = screen_width_ubo_;
@@ -773,12 +1016,123 @@ void Anthrax::createDescriptors()
 	buffers[8] = camera_up_ubo_;
 	buffers[9] = camera_forward_ubo_;
 	buffers[10] = sunlight_ubo_;
-	for (unsigned int i = 0; i < raymarched_images_.size(); i++)
+	for (unsigned int i = 0; i < final_images_.size(); i++)
 	{
-		images[0] = raymarched_images_[i];
+		images[0] = final_images_[i];
 		main_compute_descriptors_.push_back(Descriptor(vulkan_manager_->getDevice(), Descriptor::ShaderStage::COMPUTE, buffers, images));
 	}
 	vulkan_manager_->computePassSetDescriptors(main_compute_descriptors_);
+
+	// main render pass
+	buffers.clear();
+	images.clear();
+	buffers.resize(0);
+	images.resize(1);
+	main_graphics_descriptors_.clear();
+	for (unsigned int i = 0; i < final_images_.size(); i++)
+	{
+		images[0] = final_images_[i];
+		main_graphics_descriptors_.push_back(Descriptor(vulkan_manager_->getDevice(), Descriptor::ShaderStage::FRAGMENT, buffers, images));
+	}
+	vulkan_manager_->renderPassSetDescriptors(main_graphics_descriptors_);
+
+
+}
+
+
+void Anthrax::createPipelineBarriers()
+{
+	frame_draw_objects_.rays_mem_barrier = {};
+	frame_draw_objects_.rays_mem_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	frame_draw_objects_.rays_mem_barrier.pNext = nullptr;
+	frame_draw_objects_.rays_mem_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+	frame_draw_objects_.rays_mem_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	frame_draw_objects_.rays_mem_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	frame_draw_objects_.rays_mem_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	frame_draw_objects_.rays_mem_barrier.buffer = rays_ssbo_.data();
+	frame_draw_objects_.rays_mem_barrier.offset = 0;
+	frame_draw_objects_.rays_mem_barrier.size = VK_WHOLE_SIZE;
+
+	frame_draw_objects_.z_buffer_mem_barrier = {};
+	frame_draw_objects_.z_buffer_mem_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	frame_draw_objects_.z_buffer_mem_barrier.pNext = nullptr;
+	frame_draw_objects_.z_buffer_mem_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+	frame_draw_objects_.z_buffer_mem_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	frame_draw_objects_.z_buffer_mem_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	frame_draw_objects_.z_buffer_mem_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	frame_draw_objects_.z_buffer_mem_barrier.buffer = z_buffer_ssbo_.data();
+	frame_draw_objects_.z_buffer_mem_barrier.offset = 0;
+	frame_draw_objects_.z_buffer_mem_barrier.size = VK_WHOLE_SIZE;
+
+	frame_draw_objects_.world_mem_barrier = {};
+	frame_draw_objects_.world_mem_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	frame_draw_objects_.world_mem_barrier.pNext = nullptr;
+	frame_draw_objects_.world_mem_barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+	frame_draw_objects_.world_mem_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	frame_draw_objects_.world_mem_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	frame_draw_objects_.world_mem_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	frame_draw_objects_.world_mem_barrier.buffer = world_ssbo_.data();
+	frame_draw_objects_.world_mem_barrier.offset = 0;
+	frame_draw_objects_.world_mem_barrier.size = VK_WHOLE_SIZE;
+
+	frame_draw_objects_.models_mem_barrier = {};
+	frame_draw_objects_.models_mem_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	frame_draw_objects_.models_mem_barrier.pNext = nullptr;
+	frame_draw_objects_.models_mem_barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+	frame_draw_objects_.models_mem_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	frame_draw_objects_.models_mem_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	frame_draw_objects_.models_mem_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	frame_draw_objects_.models_mem_barrier.buffer = models_ssbo_.data();
+	frame_draw_objects_.models_mem_barrier.offset = 0;
+	frame_draw_objects_.models_mem_barrier.size = VK_WHOLE_SIZE;
+
+	frame_draw_objects_.model_instances_mem_barrier = {};
+	frame_draw_objects_.model_instances_mem_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	frame_draw_objects_.model_instances_mem_barrier.pNext = nullptr;
+	frame_draw_objects_.model_instances_mem_barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+	frame_draw_objects_.model_instances_mem_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	frame_draw_objects_.model_instances_mem_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	frame_draw_objects_.model_instances_mem_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	frame_draw_objects_.model_instances_mem_barrier.buffer = model_instances_ssbo_.data();
+	frame_draw_objects_.model_instances_mem_barrier.offset = 0;
+	frame_draw_objects_.model_instances_mem_barrier.size = VK_WHOLE_SIZE;
+
+	frame_draw_objects_.model_accessors_mem_barrier = {};
+	frame_draw_objects_.model_accessors_mem_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	frame_draw_objects_.model_accessors_mem_barrier.pNext = nullptr;
+	frame_draw_objects_.model_accessors_mem_barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+	frame_draw_objects_.model_accessors_mem_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	frame_draw_objects_.model_accessors_mem_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	frame_draw_objects_.model_accessors_mem_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	frame_draw_objects_.model_accessors_mem_barrier.buffer = model_accessors_ssbo_.data();
+	frame_draw_objects_.model_accessors_mem_barrier.offset = 0;
+	frame_draw_objects_.model_accessors_mem_barrier.size = VK_WHOLE_SIZE;
+
+	frame_draw_objects_.final_image_barrier = {};
+	frame_draw_objects_.final_image_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	frame_draw_objects_.final_image_barrier.pNext = nullptr;
+	frame_draw_objects_.final_image_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	frame_draw_objects_.final_image_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+	frame_draw_objects_.final_image_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	frame_draw_objects_.final_image_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	frame_draw_objects_.final_image_barrier.image = final_images_[0].data();
+	frame_draw_objects_.final_image_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	frame_draw_objects_.final_image_barrier.subresourceRange.baseMipLevel = 0;
+	frame_draw_objects_.final_image_barrier.subresourceRange.levelCount = 1;
+	frame_draw_objects_.final_image_barrier.subresourceRange.baseArrayLayer = 0;
+	frame_draw_objects_.final_image_barrier.subresourceRange.layerCount = 1;
+	frame_draw_objects_.final_image_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+	frame_draw_objects_.final_image_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+	// semaphore between main compute and draw passes
+	VkSemaphoreCreateInfo semaphore_info{};
+	semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	if (vkCreateSemaphore(anthrax_gpu->logical, &semaphore_info, nullptr, &(frame_draw_objects_.compute_finished_semaphore)) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to create main compute finished semaphore!");
+	}
+
+	return;
 }
 
 } // namespace Anthrax

@@ -108,32 +108,17 @@ void VulkanManager::setMultiBuffering(int max_frames_in_flight)
 }
 
 
-void VulkanManager::drawFrame()
+void VulkanManager::waitForFences()
 {
-	//if (vkGetFenceStatus(device_.logical, frames_[current_frame_].in_flight_fence) == VK_NOT_READY) std::cout << "Waiting for fence " << current_frame_ << std::endl;
 	vkWaitForFences(device_.logical, 1, &(frames_[current_frame_].in_flight_fence), VK_TRUE, UINT64_MAX); // since the render pass waits for compute pass to finish before starting, we only need to wait for the render pass
 	vkResetFences(device_.logical, 1, &(frames_[current_frame_].in_flight_fence));
+	return;
+}
 
-	compute_shader_manager_.selectDescriptor(current_frame_);
+
+void VulkanManager::drawFrame(VkSemaphore *wait_semaphore)
+{
 	render_pass_.selectDescriptor(current_frame_);
-
-	// Compute pass
-	// TODO: compute buffer updates should really go here. Maybe when buffers are moved away from host-visible memory, set them up for transfers normally and initiate the transfer here.
-	vkResetCommandBuffer((frames_[current_frame_].compute_command_buffer), 0);
-	compute_shader_manager_.recordCommandBuffer(frames_[current_frame_].compute_command_buffer, ceil((float)window_width_/WORKGROUP_SIZE), ceil((float)window_height_/WORKGROUP_SIZE), 1);
-
-	VkSubmitInfo compute_submit_info{};
-	compute_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	compute_submit_info.commandBufferCount = 1;
-	compute_submit_info.pCommandBuffers = &(frames_[current_frame_].compute_command_buffer);
-	compute_submit_info.signalSemaphoreCount = 1;
-	compute_submit_info.pSignalSemaphores = &(frames_[current_frame_].compute_finished_semaphore);
-	//compute_submit_info.
-	
-	if (vkQueueSubmit(device_.getComputeQueue(), 1, &compute_submit_info, VK_NULL_HANDLE) != VK_SUCCESS)
-	{
-		throw std::runtime_error("Failed to submit dispatch command buffer");
-	}
 
 	// Graphics pass
 	uint32_t image_index;
@@ -145,9 +130,9 @@ void VulkanManager::drawFrame()
 
 	VkSubmitInfo submit_info{};
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	VkSemaphore wait_semaphores[] = {frames_[current_frame_].compute_finished_semaphore, frames_[current_frame_].image_available_semaphore};
+	VkSemaphore wait_semaphores[] = {*wait_semaphore, frames_[current_frame_].image_available_semaphore};
 	VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-	submit_info.waitSemaphoreCount = 2;
+	submit_info.waitSemaphoreCount = std::size(wait_semaphores);
 	submit_info.pWaitSemaphores = wait_semaphores;
 	submit_info.pWaitDstStageMask = wait_stages;
 	submit_info.commandBufferCount = 1;
@@ -250,7 +235,8 @@ void VulkanManager::createInstance()
 	app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
 	app_info.pEngineName = "Anthrax";
 	app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-	app_info.apiVersion = VK_API_VERSION_1_0;
+	//app_info.apiVersion = VK_API_VERSION_1_0;
+	app_info.apiVersion = VK_MAKE_VERSION(1, 3, 0);
 
 	VkInstanceCreateInfo create_info{};
 	create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;

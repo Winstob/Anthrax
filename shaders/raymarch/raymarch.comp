@@ -4,9 +4,10 @@
  * Date Created: 2025-05-12
 \* ---------------------------------------------------------------- */
 #version 460
+#extension GL_EXT_shader_atomic_float : enable
 #extension GL_EXT_shader_atomic_float2 : enable
 
-#define WORKGROUP_SIZE 32
+#define WORKGROUP_SIZE 64
 #define MAX_NUM_LAYERS 32
 
 #define UINT_BITS 32
@@ -19,8 +20,6 @@
 #define MASKLIST_INDICES_LIST_SIZE 2 // ceil(MAX_NUM_LAYERS*MASKLIST_INDEX_SIZE/UINT_BITS)
 #define NUM_MASKS_PER_ELEMENT 10 // ceil(UINT_BITS/MASK_SIZE)
 #define NUM_MLI_PER_ELEMENT 16 // ceil(UINT_BITS/MASKLIST_INDEX_SIZE)
-
-#define VISUALIZE_INTERSECTIONS 150
 
 layout (local_size_x = 1, local_size_y = 1, local_size_z = WORKGROUP_SIZE) in;
 
@@ -135,6 +134,10 @@ void main()
 	model_buffer_offset = model_accessor.buffer_offset;
 
 	uint voxel_type = rayMarchHero(ray);
+	if (voxel_type == 0) // TODO: check if its different than before, not 0
+	{
+		return;
+	}
 
 	if (ray.distance_traveled > 0.0)
 	{
@@ -176,7 +179,8 @@ uint rayMarchHero(inout Ray ray)
 	uint num_intersections = 0;
 
 	vec3 v = ray.direction;
-	vec3 E = vec3(ray.origin.int_component + sign(dot(model_instance.location, ray.origin.int_component))*model_instance.location) + vec3(ray.origin.dec_component);
+	//vec3 E = vec3(ray.origin.int_component + sign(dot(model_instance.location, ray.origin.int_component))*model_instance.location) + vec3(ray.origin.dec_component);
+	vec3 E = vec3(ray.origin.int_component) + vec3(ray.origin.dec_component);
 	float eps = 0.001;
 	if (abs(v.x) < eps) v.x = (v.x == 0.0) ? eps : eps*sign(v.x);
 	if (abs(v.y) < eps) v.y = (v.y == 0.0) ? eps : eps*sign(v.y);
@@ -202,9 +206,13 @@ uint rayMarchHero(inout Ray ray)
 	uvec3 node_mids[MAX_NUM_LAYERS];
 
 	// find initial ray location information
+	/*
 	uvec3 node_min = uvec3(0);
 	//node_maxes[0] = uvec3((0xFFFFFFFFu >> (32-(num_layers*LOG2K))) + 1u);
 	uvec3 node_max = uvec3(0x1u << num_layers); // TODO: bad!!! check above. better, only slightly. overflow!
+	*/
+	uvec3 node_min = model_instance.location;
+	uvec3 node_max = node_min + (0x1u << num_layers);
 	node_mids[0] = ((node_max - node_min) >> 1) + node_min;
 
 	vec3 s_min = (vec3(node_min) - E) * v_reciprocal;

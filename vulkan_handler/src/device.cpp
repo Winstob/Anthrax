@@ -105,9 +105,15 @@ VkDevice Device::createLogicalDevice(VkPhysicalDevice physical_device)
 	VkPhysicalDeviceFeatures device_features{};
 	//device_features.shaderFloat64 = VK_TRUE;
 	//device_features.shaderInt64 = VK_TRUE;
+	
+	// enable float atomics
+	VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT atomic_float_features{};
+	atomic_float_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_2_FEATURES_EXT;
+	atomic_float_features.shaderBufferFloat32AtomicMinMax = VK_TRUE;
 
 	VkDeviceCreateInfo create_info{};
 	create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	create_info.pNext = &atomic_float_features;
 	create_info.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size());
 	create_info.pQueueCreateInfos = queue_create_infos.data();
 	create_info.pEnabledFeatures = &device_features;

@@ -73,6 +73,7 @@ private:
 	void createTestModel();
 	void createWorld();
 	void loadWorld();
+	void loadModels();
 	void initializeWorldSSBOs();
 	void updateCamera();
 	void textTexturesSetup();
@@ -82,6 +83,7 @@ private:
 	void renderText(Text text) { renderText(text.text, text.x, text.y, text.scale, text.color); }
 	void createBuffers();
 	void createDescriptors();
+	void createPipelineBarriers();
 
 	// Shader passes
 	/*
@@ -94,7 +96,7 @@ private:
 	static unsigned int window_width_;
 	static unsigned int window_height_;
 	static bool window_size_changed_;
-	int multibuffering_value_ = 2;
+	int multibuffering_value_ = 1; // TODO: fix multibuffering
 	// Callbacks
 	static void framebufferSizeCallback(GLFWwindow* window, int width, int height);
 	static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);
@@ -106,7 +108,9 @@ private:
 
 	std::vector<Material> materials_;
 	World *world_;
+
 	Model *test_model_;
+
 	Camera camera_;
 	//GLuint indirection_pool_ssbo_ = 0, voxel_type_pool_ssbo_ = 0, lod_pool_ssbo_ = 0;
 
@@ -117,14 +121,36 @@ private:
 	IDMap<Text> texts_;
 
 	// ssbos
-	Buffer materials_staging_ssbo_, octree_pool_staging_ssbo_;
-	Buffer materials_ssbo_, octree_pool_ssbo_;
-	std::vector<Image> raymarched_images_;
+	Buffer materials_staging_ssbo_, world_staging_ssbo_;
+	Buffer materials_ssbo_, world_ssbo_, z_buffer_ssbo_, rays_ssbo_;
+	Buffer models_ssbo_, model_instances_ssbo_, model_accessors_ssbo_, num_model_instances_ubo_;
+	std::vector<Image> final_images_;
 	// ubos
-	Buffer num_levels_ubo_, focal_distance_ubo_, screen_width_ubo_, screen_height_ubo_, camera_position_ubo_, camera_right_ubo_, camera_up_ubo_, camera_forward_ubo_, sunlight_ubo_;
+	Buffer num_levels_ubo_, focal_distance_ubo_, screen_width_ubo_, screen_height_ubo_, camera_position_ubo_, camera_right_ubo_, camera_up_ubo_, camera_forward_ubo_, sunlight_ubo_, screen_dimensions_ubo_;
 	// descriptors
 	std::vector<Descriptor> main_compute_descriptors_;
 	std::vector<Descriptor> main_graphics_descriptors_;
+
+	struct FrameDrawObjects
+	{
+		ComputeShaderManager initial_rays_shader;
+		ComputeShaderManager raymarch_shader;
+		ComputeShaderManager draw_shader;
+		std::vector<Descriptor> initial_rays_descriptors;
+		std::vector<Descriptor> raymarch_descriptors;
+		std::vector<Descriptor> draw_descriptors;
+		VkCommandPool compute_command_pool;
+		VkCommandBuffer compute_command_buffer;
+		VkBufferMemoryBarrier rays_mem_barrier;
+		VkBufferMemoryBarrier z_buffer_mem_barrier;
+		VkBufferMemoryBarrier world_mem_barrier;
+		VkBufferMemoryBarrier models_mem_barrier;
+		VkBufferMemoryBarrier model_instances_mem_barrier;
+		VkBufferMemoryBarrier model_accessors_mem_barrier;
+		VkImageMemoryBarrier final_image_barrier;
+		VkSemaphore compute_finished_semaphore;
+	} frame_draw_objects_;
+	void frameDrawObjectsSetup();
 
 };
 

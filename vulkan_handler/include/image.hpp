@@ -27,6 +27,7 @@ public:
 
 	VkImageView getImageView() { return image_view_; }
 	VkImageLayout getImageLayout() { return layout_; }
+	VkImage data() { return image_; }
 
 private:
 	uint32_t findMemoryType(uint32_t type_filter, VkMemoryPropertyFlags properties);

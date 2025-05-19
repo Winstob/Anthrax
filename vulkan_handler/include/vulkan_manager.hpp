@@ -33,7 +33,9 @@ public:
 	~VulkanManager();
 	void init();
 	void start();
-	void drawFrame();
+	//void drawFrame();
+	void waitForFences();
+	void drawFrame(VkSemaphore *wait_semaphore);
 
 	void setMultiBuffering(int max_frames_in_flight);
 
